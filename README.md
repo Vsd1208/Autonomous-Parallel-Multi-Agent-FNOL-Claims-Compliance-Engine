@@ -44,6 +44,9 @@ OURS:    FNOL → ┬── Branch A: Operational  ──┬── Reconciliatio
 | 📋 **Regulatory Audit Trail** | SHA-256 hashed, immutable, NAIC Model Audit Rule compliant |
 | 🚦 **Reconciliation Safety Gate** | Auto STP execution or human adjuster escalation with pre-compiled legal notes |
 | 🔒 **AI Guardrail Layer** | Multi-tier validation wall between LLM outputs and financial actions — blocks hallucinated, out-of-bounds, or non-compliant agent results |
+| 📚 **Claim History Enrichment** | Pre-enriches every FNOL with prior claims, policy history, incident frequency, and loss patterns before agents run |
+| 💬 **Decision Explainability** | Every decision surfaces structured human-readable reason codes — not just a verdict, but exactly *why* |
+| 🎬 **Demo Failure Scenarios** | Four documented failure paths (low confidence, compliance block, API timeout, duplicate event) alongside the happy path |
 
 ---
 
@@ -64,11 +67,21 @@ OURS:    FNOL → ┬── Branch A: Operational  ──┬── Reconciliatio
   ┌─────────────────────────────────────────┐
   │   FNOL ORCHESTRATOR  (Spring WebFlux)    │
   │   Spring Boot 3 · Maven Multi-Module     │
-  └────────────┬────────────────────────────┘
+   └────────────┬────────────────────────────┘
                │
-    ───────────┴───────────────
-    │    Mono.zip() FAN-OUT    │
-    ──────────┬────────────────
+               ▼
+   ┌─────────────────────────────────────────┐
+   │    CLAIM HISTORY ENRICHER               │
+   │  ClaimHistoryAgent (pre-fan-out)        │
+   │  · Previous claims on this policy       │
+   │  · Loss frequency & patterns            │
+   │  · Prior incidents & at-fault history   │
+   │  · Policy standing & amendment history  │
+   └────────────┬────────────────────────────┘
+               │ Enriched FNOLContext passed to both branches
+     ───────────┴───────────────
+     │    Mono.zip() FAN-OUT    │
+     ──────────┬────────────────
               │
    ┌──────────┴─────────────┐      ┌───────────────────────────┐
    │     BRANCH A           │      │     BRANCH B              │
@@ -129,6 +142,7 @@ fnol-engine/
 │
 ├── fnol-common/                     ← Shared DTOs, Enums, Constants
 ├── fnol-mock-guidewire/             ← WireMock: ClaimCenter + PolicyCenter APIs
+├── fnol-enrichment/                 ← Claim History & Context Enricher (pre-fan-out)
 ├── fnol-agents/                     ← AI Agent implementations (LangChain4j)
 ├── fnol-guardrails/                 ← AI Guardrail Layer (validation wall)
 ├── fnol-orchestrator/               ← Async fan-out + Reconciliation Gate
@@ -271,6 +285,8 @@ cd fnol-frontend && npm install && npm run dev
 | `GET` | `/api/v1/fnol/{claimId}/audit` | Get regulatory audit trail |
 | `POST` | `/api/v1/fnol/{claimId}/approve` | Adjuster manual approval |
 | `GET` | `/api/v1/fnol/{claimId}/deadlines` | Get statutory deadlines |
+| `GET` | `/api/v1/fnol/{claimId}/explain` | Get human-readable decision explanation |
+| `GET` | `/api/v1/policies/{policyId}/history` | Get enriched claim history context |
 
 ### Submit a Test FNOL Claim
 
@@ -294,6 +310,12 @@ curl -X POST http://localhost:8080/api/v1/fnol/intake \
   "processingTimeMs": 11240,
   "stpEligible": true,
   "reconciliationDecision": "STRAIGHT_THROUGH_PROCESSING",
+  "claimContext": {
+    "previousClaimsCount": 1,
+    "lastClaimDate": "2024-03-10",
+    "policyStanding": "GOOD",
+    "claimFrequencyRisk": "LOW"
+  },
   "branchA": {
     "damageType": "COLLISION",
     "severityScore": 6.2,
@@ -310,6 +332,18 @@ curl -X POST http://localhost:8080/api/v1/fnol/intake \
     "statutoryUrgency": "OK",
     "acknowledgeDeadline": "2026-09-02",
     "decisionDeadline": "2026-09-27"
+  },
+  "explanation": {
+    "decision": "STRAIGHT_THROUGH_PROCESSING",
+    "summary": "Claim meets all STP criteria and passed all guardrails.",
+    "factors": [
+      { "factor": "AI Confidence", "value": "91%", "status": "PASS" },
+      { "factor": "Coverage Status", "value": "VALID — Collision covered", "status": "PASS" },
+      { "factor": "Compliance Check", "value": "CLEAR — PII redacted (3 entities)", "status": "PASS" },
+      { "factor": "Reserve Amount", "value": "$11,730 — within STP threshold", "status": "PASS" },
+      { "factor": "Claim History", "value": "1 prior claim (2024) — low frequency risk", "status": "PASS" },
+      { "factor": "Subrogation Risk", "value": "Score 42 — monitoring only", "status": "PASS" }
+    ]
   },
   "actionsExecuted": [
     "CLAIM_CREATED_IN_CLAIMCENTER",
@@ -515,6 +549,274 @@ ELSE → Escalate to Human Adjuster
 
 ---
 
+## 📚 Claim History Context Enrichment
+
+Before either branch fires, the **`ClaimHistoryAgent`** (part of the `fnol-enrichment` module) queries historical data for the incoming policy and enriches the `FNOLContext` object that both Branch A and Branch B receive. This makes every downstream AI decision **context-aware** rather than treating each FNOL in isolation.
+
+### What Gets Fetched
+
+| Data Point | Source | Used By |
+|---|---|---|
+| Previous claims on this policy | Mock ClaimCenter history endpoint | FraudPatternGuard, ReserveCalculatorAgent |
+| Claim frequency (rolling 6 / 12 months) | PostgreSQL aggregation | FraudPatternGuard, SubrogationScorerAgent |
+| Prior at-fault incidents | Mock PolicyCenter incident log | SubrogationScorerAgent, VisionDamageAgent context |
+| Policy amendment history | Mock PolicyCenter policy log | PolicyValidatorAgent |
+| Open / pending claims on same policy | Mock ClaimCenter | BusinessRuleGuard (blocks STP if open claim exists) |
+
+### Enriched FNOLContext — Sample Payload
+
+```json
+{
+  "policyId": "POL-AUTO-112233",
+  "enrichedAt": "2026-08-18T16:44:58Z",
+  "claimHistory": {
+    "totalPriorClaims": 1,
+    "claimsLast6Months": 0,
+    "claimsLast12Months": 1,
+    "lastClaimDate": "2024-03-10",
+    "lastClaimType": "COLLISION",
+    "lastClaimAmount": 4200.00,
+    "openClaimsCount": 0
+  },
+  "policyHistory": {
+    "policyStanding": "GOOD",
+    "yearsActive": 5,
+    "priorAtFaultIncidents": 0,
+    "lastAmendmentDate": "2025-01-01",
+    "amendmentReason": "RENEWAL"
+  },
+  "riskSignals": {
+    "claimFrequencyRisk": "LOW",
+    "velocityFlag": false,
+    "repeatLossTypeFlag": false
+  }
+}
+```
+
+### Impact on Agent Decisions
+
+- **`VisionDamageAgent`** — receives prior damage photos for the same vehicle as reference context in its prompt
+- **`ReserveCalculatorAgent`** — adjusts ULAE buffer upward if claim frequency is HIGH
+- **`FraudPatternGuard`** — uses `claimsLast6Months` and `repeatLossTypeFlag` directly
+- **`SubrogationScorerAgent`** — prior at-fault history informs third-party liability weighting
+
+---
+
+## 💬 Decision Explainability
+
+Every decision this engine makes — whether STP, escalation, or guardrail block — is accompanied by a structured **Explanation Object** that surfaces exactly *why* the system decided what it did. This is surfaced on the Adjuster Dashboard, in the API response, and in the audit trail.
+
+> The system never simply says **HUMAN REVIEW**. It always says **HUMAN REVIEW + why**.
+
+### Explanation Object Structure
+
+```json
+{
+  "decision": "HUMAN_REVIEW",
+  "summary": "Claim escalated to human adjuster. Three conditions prevented straight-through processing.",
+  "factors": [
+    {
+      "factor": "AI Confidence",
+      "value": "62%",
+      "threshold": "85% required for STP",
+      "status": "FAIL",
+      "detail": "Image quality insufficient for high-confidence damage assessment."
+    },
+    {
+      "factor": "Claim Amount",
+      "value": "$31,400 estimated reserve",
+      "threshold": "$25,000 STP ceiling",
+      "status": "FAIL",
+      "detail": "High-value claim requires adjuster sign-off per business rule BR-007."
+    },
+    {
+      "factor": "Third-Party Involvement",
+      "value": "Subrogation score: 74",
+      "threshold": "Score < 70 required for STP",
+      "status": "FAIL",
+      "detail": "Possible third-party liability detected. Legal review recommended before reserve is set."
+    },
+    {
+      "factor": "Coverage Check",
+      "value": "VALID",
+      "status": "PASS",
+      "detail": "Collision coverage active, deductible $1,000 applied."
+    },
+    {
+      "factor": "Compliance Check",
+      "value": "CLEAR — PII redacted (2 entities)",
+      "status": "PASS",
+      "detail": "All mandatory fields redacted. GDPR Article 25 satisfied."
+    }
+  ],
+  "recommendedAction": "Assign to senior adjuster — high-value claim with third-party exposure.",
+  "escalationPriority": "HIGH",
+  "auditReference": "audit-trail-CLM-2026-00847"
+}
+```
+
+### How It Appears in the Adjuster Dashboard
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  CLM-2026-00847  ·  COLLISION  ·  2026-08-15  ·  CA          │
+│  ⚠️  HUMAN REVIEW REQUIRED                                    │
+├──────────────────────────────────────────────────────────────┤
+│  WHY THIS DECISION?                                          │
+│                                                              │
+│  ✗  AI Confidence      62%  (need ≥ 85% for STP)            │
+│  ✗  Claim Amount       $31,400  (STP ceiling: $25,000)       │
+│  ✗  Third-Party Risk   Subrogation score 74  (threshold: 70) │
+│  ✓  Coverage           VALID — Collision covered             │
+│  ✓  Compliance         CLEAR — PII redacted                  │
+│                                                              │
+│  Recommended: Senior adjuster — high-value + 3rd party       │
+│  Priority: HIGH  ·  Deadline: 2026-09-02 (acknowledge by)    │
+├──────────────────────────────────────────────────────────────┤
+│  [ Approve STP ]    [ Refer to SIU ]    [ View Audit Trail ] │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### API Endpoint
+
+```bash
+GET /api/v1/fnol/{claimId}/explain
+```
+
+Returns the full `ExplanationObject` for any processed claim, independently queryable for UI rendering and audit purposes.
+
+---
+
+## 🎬 Demo Scenarios
+
+The demo is designed to walk evaluators through **five distinct scenarios** — one happy path and four failure paths — to demonstrate the system's intelligence, resilience, and safety characteristics.
+
+---
+
+### ✅ Scenario 1 — Happy Path: Clean STP
+
+> *"A straightforward collision claim with good photos, valid coverage, and a low reserve — processed in 11 seconds with no human touch."*
+
+| Signal | Value |
+|---|---|
+| Damage Confidence | 91% |
+| Coverage | VALID |
+| Reserve | $11,730 |
+| Subrogation Score | 42 |
+| Compliance | CLEAR |
+| **Decision** | **STRAIGHT_THROUGH_PROCESSING** |
+
+**Demo trigger:** Submit `demo-scenarios/scenario_1_clean_stp.json` with a clear damage photo.
+
+---
+
+### ⚠️ Scenario 2 — Low AI Confidence → Human Review
+
+> *"A blurry dashcam still and partial vehicle visibility drops confidence to 62%. The system refuses to auto-reserve and escalates with a full explanation."*
+
+| Signal | Value |
+|---|---|
+| Damage Confidence | 62% *(below 85% STP threshold)* |
+| Reserve Estimate | $8,200 |
+| Guardrail Triggered | `ConfidenceThresholdGuard` |
+| **Decision** | **HUMAN_REVIEW** |
+
+**Explanation shown:**
+```
+✗  AI Confidence: 62% — image quality too low for STP
+✓  Coverage: VALID
+✓  Compliance: CLEAR
+✓  Reserve: within threshold
+→  Escalated: adjuster to re-assess with higher-quality photos
+```
+
+**Demo trigger:** Submit `demo-scenarios/scenario_2_low_confidence.json` with a blurry test image.
+
+---
+
+### 🛑 Scenario 3 — Compliance Block → Human Review
+
+> *"PII redaction fails on a medical record number embedded in claimant notes. The ComplianceGuard hard-blocks the entire claim — no data is persisted until the field is clean."*
+
+| Signal | Value |
+|---|---|
+| PII Detected | Medical Record # in notes field |
+| Redaction Confidence | 61% *(below 90% hard threshold)* |
+| Guardrail Triggered | `ComplianceGuard` |
+| **Decision** | **HARD_BLOCK → HUMAN_REVIEW** |
+
+**Explanation shown:**
+```
+✗  Compliance: FAIL — PII redaction confidence 61% on 'claimantNotes'
+   Entity: MEDICAL_RECORD_NUMBER (score: 0.61, threshold: 0.90)
+→  Hard block: no data persisted. Manual redaction required.
+→  GDPR Article 25 violation prevented.
+```
+
+**Demo trigger:** Submit `demo-scenarios/scenario_3_compliance_block.json` with raw medical data in notes.
+
+---
+
+### ⏱️ Scenario 4 — API Timeout → Human Review
+
+> *"The mock PolicyCenter API simulates a 10-second timeout. The system detects the failure, records it in the audit trail, and safely escalates rather than proceeding with incomplete data."*
+
+| Signal | Value |
+|---|---|
+| PolicyCenter Response | TIMEOUT (10s) |
+| Coverage Status | UNKNOWN |
+| Guardrail Triggered | `BusinessRuleGuard` — coverage unverified |
+| **Decision** | **HUMAN_REVIEW** |
+
+**Explanation shown:**
+```
+✗  Coverage: UNKNOWN — PolicyCenter API timed out after 10s
+→  System cannot verify coverage without policy data
+→  Escalated: adjuster to manually verify POL-AUTO-112233
+→  Timeout event logged to audit trail
+```
+
+**Demo trigger:** Set `MOCK_GW_TIMEOUT=true` in `.env` before submitting `scenario_4_api_timeout.json`.
+
+---
+
+### 🔁 Scenario 5 — Duplicate Event → Idempotency Block (No Duplicate Payment)
+
+> *"The same FNOL reference is submitted twice (simulating a network retry). The system detects the duplicate via idempotency key check and rejects the second submission — no duplicate claim or reserve is created."*
+
+| Signal | Value |
+|---|---|
+| FNOL Reference | `FNOL-20260818-9923` (already processed) |
+| Idempotency Check | DUPLICATE DETECTED |
+| **Decision** | **REJECTED — 409 Conflict** |
+
+**Response:**
+```json
+{
+  "status": 409,
+  "error": "DUPLICATE_FNOL_REFERENCE",
+  "message": "FNOL reference FNOL-20260818-9923 was already processed on 2026-08-18T16:45:00Z.",
+  "existingClaimId": "CLM-2026-00847",
+  "action": "No new claim or reserve created. Original claim unchanged."
+}
+```
+
+**Demo trigger:** Submit the same payload twice in sequence using `demo-scenarios/scenario_5_duplicate.sh`.
+
+---
+
+### Demo Scenario Summary
+
+| # | Scenario | Key Signal | Decision |
+|---|---|---|---|
+| 1 | Clean STP | Confidence 91%, all pass | ✅ STRAIGHT_THROUGH_PROCESSING |
+| 2 | Low AI Confidence | Confidence 62% | ⚠️ HUMAN_REVIEW |
+| 3 | Compliance Block | PII redaction fail | 🛑 HARD_BLOCK → HUMAN_REVIEW |
+| 4 | API Timeout | PolicyCenter timeout | ⏱️ HUMAN_REVIEW |
+| 5 | Duplicate Event | Same FNOL ref | 🔁 409 REJECTED |
+
+---
+
 ## 🗄️ Database Schema
 
 ### Tables
@@ -543,6 +845,9 @@ This project is built to mirror how real Guidewire Cloud integrations are develo
 | Zero Gosu core modifications | 100% REST API surface — no internal GW code touched |
 | Flyway-style migrations | Flyway SQL scripts in Spring Boot module |
 | Validation Framework | `fnol-guardrails` module — multi-tier guard chain before any financial action |
+| Claim 360 Context | `fnol-enrichment` module mirrors GW's Claim 360 pre-enrichment pattern |
+| Decision Explainability | Structured `ExplanationObject` on every decision — satisfies GW audit requirements |
+| Idempotency | Duplicate FNOL detection via reference key — mirrors GW's event deduplication model |
 
 ---
 
@@ -559,11 +864,14 @@ This project is built to mirror how real Guidewire Cloud integrations are develo
 │
 ├── fnol-common/                     ← Shared DTOs & enums
 ├── fnol-mock-guidewire/             ← Mock ClaimCenter + PolicyCenter
+├── fnol-enrichment/                 ← Claim History Context Enricher
 ├── fnol-agents/                     ← AI agent implementations
 ├── fnol-guardrails/                 ← AI Guardrail Layer (5-guard chain)
 ├── fnol-orchestrator/               ← Async fan-out + gate
 ├── fnol-api/                        ← Main Spring Boot app
 ├── fnol-frontend/                   ← React + Vite app
+│
+└── demo-scenarios/                  ← Pre-built demo payloads (5 scenarios)
 │
 └── docs/
     ├── PRD.md                       ← Full Product Requirement Document
