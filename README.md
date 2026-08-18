@@ -8,11 +8,12 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![Guidewire](https://img.shields.io/badge/Guidewire-Cloud_Platform-FF6600?style=for-the-badge&logo=data:image/svg+xml;base64,&logoColor=white)
+![Guardrails](https://img.shields.io/badge/AI_Guardrails-Enabled-8B0000?style=for-the-badge&logo=shield&logoColor=white)
 
 **A dual-branch asynchronous AI engine for Property & Casualty insurance FNOL processing**  
 *Built for Guidewire DEV-Summit | Java + Spring WebFlux + LangChain4j*
 
-[Architecture](#-architecture) • [Tech Stack](#-tech-stack) • [Getting Started](#-getting-started) • [API Reference](#-api-reference)
+[Architecture](#-architecture) • [Tech Stack](#-tech-stack) • [Getting Started](#-getting-started) • [API Reference](#-api-reference) • [Guardrails](#-ai-guardrails)
 
 </div>
 
@@ -42,6 +43,7 @@ OURS:    FNOL → ┬── Branch A: Operational  ──┬── Reconciliatio
 | 🔁 **Subrogation Discovery** | LLM-scored third-party liability assessment |
 | 📋 **Regulatory Audit Trail** | SHA-256 hashed, immutable, NAIC Model Audit Rule compliant |
 | 🚦 **Reconciliation Safety Gate** | Auto STP execution or human adjuster escalation with pre-compiled legal notes |
+| 🔒 **AI Guardrail Layer** | Multi-tier validation wall between LLM outputs and financial actions — blocks hallucinated, out-of-bounds, or non-compliant agent results |
 
 ---
 
@@ -78,6 +80,24 @@ OURS:    FNOL → ┬── Branch A: Operational  ──┬── Reconciliatio
    └──────────┬─────────────┘      │ AuditTrailAgent           │
               │                    └───────────────┬───────────┘
               └──────────────┬─────────────────────┘
+                             │
+              ┌──────────────▼───────────────────┐
+              │       AI GUARDRAIL LAYER          │
+              │  ┌─────────────────────────────┐  │
+              │  │ OutputSchemaGuard           │  │
+              │  │ ConfidenceThresholdGuard    │  │
+              │  │ BusinessRuleGuard           │  │
+              │  │ ComplianceGuard             │  │
+              │  │ FraudPatternGuard           │  │
+              │  └─────────────────────────────┘  │
+              │  PASS ──────────────── BLOCK       │
+              └──────┬──────────────────┬──────────┘
+                     │                  │
+                     │           ┌──────▼──────────┐
+                     │           │  GUARDRAIL FAIL  │
+                     │           │  → Force Escalate│
+                     │           │  → Log Violation │
+                     │           └──────────────────┘
                              ▼
               ┌──────────────────────────────┐
               │    RECONCILIATION GATE       │
@@ -110,6 +130,7 @@ fnol-engine/
 ├── fnol-common/                     ← Shared DTOs, Enums, Constants
 ├── fnol-mock-guidewire/             ← WireMock: ClaimCenter + PolicyCenter APIs
 ├── fnol-agents/                     ← AI Agent implementations (LangChain4j)
+├── fnol-guardrails/                 ← AI Guardrail Layer (validation wall)
 ├── fnol-orchestrator/               ← Async fan-out + Reconciliation Gate
 ├── fnol-api/                        ← Spring Boot REST API (main app)
 └── fnol-frontend/                   ← React + Vite (Jutro Portal simulation)
@@ -355,6 +376,112 @@ curl -X POST http://localhost:8080/api/v1/fnol/intake \
 
 ---
 
+## 🔒 AI Guardrails
+
+The **Guardrail Layer** is a dedicated validation wall that sits between all agent outputs and any downstream financial or legal action. Every agent result — from either Branch A or Branch B — must pass all applicable guardrails before reaching the Reconciliation Gate. A single guardrail failure **forces escalation** and **logs a violation** to the audit trail, regardless of other results.
+
+> This design ensures no hallucinated, out-of-bounds, or non-compliant LLM output can ever trigger an automated financial transaction.
+
+### Guardrail Types
+
+#### 1. `OutputSchemaGuard`
+Enforces that every agent returns a response conforming to its declared JSON schema.
+- If `VisionDamageAgent` returns prose instead of structured JSON → **BLOCK**
+- Implemented via JSON Schema validation (Jackson + `jsonschema-validator`)
+
+```
+Agent Output → JSON Schema Validator → PASS / BLOCK
+```
+
+#### 2. `ConfidenceThresholdGuard`
+Rejects agent outputs where the confidence score falls below acceptable thresholds.
+
+| Agent | Min Confidence | Action on Failure |
+|---|---|---|
+| `VisionDamageAgent` | 0.70 | Block STP, flag for adjuster review |
+| `SubrogationScorerAgent` | 0.65 | Downgrade to MONITOR, notify legal |
+| `PiiRedactionAgent` | 0.90 | Hard block — claim cannot proceed |
+
+#### 3. `BusinessRuleGuard`
+Enforces hard financial and operational limits that override any AI decision.
+
+| Rule | Condition | Action |
+|---|---|---|
+| Reserve Cap | `initialReserveUsd > $50,000` | Force escalation — never auto-STP |
+| Severity Ceiling | `severityScore >= 9.0` | Flag as catastrophic loss — SIU referral |
+| Negative Reserve | `initialReserveUsd <= 0` | Hard block — agent error |
+| Coverage Mismatch | `lossType ∉ applicableCoverages[]` | Immediate denial pipeline |
+
+#### 4. `ComplianceGuard`
+Prevents any claim data from proceeding if mandatory compliance checks have not passed.
+
+- If `PiiRedactionAgent` failed on any mandatory field → **Hard block**
+- If `StatutoryDeadlineAgent` returned `urgencyFlag = CRITICAL` → **Force human review**
+- If redaction manifest is missing or incomplete → **Block + alert**
+
+#### 5. `FraudPatternGuard`
+Detects combinations of signals that statistically indicate potential fraud before STP executes.
+
+| Pattern | Signal Combination | Action |
+|---|---|---|
+| Low Confidence + High Reserve | `confidence < 0.55` AND `reserve > $15,000` | SIU referral |
+| Repeat Claimant | Same policy + loss type within 90 days | Flag + manual review |
+| Velocity Anomaly | > 3 claims from same policy in 6 months | SIU referral |
+
+### Guardrail Execution Flow
+
+```
+Branch A Result ─────┐
+                      ├──► GuardrailChain.evaluate()
+ Branch B Result ────┘         │
+                          ┌────┴─────────────────────┐
+                          │  OutputSchemaGuard        │
+                          │  ConfidenceThresholdGuard │
+                          │  BusinessRuleGuard        │
+                          │  ComplianceGuard          │
+                          │  FraudPatternGuard        │
+                          └────┬─────────────────────┘
+                    ALL PASS   │   ANY FAIL
+                  ─────────────┴──────────────
+                  │                           │
+                  ▼                           ▼
+        Reconciliation Gate         Force Escalation
+        (STP eligible path)         + Violation logged
+                                    + Guardrail reason
+                                      code in audit trail
+```
+
+### Guardrail Violation — Audit Record Example
+
+```json
+{
+  "auditId": "grd-8821-ffab",
+  "claimId": "CLM-2026-00847",
+  "agentId": "VISION_DAMAGE_AGENT",
+  "guardrailTriggered": "ConfidenceThresholdGuard",
+  "violationReason": "Confidence 0.48 below minimum threshold 0.70",
+  "actionTaken": "FORCE_ESCALATION",
+  "stpBlocked": true,
+  "timestamp": "2026-08-18T16:45:22Z"
+}
+```
+
+### Maven Module: `fnol-guardrails`
+
+```
+fnol-guardrails/
+└── src/main/java/com/guidewire/fnol/guardrails/
+    ├── GuardrailChain.java            ← Executes all guards in sequence
+    ├── GuardrailResult.java           ← PASS | BLOCK + reason codes
+    ├── OutputSchemaGuard.java
+    ├── ConfidenceThresholdGuard.java
+    ├── BusinessRuleGuard.java
+    ├── ComplianceGuard.java
+    └── FraudPatternGuard.java
+```
+
+---
+
 ## 🚦 Reconciliation Gate — STP Decision Logic
 
 ```
@@ -415,6 +542,7 @@ This project is built to mirror how real Guidewire Cloud integrations are develo
 | Jutro Digital Portal | React + Vite simulating Jutro component patterns |
 | Zero Gosu core modifications | 100% REST API surface — no internal GW code touched |
 | Flyway-style migrations | Flyway SQL scripts in Spring Boot module |
+| Validation Framework | `fnol-guardrails` module — multi-tier guard chain before any financial action |
 
 ---
 
@@ -432,6 +560,7 @@ This project is built to mirror how real Guidewire Cloud integrations are develo
 ├── fnol-common/                     ← Shared DTOs & enums
 ├── fnol-mock-guidewire/             ← Mock ClaimCenter + PolicyCenter
 ├── fnol-agents/                     ← AI agent implementations
+├── fnol-guardrails/                 ← AI Guardrail Layer (5-guard chain)
 ├── fnol-orchestrator/               ← Async fan-out + gate
 ├── fnol-api/                        ← Main Spring Boot app
 ├── fnol-frontend/                   ← React + Vite app
