@@ -1,0 +1,10 @@
+package com.guidewire.fnol.agents;
+import com.guidewire.fnol.common.Models.*;import com.guidewire.fnol.enrichment.*;import org.junit.jupiter.api.*;import java.math.*;import java.time.*;import java.util.*;import static org.assertj.core.api.Assertions.*;
+class AgentTests {
+  FNOLPayload payload(){ return new FNOLPayload("POL-AUTO-112233",LocalDate.of(2026,8,16),"CA","Rear-ended by other driver. Police report filed. Avery Johnson SSN 123-45-6789 DOB 01/02/1980.","Avery Johnson","01/02/1980","123-45-6789",List.of()); }
+  @Test void reserveUsesBigDecimalFactor(){ var r=new ReserveCalculatorAgent().execute(new DamageAssessment("FRONT_BUMPER","MODERATE",new BigDecimal("4200"),new BigDecimal("0.91"))); assertThat(r.recommendedReserve()).isEqualByComparingTo("4830"); }
+  @Test void piiIsRedactedDeterministically(){ var r=new PiiRedactionAgent().execute(payload()); assertThat(r.detectedTypes()).contains("SSN","DOB","FULL_NAME"); assertThat(r.redactedDescription()).doesNotContain("123-45-6789","Avery Johnson"); }
+  @Test void deadlineUsesSyntheticRule(){ var r=new StatutoryDeadlineAgent(new SyntheticDeadlineRuleProvider()).execute(payload()); assertThat(r.deadline()).isEqualTo(LocalDate.of(2026,9,15)); assertThat(r.ruleSource()).isEqualTo("MOCK_RULE"); }
+  @Test void subrogationExplainsFactors(){ var r=new SubrogationScorerAgent(new DeterministicSubrogationScorer()).execute(payload(),new DamageAssessment("FRONT_BUMPER","MODERATE",new BigDecimal("4200"),new BigDecimal("0.91"))); assertThat(r.score()).isEqualTo(78); assertThat(r.recommendedAction()).isEqualTo("INVESTIGATE"); }
+  @Test void policyValidationCallsClient(){ PolicyCenterClient pc=new PolicyCenterClient(){ public Policy getPolicy(String n){return new Policy(n,"AUTO","ACTIVE",LocalDate.of(2026,1,1),LocalDate.of(2027,1,1),"Synthetic","CA","Car",List.of());} public List<Coverage> getCoverages(String n){return List.of(new Coverage("COLLISION",new BigDecimal("50000"),new BigDecimal("1000")));} public List<ClaimHistory> getPolicyHistory(String n){return List.of();}}; var r=new PolicyValidatorAgent(pc).execute("POL-AUTO-112233"); assertThat(r.covered()).isTrue(); }
+}

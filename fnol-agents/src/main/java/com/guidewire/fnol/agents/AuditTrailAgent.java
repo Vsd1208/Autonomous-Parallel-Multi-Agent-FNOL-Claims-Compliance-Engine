@@ -1,0 +1,3 @@
+package com.guidewire.fnol.agents;
+import com.guidewire.fnol.common.Models.*;import org.springframework.stereotype.*;import java.nio.charset.*;import java.security.*;import java.time.*;import java.util.*;
+@Component public class AuditTrailAgent { public AuditRecord record(String claimId,String agentName,Object input,Object output,String status){ return new AuditRecord(UUID.randomUUID().toString(),claimId,agentName,Instant.now(),hash(input),hash(output),status);} private static String hash(Object o){ try{var md=MessageDigest.getInstance("SHA-256"); return HexFormat.of().formatHex(md.digest(String.valueOf(o).getBytes(StandardCharsets.UTF_8)));}catch(Exception e){throw new IllegalStateException(e);} } }

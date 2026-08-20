@@ -1,0 +1,5 @@
+package com.guidewire.fnol.agents;
+import com.guidewire.fnol.common.Models.*;import org.springframework.stereotype.*;import java.util.*;
+interface SubrogationScorer{ SubrogationResult score(FNOLPayload payload, DamageAssessment damage); }
+@Component class DeterministicSubrogationScorer implements SubrogationScorer{ public SubrogationResult score(FNOLPayload p,DamageAssessment d){ Map<String,Integer> f=new LinkedHashMap<>(); String t=p.description().toLowerCase(); f.put("thirdPartyMention",t.contains("other driver")||t.contains("rear-ended")?35:10); f.put("policeReportSignal",t.contains("police")?20:5); f.put("damageSeverity",d.severity().equals("MODERATE")?23:10); int score=f.values().stream().mapToInt(Integer::intValue).sum(); return new SubrogationResult(Math.min(100,score),score>=70?"INVESTIGATE":"MONITOR",f);}}
+@Component public class SubrogationScorerAgent { private final SubrogationScorer s; public SubrogationScorerAgent(SubrogationScorer s){this.s=s;} public SubrogationResult execute(FNOLPayload p, DamageAssessment d){return s.score(p,d);} }
