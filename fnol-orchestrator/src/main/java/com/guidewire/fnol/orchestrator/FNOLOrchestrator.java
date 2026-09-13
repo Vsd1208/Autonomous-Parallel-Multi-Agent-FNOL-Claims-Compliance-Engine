@@ -46,6 +46,9 @@ public class FNOLOrchestrator {
     private final ClaimCenterClient cc;
     private final ExecutorService executor;
     private final long timeoutSeconds;
+    private final ClaimHistoryEnricher historyEnricher;
+    private final ExplanationBuilder explanationBuilder;
+
 
     public FNOLOrchestrator(
             InputGuardrail input,
@@ -60,7 +63,9 @@ public class FNOLOrchestrator {
             SubrogationScorerAgent subro,
             AuditTrailAgent audit,
             ClaimCenterClient cc,
-            @Value("${fnol.orchestrator.timeout-seconds:10}") long timeoutSeconds
+            @Value("${fnol.orchestrator.timeout-seconds:10}") long timeoutSeconds,
+            ClaimHistoryEnricher historyEnricher,
+            ExplanationBuilder explanationBuilder
     ) {
         this.input = input;
         this.output = output;
@@ -75,6 +80,8 @@ public class FNOLOrchestrator {
         this.audit = audit;
         this.cc = cc;
         this.timeoutSeconds = timeoutSeconds;
+        this.historyEnricher = historyEnricher;
+        this.explanationBuilder = explanationBuilder;
         this.executor = Executors.newFixedThreadPool(2, r -> {
             Thread t = new Thread(r);
             t.setDaemon(true);
@@ -94,6 +101,10 @@ public class FNOLOrchestrator {
     public FNOLResponse process(FNOLPayload payload) {
         // ── Pre-flight: Input validation ──
         input.validate(payload);
+
+        // ── STEP 1: Enrich with claim history (NEW - Part 2) ──
+        log.info("Enriching history for policy {}", payload.policyNumber());
+        PolicyHistoryContext policyContext = historyEnricher.enrich(payload.policyNumber());
 
         log.info("Starting parallel FNOL processing for policy {}", payload.policyNumber());
         long startTime = System.currentTimeMillis();
@@ -118,7 +129,7 @@ public class FNOLOrchestrator {
             futureB.cancel(true);
             throw new ProcessingTimeoutException(
                     "FNOL processing timed out after " + timeoutSeconds + " seconds. " +
-                    "Claim escalated for manual review.", e
+                            "Claim escalated for manual review.", e
             );
         } catch (ExecutionException e) {
             // Unwrap the real cause (e.g., guardrail failure, external call failure)
@@ -155,6 +166,16 @@ public class FNOLOrchestrator {
                 audit.record(created.claimId(), "ComplianceAgents", branchB.pii(), branchB.subrogation(), "SUCCESS")
         );
 
+        // ── STEP 2: Build structured explanation (NEW - Part 2) ──
+        ExplanationObject explanation = explanationBuilder.build(
+                branchA.coverage(),
+                branchA.damageAssessment(),
+                branchA.reserve(),
+                branchB.pii(),
+                branchB.subrogation(),
+                policyContext
+        );
+
         // ── Assemble final response ──
         BranchBResult branchBWithAudit = new BranchBResult(
                 branchB.pii(), branchB.deadline(), branchB.subrogation(), records
@@ -165,6 +186,8 @@ public class FNOLOrchestrator {
                 created.status(),
                 branchA,
                 branchBWithAudit,
+                policyContext,  // ← NEW: Add PolicyHistoryContext
+                explanation,    // ← NEW: Add ExplanationObject (replaces List<String>)
                 List.of(
                         "AI-assisted decision support only; human claim handlers retain final decision authority.",
                         "Coverage recommendation is based on Mock PolicyCenter contracts and synthetic Sprint 2 rules.",

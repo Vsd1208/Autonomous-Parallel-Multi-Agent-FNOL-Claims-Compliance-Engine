@@ -90,7 +90,14 @@ class FNOLControllerTest {
                 .andExpect(jsonPath("$.branchB.deadline.state").value("CA"))
                 .andExpect(jsonPath("$.branchB.subrogation.score").isNumber())
                 .andExpect(jsonPath("$.branchB.audit").isArray())
-                .andExpect(jsonPath("$.explanation").isArray());
+                .andExpect(jsonPath("$.explanation").exists())
+                .andExpect(jsonPath("$.explanation.decision").exists())
+                .andExpect(jsonPath("$.explanation.summary").exists())
+                .andExpect(jsonPath("$.explanation.factors").isArray())
+                .andExpect(jsonPath("$.explanation.factors.length()").value(6))
+                .andExpect(jsonPath("$.explanation.recommendedAction").exists())
+                .andExpect(jsonPath("$.policyContext").exists())
+                .andExpect(jsonPath("$.policyContext.claimFrequencyRisk").exists());
 
         // Check claim status retrieval
         mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000001"))

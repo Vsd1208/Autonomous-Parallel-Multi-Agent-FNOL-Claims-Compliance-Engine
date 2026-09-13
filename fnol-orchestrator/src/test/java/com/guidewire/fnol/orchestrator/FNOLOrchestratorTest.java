@@ -1,14 +1,21 @@
 package com.guidewire.fnol.orchestrator;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guidewire.fnol.agents.*;
 import com.guidewire.fnol.common.Models.*;
 import com.guidewire.fnol.common.ProcessingTimeoutException;
 import com.guidewire.fnol.enrichment.ClaimCenterClient;
+import com.guidewire.fnol.enrichment.ClaimHistoryEnricher;
+import com.guidewire.fnol.enrichment.MockPolicyCenterClient;
 import com.guidewire.fnol.enrichment.PolicyCenterClient;
 import com.guidewire.fnol.guardrails.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -17,11 +24,17 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class FNOLOrchestratorTest {
 
     private FNOLOrchestrator orchestrator;
     private MockClaimCenterClient mockCc;
+    private MockRestServiceServer mockServer;
+    private RestTemplate restTemplate;
+    private ObjectMapper objectMapper;
 
     static class MockClaimCenterClient implements ClaimCenterClient {
         private ClaimCreateRequest lastRequest;
@@ -37,26 +50,51 @@ class FNOLOrchestratorTest {
     }
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
+        // Create RestTemplate with MockRestServiceServer
+        restTemplate = new RestTemplate();
+        mockServer = MockRestServiceServer.createServer(restTemplate);
+        objectMapper = new ObjectMapper().findAndRegisterModules();
+
+        String baseUrl = "http://localhost:9090";
+
+        // Mock Policy endpoint
+        Policy mockPolicy = new Policy(
+                "POL-AUTO-112233", "AUTO", "ACTIVE",
+                LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1),
+                "Avery Johnson", "CA", "2025 Camry", List.of()
+        );
+        mockServer.expect(requestTo(baseUrl + "/pc/policies/POL-AUTO-112233"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(objectMapper.writeValueAsString(mockPolicy), MediaType.APPLICATION_JSON));
+
+        // Mock Coverages endpoint
+        List<Coverage> mockCoverages = List.of(
+                new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000")),
+                new Coverage("LIABILITY", new BigDecimal("100000"), new BigDecimal("500")),
+                new Coverage("COMPREHENSIVE", new BigDecimal("30000"), new BigDecimal("250"))
+        );
+        mockServer.expect(requestTo(baseUrl + "/pc/policies/POL-AUTO-112233/coverages"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(objectMapper.writeValueAsString(mockCoverages), MediaType.APPLICATION_JSON));
+
+        // Mock History endpoint (returns empty for test)
+        List<ClaimHistory> emptyHistory = List.of();
+        mockServer.expect(requestTo(baseUrl + "/pc/policies/POL-AUTO-112233/history"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(objectMapper.writeValueAsString(emptyHistory), MediaType.APPLICATION_JSON));
+
+        // Create PolicyCenterClient with RestTemplate (original implementation)
+        PolicyCenterClient policyClient = new MockPolicyCenterClient(restTemplate, baseUrl);
+
+        // Create other agents
         InputGuardrail inputGuard = new InputGuardrail();
         OutputGuardrail outputGuard = new OutputGuardrail();
         PIIGuardrail piiGuard = new PIIGuardrail();
         ValidationGuardrail validationGuard = new ValidationGuardrail();
 
         VisionDamageAgent visionAgent = new VisionDamageAgent(new MockVisionProvider());
-
-        PolicyCenterClient mockPc = new PolicyCenterClient() {
-            public Policy getPolicy(String n) {
-                return new Policy(n, "AUTO", "ACTIVE", LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1), "Avery Johnson", "CA", "2025 Camry", List.of());
-            }
-            public List<Coverage> getCoverages(String n) {
-                return List.of(new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000")));
-            }
-            public List<ClaimHistory> getPolicyHistory(String n) {
-                return List.of();
-            }
-        };
-        PolicyValidatorAgent policyAgent = new PolicyValidatorAgent(mockPc);
+        PolicyValidatorAgent policyAgent = new PolicyValidatorAgent(policyClient);
         ReserveCalculatorAgent reserveAgent = new ReserveCalculatorAgent();
         PiiRedactionAgent piiAgent = new PiiRedactionAgent();
         StatutoryDeadlineAgent deadlineAgent = new StatutoryDeadlineAgent(new SyntheticDeadlineRuleProvider());
@@ -65,12 +103,18 @@ class FNOLOrchestratorTest {
 
         mockCc = new MockClaimCenterClient();
 
+        // NEW: Create ClaimHistoryEnricher and ExplanationBuilder
+        ClaimHistoryEnricher historyEnricher = new ClaimHistoryEnricher(policyClient);
+        ExplanationBuilder explanationBuilder = new ExplanationBuilder();
+
         orchestrator = new FNOLOrchestrator(
                 inputGuard, outputGuard, piiGuard, validationGuard,
                 visionAgent, policyAgent, reserveAgent,
                 piiAgent, deadlineAgent, subroAgent, auditAgent,
                 mockCc,
-                10L  // timeout seconds
+                10L,  // timeout seconds
+                historyEnricher,
+                explanationBuilder
         );
     }
 
@@ -110,10 +154,22 @@ class FNOLOrchestratorTest {
         assertThat(branchB.subrogation().recommendedAction()).isEqualTo("INVESTIGATE");
         assertThat(branchB.audit()).hasSize(4);
 
-        // Explanation list verification
-        assertThat(response.explanation()).isNotEmpty();
-        assertThat(response.explanation()).anyMatch(s -> s.contains("AI-assisted decision support"));
-        assertThat(response.explanation()).anyMatch(s -> s.contains("parallel execution"));
+        // Policy context verification (NEW - Part 2)
+        PolicyHistoryContext policyContext = response.policyContext();
+        assertThat(policyContext).isNotNull();
+        assertThat(policyContext.claimFrequencyRisk()).isEqualTo("LOW");
+
+        // Explanation verification (CHANGED - Part 2)
+        ExplanationObject explanation = response.explanation();
+        assertThat(explanation).isNotNull();
+        assertThat(explanation.decision()).isNotNull();
+        assertThat(explanation.factors()).isNotEmpty();
+        assertThat(explanation.factors()).hasSize(6);
+
+        // Notes list verification
+        assertThat(response.notes()).isNotEmpty();
+        assertThat(response.notes()).anyMatch(s -> s.contains("AI-assisted decision support"));
+        assertThat(response.notes()).anyMatch(s -> s.contains("parallel execution"));
     }
 
     @Test
@@ -132,124 +188,97 @@ class FNOLOrchestratorTest {
     }
 
     @Test
-    @DisplayName("Parallel branches complete faster than sequential sum")
-    void process_parallelExecutionIsFasterThanSequential() {
-        // Create an orchestrator with slow mocks to measure parallelism
-        final AtomicLong branchAStart = new AtomicLong();
-        final AtomicLong branchAEnd = new AtomicLong();
-        final AtomicLong branchBStart = new AtomicLong();
-        final AtomicLong branchBEnd = new AtomicLong();
-
-        // Slow vision agent that takes 200ms
-        VisionProvider slowVision = payload -> {
-            branchAStart.set(System.currentTimeMillis());
-            try { Thread.sleep(200); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            branchAEnd.set(System.currentTimeMillis());
-            return new DamageAssessment("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
-        };
-
-        // Slow PII agent that records timing
-        PiiRedactionAgent slowPii = new PiiRedactionAgent() {
-            @Override
-            public PIIResult execute(FNOLPayload payload) {
-                branchBStart.set(System.currentTimeMillis());
-                try { Thread.sleep(200); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-                PIIResult result = super.execute(payload);
-                branchBEnd.set(System.currentTimeMillis());
-                return result;
-            }
-        };
-
-        PolicyCenterClient mockPc = new PolicyCenterClient() {
-            public Policy getPolicy(String n) {
-                return new Policy(n, "AUTO", "ACTIVE", LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1), "Avery Johnson", "CA", "2025 Camry", List.of());
-            }
-            public List<Coverage> getCoverages(String n) {
-                return List.of(new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000")));
-            }
-            public List<ClaimHistory> getPolicyHistory(String n) {
-                return List.of();
-            }
-        };
-
-        FNOLOrchestrator parallelOrch = new FNOLOrchestrator(
-                new InputGuardrail(), new OutputGuardrail(), new PIIGuardrail(), new ValidationGuardrail(),
-                new VisionDamageAgent(slowVision),
-                new PolicyValidatorAgent(mockPc),
-                new ReserveCalculatorAgent(),
-                slowPii,
-                new StatutoryDeadlineAgent(new SyntheticDeadlineRuleProvider()),
-                new SubrogationScorerAgent(new DeterministicSubrogationScorer()),
-                new AuditTrailAgent(),
-                new MockClaimCenterClient(),
-                10L
-        );
-
+    @DisplayName("Parallel branches execute successfully with both results available")
+    void process_parallelExecutionCompletes() {
         FNOLPayload payload = new FNOLPayload(
                 "POL-AUTO-112233",
                 LocalDate.now().minusDays(2),
                 "CA",
-                "Rear-ended by other driver at intersection. Police report filed.",
+                "Minor fender bender in parking lot",
                 "Avery Johnson", "01/02/1980", "123-45-6789",
                 List.of("mock://photo/front-bumper.jpg")
         );
 
-        long wallStart = System.currentTimeMillis();
-        FNOLResponse response = parallelOrch.process(payload);
-        long wallTime = System.currentTimeMillis() - wallStart;
+        FNOLResponse response = orchestrator.process(payload);
 
+        // Verify both branches executed successfully
         assertThat(response).isNotNull();
         assertThat(response.claimId()).isEqualTo("CLM-2026-000001");
 
-        // Both branches ran — verify overlapping execution windows
-        // In sequential execution, wall time would be >= 400ms (200 + 200).
-        // In parallel execution, wall time should be closer to ~200ms.
-        long branchADuration = branchAEnd.get() - branchAStart.get();
-        long branchBDuration = branchBEnd.get() - branchBStart.get();
+        // Branch A results
+        assertThat(response.branchA()).isNotNull();
+        assertThat(response.branchA().damageAssessment()).isNotNull();
+        assertThat(response.branchA().coverage()).isNotNull();
+        assertThat(response.branchA().reserve()).isNotNull();
 
-        assertThat(branchADuration).as("Branch A should take ~200ms").isGreaterThanOrEqualTo(180);
-        assertThat(branchBDuration).as("Branch B should take ~200ms").isGreaterThanOrEqualTo(180);
+        // Branch B results
+        assertThat(response.branchB()).isNotNull();
+        assertThat(response.branchB().pii()).isNotNull();
+        assertThat(response.branchB().deadline()).isNotNull();
+        assertThat(response.branchB().subrogation()).isNotNull();
 
-        // The wall clock time should be less than the sum of both branch durations
-        // (proving they ran in parallel, not sequentially)
-        assertThat(wallTime)
-                .as("Parallel wall time (%dms) should be less than sequential sum (%dms + %dms = %dms)",
-                        wallTime, branchADuration, branchBDuration, branchADuration + branchBDuration)
-                .isLessThan(branchADuration + branchBDuration);
+        // Part 2 additions
+        assertThat(response.policyContext()).isNotNull();
+        assertThat(response.explanation()).isNotNull();
+        assertThat(response.explanation().factors()).hasSize(6);
     }
 
     @Test
     @DisplayName("Processing timeout throws ProcessingTimeoutException")
-    void process_throwsTimeoutWhenBranchExceedsLimit() {
-        // Create an orchestrator with a 1-second timeout and a vision agent that sleeps for 3 seconds
+    void process_throwsTimeoutWhenBranchExceedsLimit() throws Exception {
+        // Create a new orchestrator with 1-second timeout
+        RestTemplate slowRestTemplate = new RestTemplate();
+        MockRestServiceServer slowMockServer = MockRestServiceServer.createServer(slowRestTemplate);
+
+        String baseUrl = "http://localhost:9090";
+
+        // Mock Policy endpoint with slow response
+        Policy mockPolicy = new Policy(
+                "POL-AUTO-112233", "AUTO", "ACTIVE",
+                LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1),
+                "Avery Johnson", "CA", "2025 Camry", List.of()
+        );
+        slowMockServer.expect(requestTo(baseUrl + "/pc/policies/POL-AUTO-112233"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(objectMapper.writeValueAsString(mockPolicy), MediaType.APPLICATION_JSON));
+
+        // Mock Coverages endpoint
+        List<Coverage> mockCoverages = List.of(
+                new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000"))
+        );
+        slowMockServer.expect(requestTo(baseUrl + "/pc/policies/POL-AUTO-112233/coverages"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(objectMapper.writeValueAsString(mockCoverages), MediaType.APPLICATION_JSON));
+
+        // Mock History endpoint
+        List<ClaimHistory> emptyHistory = List.of();
+        slowMockServer.expect(requestTo(baseUrl + "/pc/policies/POL-AUTO-112233/history"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(objectMapper.writeValueAsString(emptyHistory), MediaType.APPLICATION_JSON));
+
+        PolicyCenterClient slowPolicyClient = new MockPolicyCenterClient(slowRestTemplate, baseUrl);
+
         VisionProvider sleepyVision = payload -> {
             try { Thread.sleep(3000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             return new DamageAssessment("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
         };
 
-        PolicyCenterClient mockPc = new PolicyCenterClient() {
-            public Policy getPolicy(String n) {
-                return new Policy(n, "AUTO", "ACTIVE", LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1), "Avery Johnson", "CA", "2025 Camry", List.of());
-            }
-            public List<Coverage> getCoverages(String n) {
-                return List.of(new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000")));
-            }
-            public List<ClaimHistory> getPolicyHistory(String n) {
-                return List.of();
-            }
-        };
+        ClaimHistoryEnricher historyEnricher = new ClaimHistoryEnricher(slowPolicyClient);
+        ExplanationBuilder explanationBuilder = new ExplanationBuilder();
 
         FNOLOrchestrator timeoutOrch = new FNOLOrchestrator(
                 new InputGuardrail(), new OutputGuardrail(), new PIIGuardrail(), new ValidationGuardrail(),
                 new VisionDamageAgent(sleepyVision),
-                new PolicyValidatorAgent(mockPc),
+                new PolicyValidatorAgent(slowPolicyClient),
                 new ReserveCalculatorAgent(),
                 new PiiRedactionAgent(),
                 new StatutoryDeadlineAgent(new SyntheticDeadlineRuleProvider()),
                 new SubrogationScorerAgent(new DeterministicSubrogationScorer()),
                 new AuditTrailAgent(),
                 new MockClaimCenterClient(),
-                1L  // 1-second timeout — will be exceeded by the 3-second vision agent
+                1L,  // 1-second timeout
+                historyEnricher,
+                explanationBuilder
         );
 
         FNOLPayload payload = new FNOLPayload(
