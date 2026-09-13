@@ -147,6 +147,11 @@ class AgentTests {
             public List<ClaimHistory> getPolicyHistory(String n) {
                 return List.of();
             }
+
+            @Override
+            public List<ClaimHistory> getPolicyClaimHistory(String policyNumber) {
+                return List.of();
+            }
         };
 
         PolicyValidatorAgent agent = new PolicyValidatorAgent(mockPc);
@@ -172,6 +177,11 @@ class AgentTests {
                 return List.of(new Coverage("COMPREHENSIVE", new BigDecimal("40000"), new BigDecimal("500")));
             }
             public List<ClaimHistory> getPolicyHistory(String n) {
+                return List.of();
+            }
+
+            @Override
+            public List<ClaimHistory> getPolicyClaimHistory(String policyNumber) {
                 return List.of();
             }
         };
