@@ -4,6 +4,7 @@ import com.guidewire.fnol.agents.*;
 import com.guidewire.fnol.common.Models.*;
 import com.guidewire.fnol.common.ProcessingTimeoutException;
 import com.guidewire.fnol.enrichment.ClaimCenterClient;
+import com.guidewire.fnol.enrichment.ClaimHistoryEnricher;
 import com.guidewire.fnol.enrichment.PolicyCenterClient;
 import com.guidewire.fnol.guardrails.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +56,11 @@ class FNOLOrchestratorTest {
             public List<ClaimHistory> getPolicyHistory(String n) {
                 return List.of();
             }
+
+            @Override
+            public List<ClaimHistory> getPolicyClaimHistory(String policyNumber) {
+                return List.of();
+            }
         };
         PolicyValidatorAgent policyAgent = new PolicyValidatorAgent(mockPc);
         ReserveCalculatorAgent reserveAgent = new ReserveCalculatorAgent();
@@ -65,12 +71,18 @@ class FNOLOrchestratorTest {
 
         mockCc = new MockClaimCenterClient();
 
+        ClaimHistoryEnricher historyEnricher = new ClaimHistoryEnricher(mockPc);
+        ExplanationBuilder explanationBuilder = new ExplanationBuilder();
+
+
         orchestrator = new FNOLOrchestrator(
                 inputGuard, outputGuard, piiGuard, validationGuard,
                 visionAgent, policyAgent, reserveAgent,
                 piiAgent, deadlineAgent, subroAgent, auditAgent,
                 mockCc,
-                10L  // timeout seconds
+                10L,
+                historyEnricher,
+                explanationBuilder
         );
     }
 
@@ -110,10 +122,20 @@ class FNOLOrchestratorTest {
         assertThat(branchB.subrogation().recommendedAction()).isEqualTo("INVESTIGATE");
         assertThat(branchB.audit()).hasSize(4);
 
+        PolicyHistoryContext policyContext = response.policyContext();
+        assertThat(policyContext).isNotNull();
+        assertThat(policyContext.claimFrequencyRisk()).isEqualTo("LOW");
+
+        ExplanationObject explanation = response.explanation();
+        assertThat(explanation).isNotNull();
+        assertThat(explanation.decision()).isNotNull();
+        assertThat(explanation.factors()).isNotEmpty();
+        assertThat(explanation.factors()).hasSize(6);
+
         // Explanation list verification
-        assertThat(response.explanation()).isNotEmpty();
-        assertThat(response.explanation()).anyMatch(s -> s.contains("AI-assisted decision support"));
-        assertThat(response.explanation()).anyMatch(s -> s.contains("parallel execution"));
+        assertThat(response.notes()).isNotEmpty();
+        assertThat(response.notes()).anyMatch(s -> s.contains("AI-assisted decision support"));
+        assertThat(response.notes()).anyMatch(s -> s.contains("parallel execution"));
     }
 
     @Test
@@ -143,7 +165,7 @@ class FNOLOrchestratorTest {
         // Slow vision agent that takes 200ms
         VisionProvider slowVision = payload -> {
             branchAStart.set(System.currentTimeMillis());
-            try { Thread.sleep(200); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            try { Thread.sleep(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             branchAEnd.set(System.currentTimeMillis());
             return new DamageAssessment("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
         };
@@ -153,7 +175,7 @@ class FNOLOrchestratorTest {
             @Override
             public PIIResult execute(FNOLPayload payload) {
                 branchBStart.set(System.currentTimeMillis());
-                try { Thread.sleep(200); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                try { Thread.sleep(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                 PIIResult result = super.execute(payload);
                 branchBEnd.set(System.currentTimeMillis());
                 return result;
@@ -170,7 +192,15 @@ class FNOLOrchestratorTest {
             public List<ClaimHistory> getPolicyHistory(String n) {
                 return List.of();
             }
+
+            @Override
+            public List<ClaimHistory> getPolicyClaimHistory(String policyNumber) {
+                return List.of();
+            }
         };
+
+        ClaimHistoryEnricher historyEnricher = new ClaimHistoryEnricher(mockPc);
+        ExplanationBuilder explanationBuilder = new ExplanationBuilder();
 
         FNOLOrchestrator parallelOrch = new FNOLOrchestrator(
                 new InputGuardrail(), new OutputGuardrail(), new PIIGuardrail(), new ValidationGuardrail(),
@@ -182,7 +212,9 @@ class FNOLOrchestratorTest {
                 new SubrogationScorerAgent(new DeterministicSubrogationScorer()),
                 new AuditTrailAgent(),
                 new MockClaimCenterClient(),
-                10L
+                10L,
+                historyEnricher,
+                explanationBuilder
         );
 
         FNOLPayload payload = new FNOLPayload(
@@ -237,7 +269,14 @@ class FNOLOrchestratorTest {
             public List<ClaimHistory> getPolicyHistory(String n) {
                 return List.of();
             }
+            @Override
+            public List<ClaimHistory> getPolicyClaimHistory(String policyNumber) {
+                return List.of();
+            }
         };
+
+        ClaimHistoryEnricher historyEnricher = new ClaimHistoryEnricher(mockPc);
+        ExplanationBuilder explanationBuilder = new ExplanationBuilder();
 
         FNOLOrchestrator timeoutOrch = new FNOLOrchestrator(
                 new InputGuardrail(), new OutputGuardrail(), new PIIGuardrail(), new ValidationGuardrail(),
@@ -249,7 +288,9 @@ class FNOLOrchestratorTest {
                 new SubrogationScorerAgent(new DeterministicSubrogationScorer()),
                 new AuditTrailAgent(),
                 new MockClaimCenterClient(),
-                1L  // 1-second timeout — will be exceeded by the 3-second vision agent
+                1L,  // 1-second timeout — will be exceeded by the 3-second vision agent
+                historyEnricher,
+                explanationBuilder
         );
 
         FNOLPayload payload = new FNOLPayload(

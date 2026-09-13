@@ -125,4 +125,48 @@ public class ClaimHistoryEnricherTest {
                 )
         );
     }
+
+    /**
+     * Test 5: Verify open claims are counted
+     */
+    @Test
+    public void testOpenClaimsAreCountedCorrectly() {
+        String policyNumber = "POL-AUTO-005";
+
+        List<ClaimHistory> history = List.of(
+                new ClaimHistory("CLM-001", LocalDate.now().minusDays(10), "OPEN", new BigDecimal("5000"), "Collision"),
+                new ClaimHistory("CLM-002", LocalDate.now().minusDays(30), "CLOSED", new BigDecimal("2000"), "Theft"),
+                new ClaimHistory("CLM-003", LocalDate.now().minusDays(60), "OPEN", new BigDecimal("3000"), "Collision")
+        );
+        when(policyClient.getPolicyClaimHistory(policyNumber))
+                .thenReturn(history);
+
+        PolicyHistoryContext result = enricher.enrich(policyNumber);
+
+        assertEquals(2, result.openClaimsCount());
+        assertEquals(3, result.totalPriorClaims());
+    }
+
+    /**
+     * Test 6: Verify most recent claim details are captured
+     */
+    @Test
+    public void testMostRecentClaimDetailsAreCaptured() {
+        String policyNumber = "POL-AUTO-006";
+
+        LocalDate recentDate = LocalDate.now().minusDays(10);
+
+        List<ClaimHistory> history = List.of(
+                new ClaimHistory("CLM-001", recentDate, "OPEN", new BigDecimal("5000"), "Collision"),
+                new ClaimHistory("CLM-002", LocalDate.now().minusDays(200), "CLOSED", new BigDecimal("2000"), "Theft")
+        );
+        when(policyClient.getPolicyClaimHistory(policyNumber))
+                .thenReturn(history);
+
+        PolicyHistoryContext result = enricher.enrich(policyNumber);
+
+        assertEquals(recentDate, result.lastClaimDate());
+        assertEquals("OPEN", result.lastClaimType());
+        assertEquals(new BigDecimal("5000"), result.lastClaimAmount());
+    }
 }
