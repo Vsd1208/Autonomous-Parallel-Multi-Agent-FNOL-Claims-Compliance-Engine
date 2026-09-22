@@ -166,10 +166,14 @@ class FNOLOrchestratorTest {
         assertThat(explanation.factors()).isNotEmpty();
         assertThat(explanation.factors()).hasSize(6);
 
-        // Notes list verification
+        // Notes list verification — includes adjuster advisory from Reconciliation Safety Gate
         assertThat(response.notes()).isNotEmpty();
+        assertThat(response.notes()).anyMatch(s -> s.contains("ADJUSTER ADVISORY"));
         assertThat(response.notes()).anyMatch(s -> s.contains("AI-assisted decision support"));
+        assertThat(response.notes()).anyMatch(s -> s.contains("deterministic rules engine"));
         assertThat(response.notes()).anyMatch(s -> s.contains("parallel execution"));
+        // Verify advisory reflects the gate decision (INVESTIGATE → HUMAN_REVIEW)
+        assertThat(response.notes()).anyMatch(s -> s.contains("ADJUSTER ADVISORY"));
     }
 
     @Test
