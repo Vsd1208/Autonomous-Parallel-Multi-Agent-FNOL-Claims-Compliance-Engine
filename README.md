@@ -20,22 +20,22 @@
 
 P&C insurers struggle with **slow claim settlement** because loss damage evaluation and legal/privacy compliance are processed **sequentially**, creating manual delays and regulatory risks. While AI tools exist, carriers hesitate to adopt them due to **unredacted PII exposure**, **unverified coverage logic**, and the **high financial risks of autonomous payouts**.
 
-This project resolves the bottleneck by introducing an **Asynchronous Dual-Branch Agentic Copilot on Guidewire Cloud**, strictly scoped to low-severity claims (e.g., auto glass and minor collision). Upon FNOL intake, **Branch A (Operational AI)** analyzes loss photos to extract damage severity, passing structured parameters to Guidewire's deterministic rules engine for coverage verification. Simultaneously, **Branch B (Legal AI)** redacts PII, logs statutory deadlines, and scores subrogation potential. Both branches merge at a **Reconciliation Safety Gate** that drafts a fully pre-populated claim file and an advisory recommendation for instant human adjuster review in Guidewire ClaimCenter — **reducing FNOL cycle times by over 80% while maintaining 100% human-in-the-loop governance**.
+This project resolves the bottleneck by introducing an **Asynchronous Dual-Branch Agentic Copilot on Guidewire Cloud**, strictly scoped to low-severity claims (e.g., auto glass and minor collision). Upon FNOL intake, **Branch A (Operational AI)** analyzes loss photos to extract damage severity, passing structured parameters to Guidewire's deterministic rules engine for coverage verification. Simultaneously, **Branch B (Legal AI)** redacts PII, logs statutory deadlines, and scores subrogation potential. Both branches merge at a **Reconciliation Safety Gate** that drafts a fully pre-populated claim file and an advisory recommendation for instant human adjuster review in Guidewire ClaimCenter — **significantly reducing FNOL cycle times while maintaining 100% human-in-the-loop governance**.
 
 ---
 
 ## Key Metrics
 
-| Metric | Legacy Process | This Platform |
+| Dimension | Legacy Process | This Platform |
 |---|---|---|
-| **FNOL Cycle Time** | 3 – 7 days | < 15 seconds |
-| **Human Touch Points** | 5 – 8 manual steps | 1 (final adjuster review) |
-| **PII Exposure Risk** | High (manual handling) | Zero (pre-persistence redaction) |
-| **Coverage Verification** | Manual policy lookup | Deterministic rules engine |
-| **Audit Completeness** | Partial, ad-hoc | 100% SHA-256 hashed, NAIC-compliant |
-| **Duplicate Claim Risk** | Manual deduplication | Idempotency key enforcement |
-| **Regulatory Deadline Tracking** | Spreadsheet-based | Automated per-state statutory engine |
-| **Governance Model** | Autonomous or fully manual | 100% human-in-the-loop |
+| **FNOL Cycle Time** | Multi-day manual process | Automated, near-real-time pipeline |
+| **Human Touch Points** | Multiple manual steps per claim | Single final adjuster review |
+| **PII Exposure Risk** | High — manual data handling | Eliminated — pre-persistence redaction |
+| **Coverage Verification** | Manual policy lookup | Guidewire's deterministic rules engine |
+| **Audit Completeness** | Partial, ad-hoc records | SHA-256 hashed, NAIC Model Audit Rule |
+| **Duplicate Claim Risk** | Manual deduplication | Enforced via idempotency key |
+| **Regulatory Deadline Tracking** | Spreadsheet-based, error-prone | Automated per-state statutory engine |
+| **Governance Model** | Fully autonomous or fully manual | 100% human-in-the-loop |
 
 ---
 
@@ -151,7 +151,7 @@ This project resolves the bottleneck by introducing an **Asynchronous Dual-Branc
 | **Reconciliation Safety Gate** | Merges both branches, applies guardrails, and either auto-files via STP or escalates with a pre-populated advisory note |
 | **Decision Explainability (WHY panel)** | Every decision surfaces structured `ExplanationObject` — pass/fail per factor, not just a verdict |
 | **AI Guardrail Layer** | Multi-tier validation wall between agent outputs and financial actions — blocks hallucinated, out-of-bounds, or non-compliant results |
-| **Configurable Timeout Escalation** | If either branch exceeds the configured timeout (default 10s), claim auto-escalates to human review — no silent failure |
+| **Timeout-Safe Escalation** | If either branch exceeds the configurable processing timeout, the claim automatically escalates to human review — no silent failures |
 | **Idempotency Enforcement** | Duplicate FNOL submissions (same policy + date + state) are detected and rejected with HTTP 409 |
 | **Immutable Audit Trail** | SHA-256 hashed per-agent records — input hash, output hash, timestamp, agent name — fully NAIC compliant |
 
@@ -300,7 +300,7 @@ HTTP 200 OK
     "Coverage recommendation is based on PolicyCenter contracts and deterministic rules.",
     "Reserve equals estimated visual damage multiplied by 1.15 ULAE factor.",
     "Subrogation score is deterministic and explained by contributing factors.",
-    "Processing time: 231ms (parallel execution)"
+    "Processing time: measured (async dual-branch parallel execution)"
   ]
 }
 ```
@@ -406,7 +406,7 @@ fnol-guardrails          12      ✅  0 failures
 fnol-orchestrator         4      ✅  0 failures  ← incl. parallel timing proof + timeout test
 fnol-api                  4      ✅  0 failures  ← Spring Boot + H2 integration
 ─────────────────────────────────────────
-Total                    38      BUILD SUCCESS · 30.8s
+Total                    38      BUILD SUCCESS
 ```
 
 ---
