@@ -25,7 +25,17 @@ public final class Models {
   public record AuditRecord(String eventId, String claimId, String agentName, Instant timestamp, String inputHash, String outputHash, String status) {}
   public record BranchAResult(DamageAssessment damageAssessment, PolicyValidationResult coverage, ReserveResult reserve) {}
   public record BranchBResult(PIIResult pii, DeadlineResult deadline, SubrogationResult subrogation, List<AuditRecord> audit) {}
-  public record FNOLResponse(String claimId, String status, BranchAResult branchA, BranchBResult branchB, PolicyHistoryContext policyContext, ExplanationObject explanation, List<String> notes) {}
+  public record FNOLResponse(
+          String claimId,
+          String status,
+          BranchAResult branchA,
+          BranchBResult branchB,
+          PolicyHistoryContext policyContext,
+          ExplanationObject explanation,
+          String severityGate,
+          Boolean eligibleForAdvisoryPrefill,
+          List<String> notes
+  ) {}
   public record ApiError(Instant timestamp, int status, String error, String message, String path) {}
   public record ClaimCreateRequest(String policyNumber, LocalDate incidentDate, String state, BigDecimal estimatedDamage, BigDecimal reserve) {}
   public record ClaimCreateResponse(String claimId, String status) {}
@@ -52,6 +62,7 @@ public final class Models {
             String decision,
             String summary,
             List<ExplanationFactor> factors,
-            String recommendedAction
+            String recommendedAction,
+            String severityGate
     ) {}
 }

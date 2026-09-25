@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import com.guidewire.fnol.orchestrator.ClaimTypeValidator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,6 +36,7 @@ class FNOLOrchestratorTest {
     private MockRestServiceServer mockServer;
     private RestTemplate restTemplate;
     private ObjectMapper objectMapper;
+    private ClaimTypeValidator claimTypeValidator;
 
     static class MockClaimCenterClient implements ClaimCenterClient {
         private ClaimCreateRequest lastRequest;
@@ -103,9 +105,9 @@ class FNOLOrchestratorTest {
 
         mockCc = new MockClaimCenterClient();
 
-        // NEW: Create ClaimHistoryEnricher and ExplanationBuilder
         ClaimHistoryEnricher historyEnricher = new ClaimHistoryEnricher(policyClient);
         ExplanationBuilder explanationBuilder = new ExplanationBuilder();
+        ClaimTypeValidator claimTypeValidator = new ClaimTypeValidator();
 
         orchestrator = new FNOLOrchestrator(
                 inputGuard, outputGuard, piiGuard, validationGuard,
@@ -114,7 +116,8 @@ class FNOLOrchestratorTest {
                 mockCc,
                 10L,  // timeout seconds
                 historyEnricher,
-                explanationBuilder
+                explanationBuilder,
+                claimTypeValidator
         );
     }
 
@@ -168,12 +171,15 @@ class FNOLOrchestratorTest {
 
         // Notes list verification — includes adjuster advisory from Reconciliation Safety Gate
         assertThat(response.notes()).isNotEmpty();
-        assertThat(response.notes()).anyMatch(s -> s.contains("ADJUSTER ADVISORY"));
-        assertThat(response.notes()).anyMatch(s -> s.contains("AI-assisted decision support"));
-        assertThat(response.notes()).anyMatch(s -> s.contains("deterministic rules engine"));
-        assertThat(response.notes()).anyMatch(s -> s.contains("parallel execution"));
-        // Verify advisory reflects the gate decision (INVESTIGATE → HUMAN_REVIEW)
-        assertThat(response.notes()).anyMatch(s -> s.contains("ADJUSTER ADVISORY"));
+        assertThat(response.notes()).anyMatch(s -> s.contains("ADVISORY copilot only"));
+        // Check severityGate and eligibility
+        assertThat(response.severityGate()).isNotNull();
+        assertThat(response.eligibleForAdvisoryPrefill()).isNotNull();
+
+        // Check notes mention advisory nature
+        assertThat(response.notes()).anyMatch(s -> s.contains("ADVISORY"));
+        assertThat(response.notes()).anyMatch(s -> s.contains("human"));
+        assertThat(response.notes()).anyMatch(s -> s.contains("final authority"));
     }
 
     @Test
@@ -269,6 +275,7 @@ class FNOLOrchestratorTest {
 
         ClaimHistoryEnricher historyEnricher = new ClaimHistoryEnricher(slowPolicyClient);
         ExplanationBuilder explanationBuilder = new ExplanationBuilder();
+        ClaimTypeValidator timeoutValidator = new ClaimTypeValidator();
 
         FNOLOrchestrator timeoutOrch = new FNOLOrchestrator(
                 new InputGuardrail(), new OutputGuardrail(), new PIIGuardrail(), new ValidationGuardrail(),
@@ -282,7 +289,8 @@ class FNOLOrchestratorTest {
                 new MockClaimCenterClient(),
                 1L,  // 1-second timeout
                 historyEnricher,
-                explanationBuilder
+                explanationBuilder,
+                timeoutValidator
         );
 
         FNOLPayload payload = new FNOLPayload(

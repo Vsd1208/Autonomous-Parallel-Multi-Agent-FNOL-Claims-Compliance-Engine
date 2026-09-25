@@ -66,6 +66,7 @@ public class FNOLOrchestrator {
     private final ClaimCenterClient cc;
     private final ClaimHistoryEnricher historyEnricher;
     private final ExplanationBuilder explanationBuilder;
+    private final ClaimTypeValidator claimTypeValidator;
 
     private final ExecutorService executor;
     private final long timeoutSeconds;
@@ -85,7 +86,8 @@ public class FNOLOrchestrator {
             ClaimCenterClient cc,
             @Value("${fnol.orchestrator.timeout-seconds:10}") long timeoutSeconds,
             ClaimHistoryEnricher historyEnricher,
-            ExplanationBuilder explanationBuilder
+            ExplanationBuilder explanationBuilder,
+            ClaimTypeValidator claimTypeValidator
     ) {
         this.input = input;
         this.output = output;
@@ -102,6 +104,7 @@ public class FNOLOrchestrator {
         this.timeoutSeconds = timeoutSeconds;
         this.historyEnricher = historyEnricher;
         this.explanationBuilder = explanationBuilder;
+        this.claimTypeValidator = claimTypeValidator;
         this.executor = Executors.newFixedThreadPool(2, r -> {
             Thread t = new Thread(r);
             t.setDaemon(true);
@@ -252,6 +255,11 @@ public class FNOLOrchestrator {
                 policyContext
         );
 
+        boolean eligibleForAdvisoryPrefill = claimTypeValidator.isEligibleForAdvisoryPrefill(
+                branchA.damageAssessment(),
+                policyContext
+        );
+
         // Gate Step 3: Draft pre-populated claim file and file to Guidewire ClaimCenter
         ClaimCreateResponse created = cc.createClaim(new ClaimCreateRequest(
                 payload.policyNumber(),
@@ -293,12 +301,13 @@ public class FNOLOrchestrator {
                 branchBWithAudit,
                 policyContext,
                 explanation,
+                explanation.severityGate(),
+                eligibleForAdvisoryPrefill,
                 List.of(
-                        "ADJUSTER ADVISORY: " + adjusterAdvisory,
-                        "AI-assisted decision support only; human claim handlers retain final decision authority.",
-                        "Coverage verified by Guidewire's deterministic rules engine — not by AI inference.",
-                        "Reserve = estimated visual damage × 1.15 ULAE factor (BigDecimal precision).",
-                        "Subrogation score is deterministic and explained by contributing keyword factors.",
+                        "AI-assisted ADVISORY copilot only; human claim handlers retain final authority.",
+                        "Pre-population recommended for LOW-severity eligible claim types only.",
+                        "Coverage verified by Guidewire PolicyCenter deterministic rules engine.",
+                        "Subrogation score is deterministic and explained by contributing factors.",
                         "Processing time: " + elapsedMs + "ms (async dual-branch parallel execution)"
                 )
         );
