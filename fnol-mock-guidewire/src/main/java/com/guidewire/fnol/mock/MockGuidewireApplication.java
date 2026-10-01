@@ -18,7 +18,10 @@ class PolicyCenterController {
 @RestController
 class ClaimCenterController {
   private final AtomicInteger sequence = new AtomicInteger(1); private final Map<String, Claim> claims = new ConcurrentHashMap<>();
-  @PostMapping("/cc/claims") ClaimCreateResponse create(@RequestBody ClaimCreateRequest request){
+  @PostMapping("/cc/claims") ClaimCreateResponse create(@RequestBody ClaimCreateRequest request) throws InterruptedException {
+    if ("true".equalsIgnoreCase(System.getenv("MOCK_GW_TIMEOUT"))) {
+        Thread.sleep(11000);
+    }
     String id = "CLM-2026-%06d".formatted(sequence.getAndIncrement());
     claims.put(id, new Claim(id,"OPEN",request.policyNumber(),request.incidentDate(),request.state(),request.estimatedDamage(),request.reserve()));
     return new ClaimCreateResponse(id,"OPEN");
