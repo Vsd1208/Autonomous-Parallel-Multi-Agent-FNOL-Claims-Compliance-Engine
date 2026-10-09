@@ -1,3 +1,4 @@
+
 package com.guidewire.fnol.orchestrator;
 
 import com.guidewire.fnol.common.Models.*;
@@ -23,7 +24,50 @@ public class ExplanationBuilderTest {
     public void setup() {
         builder = new ExplanationBuilder();
     }
-    
+    /**
+     * Test 1: All factors PASS → STRAIGHT_THROUGH decision
+     */
+    @Test
+    public void testAllFactorsPassResultsInStraightThrough() {
+        PolicyValidationResult coverage = new PolicyValidationResult(
+                "POL-001", true, true, true, true, "COLLISION",
+                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
+        );
+
+        DamageAssessment damage = new DamageAssessment(
+                "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
+        );
+
+        ReserveResult reserve = new ReserveResult(
+                new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
+        );
+
+        PIIResult pii = new PIIResult(
+                "Redacted text", List.of(), false, new BigDecimal("0.95")
+        );
+
+        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
+
+        PolicyHistoryContext history = new PolicyHistoryContext(
+                0, 0, 0, null, null, null, 0, "LOW"
+        );
+
+        ExplanationObject result = builder.build(
+                coverage, damage, reserve, pii, subrogation, history
+        );
+
+        assertEquals("STRAIGHT_THROUGH", result.decision());
+        assertEquals(
+                "All criteria met for automated straight-through processing",
+                result.summary()
+        );
+        assertEquals("APPROVE_AND_STP", result.recommendedAction());
+        assertEquals(6, result.factors().size());
+        assertTrue(
+                "All factors should PASS",
+                result.factors().stream().allMatch(f -> "PASS".equals(f.status()))
+        );
+    }
 
     /**
      * Test 2: Low confidence → HUMAN_REVIEW
@@ -43,13 +87,19 @@ public class ExplanationBuilderTest {
                 new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
+        PIIResult pii = new PIIResult(
+                "Redacted text", List.of(), false, new BigDecimal("0.95")
+        );
+
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
+
         PolicyHistoryContext history = new PolicyHistoryContext(
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
+        ExplanationObject result = builder.build(
+                coverage, damage, reserve, pii, subrogation, history
+        );
 
         assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
 
@@ -79,13 +129,19 @@ public class ExplanationBuilderTest {
                 new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
+        PIIResult pii = new PIIResult(
+                "Redacted text", List.of(), false, new BigDecimal("0.95")
+        );
+
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
+
         PolicyHistoryContext history = new PolicyHistoryContext(
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
+        ExplanationObject result = builder.build(
+                coverage, damage, reserve, pii, subrogation, history
+        );
 
         assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
 
@@ -115,14 +171,22 @@ public class ExplanationBuilderTest {
                 new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
         );
 
-        PIIResult pii = new PIIResult("Description with PII", List.of("SSN", "DOB"), true);
+        PIIResult pii = new PIIResult(
+                "Description with PII",
+                List.of("SSN", "DOB"),
+                true,
+                new BigDecimal("0.95")
+        );
 
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
+
         PolicyHistoryContext history = new PolicyHistoryContext(
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
+        ExplanationObject result = builder.build(
+                coverage, damage, reserve, pii, subrogation, history
+        );
 
         assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
 
@@ -152,13 +216,19 @@ public class ExplanationBuilderTest {
                 new BigDecimal("30000"), new BigDecimal("1.15"), new BigDecimal("34500")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
+        PIIResult pii = new PIIResult(
+                "Redacted text", List.of(), false, new BigDecimal("0.95")
+        );
+
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
+
         PolicyHistoryContext history = new PolicyHistoryContext(
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
+        ExplanationObject result = builder.build(
+                coverage, damage, reserve, pii, subrogation, history
+        );
 
         assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
         // Damage is $30k, so HIGH severity → always escalate
@@ -191,7 +261,10 @@ public class ExplanationBuilderTest {
                 new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
+        PIIResult pii = new PIIResult(
+                "Redacted text", List.of(), false, new BigDecimal("0.95")
+        );
+
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
 
         PolicyHistoryContext history = new PolicyHistoryContext(
@@ -199,7 +272,9 @@ public class ExplanationBuilderTest {
                 new BigDecimal("3500"), 0, "HIGH"
         );
 
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
+        ExplanationObject result = builder.build(
+                coverage, damage, reserve, pii, subrogation, history
+        );
 
         assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
 
@@ -229,14 +304,21 @@ public class ExplanationBuilderTest {
                 new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
-        SubrogationResult subrogation = new SubrogationResult(85, "INVESTIGATE", Map.of("thirdPartyMention", 50));
+        PIIResult pii = new PIIResult(
+                "Redacted text", List.of(), false, new BigDecimal("0.95")
+        );
+
+        SubrogationResult subrogation = new SubrogationResult(
+                85, "INVESTIGATE", Map.of("thirdPartyMention", 50)
+        );
 
         PolicyHistoryContext history = new PolicyHistoryContext(
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
+        ExplanationObject result = builder.build(
+                coverage, damage, reserve, pii, subrogation, history
+        );
 
         assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
         assertEquals("ESCALATE_TO_HUMAN", result.recommendedAction());
@@ -268,7 +350,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("2500"), new BigDecimal("1.15"), new BigDecimal("2875")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
+        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
         PolicyHistoryContext history = new PolicyHistoryContext(
                 0, 0, 0, null, null, null, 0, "LOW"
@@ -301,7 +383,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("2500"), new BigDecimal("1.15"), new BigDecimal("2875")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
+        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
         PolicyHistoryContext history = new PolicyHistoryContext(
                 0, 0, 0, null, null, null, 0, "LOW"
@@ -339,7 +421,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("12000"), new BigDecimal("1.15"), new BigDecimal("13800")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
+        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
         PolicyHistoryContext history = new PolicyHistoryContext(
                 0, 0, 0, null, null, null, 0, "LOW"
@@ -370,7 +452,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("35000"), new BigDecimal("1.15"), new BigDecimal("40250")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
+        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
         PolicyHistoryContext history = new PolicyHistoryContext(
                 0, 0, 0, null, null, null, 0, "LOW"
@@ -401,7 +483,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("2500"), new BigDecimal("1.15"), new BigDecimal("2875")
         );
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false);
+        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
         SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
         PolicyHistoryContext history = new PolicyHistoryContext(
                 5, 2, 3, LocalDate.now().minusDays(45), "COLLISION",
