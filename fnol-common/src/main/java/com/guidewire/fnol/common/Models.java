@@ -131,6 +131,8 @@ public final class Models {
             BranchBResult branchB,
             PolicyHistoryContext policyContext,
             ExplanationObject explanation,
+            String severityGate,
+            Boolean eligibleForAdvisoryPrefill,
             List<String> notes
     ) {}
 
@@ -177,6 +179,7 @@ public final class Models {
             String decision,
             String summary,
             List<ExplanationFactor> factors,
-            String recommendedAction
+            String recommendedAction,
+            String severityGate
     ) {}
 }
