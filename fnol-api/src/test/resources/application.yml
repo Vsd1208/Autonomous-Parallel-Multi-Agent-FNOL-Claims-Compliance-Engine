@@ -5,6 +5,11 @@ mock-guidewire:
 fnol:
   orchestrator:
     timeout-seconds: 10
+# Disable Gemini Vision in tests — MockVisionProvider is used instead.
+# This keeps all 38 tests fast, offline, and API-key-free.
+gemini:
+  vision:
+    enabled: false
 spring:
   datasource:
     url: jdbc:h2:mem:fnol_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
