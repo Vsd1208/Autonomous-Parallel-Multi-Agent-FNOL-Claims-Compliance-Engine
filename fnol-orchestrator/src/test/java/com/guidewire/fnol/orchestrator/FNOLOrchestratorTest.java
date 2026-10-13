@@ -139,7 +139,7 @@ class FNOLOrchestratorTest {
 
         assertThat(response).isNotNull();
         assertThat(response.claimId()).isEqualTo("CLM-2026-000001");
-        assertThat(response.status()).isEqualTo("OPEN");
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
 
         // Branch A verification
         BranchAResult branchA = response.branchA();

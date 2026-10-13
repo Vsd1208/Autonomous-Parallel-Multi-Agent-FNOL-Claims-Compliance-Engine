@@ -296,7 +296,7 @@ public class FNOLOrchestrator {
 
         return new FNOLResponse(
                 created.claimId(),
-                created.status(),
+                isStp ? "STRAIGHT_THROUGH_PROCESSING" : "HUMAN_REVIEW",
                 branchA,
                 branchBWithAudit,
                 policyContext,

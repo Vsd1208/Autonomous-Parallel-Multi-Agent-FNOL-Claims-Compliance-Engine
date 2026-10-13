@@ -14,6 +14,10 @@ export default function AuditLog({ auditTrail, claimId: propClaimId }: AuditLogP
   const navigate = useNavigate();
   const claimId = propClaimId || paramClaimId || 'CLM-2026-000001';
   const [loading, setLoading] = useState(false);
+  const storedClaim = window.localStorage.getItem('fnol:lastClaim');
+  const storedAuditTrail: AuditEvent[] | undefined = storedClaim
+    ? JSON.parse(storedClaim).branchB?.audit
+    : undefined;
 
   const mockAuditTrail: AuditEvent[] = [
     {
@@ -60,7 +64,7 @@ export default function AuditLog({ auditTrail, claimId: propClaimId }: AuditLogP
     },
   ];
 
-  const trail = auditTrail || mockAuditTrail;
+  const trail = auditTrail || storedAuditTrail || mockAuditTrail;
 
   const handleExportPDF = async () => {
     setLoading(true);

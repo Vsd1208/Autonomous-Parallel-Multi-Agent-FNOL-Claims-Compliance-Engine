@@ -68,25 +68,23 @@ public class ExplanationBuilder {
                 subrogationPassed ? "PASS" : "FAIL",
                 "Subrogation score must be < 70"));
 
-        // Determine recommended action based on severity gate
+        // Determine recommended action based on severity gate and pass/fail factors.
         boolean allPassed = factors.stream().allMatch(f -> "PASS".equals(f.status()));
         String recommendedAction;
         String decision;
         String summary;
 
         if ("LOW".equals(severityGate)) {
-            // LOW severity: only prefill if all factors pass
             if (allPassed) {
-                decision = "ADVISORY_RECOMMENDED_ACTION";
-                recommendedAction = "PREFILL_LOW_SEVERITY_CLAIM";
-                summary = "All criteria met for advisory-guided pre-population of low-severity claim";
+                decision = "STRAIGHT_THROUGH";
+                recommendedAction = "APPROVE_AND_STP";
+                summary = "All criteria met for automated straight-through processing";
             } else {
                 decision = "ADVISORY_RECOMMENDED_ACTION";
                 recommendedAction = "ESCALATE_TO_HUMAN";
                 summary = "One or more criteria failed; escalate to human claim handler for review";
             }
         } else {
-            // MEDIUM/HIGH severity: always escalate
             decision = "ADVISORY_RECOMMENDED_ACTION";
             recommendedAction = "ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY";
             summary = "Claim severity is " + severityGate + "; escalate to human claim handler regardless of factors";

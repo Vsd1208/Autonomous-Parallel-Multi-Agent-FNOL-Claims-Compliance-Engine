@@ -3,6 +3,8 @@ export interface DamageAssessment {
   severity: string;
   estimatedDamage: number;
   confidence: number;
+  photoQuality?: string;
+  damageTypeProbabilities?: Record<string, number>;
 }
 
 export interface Coverage {
@@ -28,6 +30,7 @@ export interface PiiInfo {
   piiDetected: boolean;
   redactedDescription: string;
   detectedTypes: string[];
+  redactionConfidence?: number;
 }
 
 export interface Deadline {
@@ -40,11 +43,7 @@ export interface Deadline {
 export interface Subrogation {
   score: number;
   recommendedAction: string;
-  factors: {
-    thirdPartyMention: number;
-    policeReportSignal: number;
-    damageSeverity: number;
-  };
+  factors: Record<string, number>;
 }
 
 export interface AuditEvent {
@@ -62,12 +61,57 @@ export interface BranchBResult {
   audit: AuditEvent[];
 }
 
+export interface PolicyContext {
+  totalPriorClaims: number;
+  claimsLast6Months: number;
+  claimsLast12Months: number;
+  lastClaimDate: string | null;
+  lastClaimType: string | null;
+  lastClaimAmount: number | null;
+  openClaimsCount: number;
+  claimFrequencyRisk: string;
+}
+
+export interface ExplanationFactor {
+  factor: string;
+  value: string;
+  status: 'PASS' | 'FAIL' | string;
+  detail: string;
+}
+
+export interface ExplanationObject {
+  decision: string;
+  summary: string;
+  factors: ExplanationFactor[];
+  recommendedAction: string;
+  severityGate: string;
+}
+
 export interface ClaimResult {
   claimId: string;
   status: string;
   branchA: BranchAResult;
   branchB: BranchBResult;
-  explanation: string[];
+  policyContext?: PolicyContext;
+  explanation: ExplanationObject;
+  severityGate?: string;
+  eligibleForAdvisoryPrefill?: boolean;
+  notes: string[];
+}
+
+export interface AdjusterReviewRequest {
+  decision: 'APPROVED_BY_ADJUSTER' | 'REJECTED_BY_ADJUSTER' | 'NEEDS_MORE_INFO' | 'CLOSED';
+  adjusterId: string;
+  notes: string;
+}
+
+export interface AdjusterReviewResponse {
+  claimId: string;
+  status: string;
+  adjusterDecision: string;
+  adjusterId: string;
+  adjusterNotes: string;
+  reviewedAt: string;
 }
 
 export interface FormData {

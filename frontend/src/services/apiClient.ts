@@ -45,6 +45,30 @@ export const apiClient = {
     return response.json();
   },
 
+  submitAdjusterReview: async (
+    claimId: string,
+    payload: {
+      decision: 'APPROVED_BY_ADJUSTER' | 'REJECTED_BY_ADJUSTER' | 'NEEDS_MORE_INFO' | 'CLOSED';
+      adjusterId: string;
+      notes: string;
+    }
+  ) => {
+    const response = await fetch(`${API_BASE_URL}/api/v1/fnol/${claimId}/review`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  },
+
   // Check API health
   healthCheck: async () => {
     const response = await fetch(`${API_BASE_URL}/api/v1/health`, {

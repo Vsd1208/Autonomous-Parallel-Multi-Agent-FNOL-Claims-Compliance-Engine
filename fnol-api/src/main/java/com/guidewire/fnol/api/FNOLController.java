@@ -78,6 +78,45 @@ public class FNOLController {
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
+
+    @PostMapping("/fnol/{claimId}/review")
+    ResponseEntity<?> review(
+            @PathVariable("claimId") String claimId,
+            @Valid @RequestBody AdjusterReviewRequest request) {
+
+        return claims.findById(claimId)
+                .<ResponseEntity<?>>map(claim -> {
+                    String decision = request.decision().trim().toUpperCase(Locale.ROOT);
+                    Set<String> allowed = Set.of(
+                            "APPROVED_BY_ADJUSTER",
+                            "REJECTED_BY_ADJUSTER",
+                            "NEEDS_MORE_INFO",
+                            "CLOSED"
+                    );
+                    if (!allowed.contains(decision)) {
+                        throw new IllegalArgumentException(
+                                "Unsupported adjuster decision: " + request.decision());
+                    }
+
+                    claim.adjusterDecision = decision;
+                    claim.adjusterId = request.adjusterId();
+                    claim.adjusterNotes = request.notes();
+                    claim.reviewedAt = Instant.now();
+                    claim.updatedAt = claim.reviewedAt;
+                    claim.status = decision;
+                    claims.save(claim);
+
+                    return ResponseEntity.ok(new AdjusterReviewResponse(
+                            claim.claimId,
+                            claim.status,
+                            claim.adjusterDecision,
+                            claim.adjusterId,
+                            claim.adjusterNotes,
+                            claim.reviewedAt
+                    ));
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
 }
 
 class DuplicateFNOLException extends RuntimeException {

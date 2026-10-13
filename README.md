@@ -1,546 +1,627 @@
-<div align="center">
+# AI-Powered Human-Governed FNOL Claims Intelligence Engine
 
-# Asynchronous Dual-Branch Agentic FNOL Copilot
-### *on Guidewire Cloud Platform*
+An end-to-end First Notice of Loss (FNOL) claims intelligence platform for fast, explainable, and safe insurance claim handling. The system runs operational claim analysis and legal/compliance analysis in parallel, reconciles both branches through a safety gate, and gives a human adjuster a final review console with persistent decision states.
 
-[![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square&logo=github-actions)](https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine)
-[![Java](https://img.shields.io/badge/Java-17-ED8B00?style=flat-square&logo=openjdk)](https://openjdk.org/projects/jdk/17/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2-6DB33F?style=flat-square&logo=spring)](https://spring.io/projects/spring-boot)
-[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react)](https://react.dev/)
-[![Tests](https://img.shields.io/badge/tests-38%20passing-brightgreen?style=flat-square)](#test-coverage)
-[![Guidewire](https://img.shields.io/badge/Guidewire-Cloud%20Platform-1A7CBF?style=flat-square)](https://developer.guidewire.com/)
+## End-to-End Flow
 
-**Guidewire DEV-Summit 2026 — Team Submission**
+```text
+1. FNOL Intake
+   Claim report, policy data, claimant information, incident details, and evidence URIs.
 
-</div>
+2. Context Enrichment
+   Policy details, coverage, prior claim history, and claim frequency risk.
 
----
+3. Asynchronous Dual-Branch AI Analysis
+   Branch A: damage, coverage, reserve.
+   Branch B: PII redaction, statutory deadlines, subrogation.
+
+4. Reconciliation and Safety Checks
+   Guardrails, WHY factors, pass/fail scorecard, STP vs human-review routing.
+
+5. Human Review and Decision Support
+   Adjuster console, final decision buttons, decision notes, persisted review state.
+```
+
+## Current Implementation Status
+
+| Area | Implemented |
+|---|---|
+| FNOL intake API | Yes |
+| Input validation guardrails | Yes |
+| Context enrichment from mock PolicyCenter | Yes |
+| Async dual-branch processing with `CompletableFuture` | Yes |
+| Operational branch: vision damage, coverage, reserve | Yes |
+| Compliance branch: PII redaction, deadlines, subrogation | Yes |
+| Reconciliation safety gate | Yes |
+| Structured WHY panel | Yes |
+| STP vs human-review routing | Yes |
+| Adjuster review console | Yes |
+| Persistent final adjuster decisions | Yes |
+| Audit trail hashing | Yes |
+| Demo scenarios | Yes |
+| Docker Compose stack | Present, requires Docker Desktop running |
 
 ## Problem Statement
 
-P&C insurers struggle with **slow claim settlement** because loss damage evaluation and legal/privacy compliance are processed **sequentially**, creating manual delays and regulatory risks. While AI tools exist, carriers hesitate to adopt them due to **unredacted PII exposure**, **unverified coverage logic**, and the **high financial risks of autonomous payouts**.
+Insurance FNOL handling is often slow because damage assessment, coverage validation, compliance checks, and adjuster review happen in separate sequential steps. That creates delays, unclear decision rationale, and governance risk when AI is used without proper controls.
 
-This project resolves the bottleneck by introducing an **Asynchronous Dual-Branch Agentic Copilot on Guidewire Cloud**, strictly scoped to low-severity claims (e.g., auto glass and minor collision). Upon FNOL intake, **Branch A (Operational AI)** analyzes loss photos to extract damage severity, passing structured parameters to Guidewire's deterministic rules engine for coverage verification. Simultaneously, **Branch B (Legal AI)** redacts PII, logs statutory deadlines, and scores subrogation potential. Both branches merge at a **Reconciliation Safety Gate** that drafts a fully pre-populated claim file and an advisory recommendation for instant human adjuster review in Guidewire ClaimCenter — **significantly reducing FNOL cycle times while maintaining 100% human-in-the-loop governance**.
+This project addresses that by using a dual-branch claims intelligence engine:
 
----
+- The operational branch estimates damage and reserve exposure.
+- The compliance branch protects sensitive data and regulatory obligations.
+- A reconciliation safety gate combines the outputs.
+- A human adjuster gets final authority through a review console.
 
-## Key Metrics
+The result is faster claim triage without giving AI autonomous payout authority.
 
-| Dimension | Legacy Process | This Platform |
-|---|---|---|
-| **FNOL Cycle Time** | Multi-day manual process | Automated, near-real-time pipeline |
-| **Human Touch Points** | Multiple manual steps per claim | Single final adjuster review |
-| **PII Exposure Risk** | High — manual data handling | Eliminated — pre-persistence redaction |
-| **Coverage Verification** | Manual policy lookup | Guidewire's deterministic rules engine |
-| **Audit Completeness** | Partial, ad-hoc records | SHA-256 hashed, NAIC Model Audit Rule |
-| **Duplicate Claim Risk** | Manual deduplication | Enforced via idempotency key |
-| **Regulatory Deadline Tracking** | Spreadsheet-based, error-prone | Automated per-state statutory engine |
-| **Governance Model** | Fully autonomous or fully manual | 100% human-in-the-loop |
+## Architecture Overview
 
----
+```text
+Frontend React Console
+  |
+  | POST /api/v1/fnol/intake
+  v
+FNOL API
+  |
+  | validates request and enforces idempotency
+  v
+FNOL Orchestrator
+  |
+  | enriches policy and claim history context
+  v
+CompletableFuture fan-out
+  |
+  |-- Branch A: Operational Intelligence
+  |     - VisionDamageAgent
+  |     - PolicyValidatorAgent
+  |     - ReserveCalculatorAgent
+  |
+  |-- Branch B: Legal and Compliance Intelligence
+        - PiiRedactionAgent
+        - StatutoryDeadlineAgent
+        - SubrogationScorerAgent
 
-## System Architecture
-
-```
-╔══════════════════════════════════════════════════════════════════════════╗
-║         ASYNCHRONOUS DUAL-BRANCH AGENTIC FNOL COPILOT                   ║
-║                    Guidewire Cloud Platform                              ║
-╚══════════════════════════════════════════════════════════════════════════╝
-
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │                    JUTRO DIGITAL PORTAL  (React + Vite)             │
-  │        FNOL Intake Form · Photo Upload · Real-time Status           │
-  └───────────────────────────────┬─────────────────────────────────────┘
-                                  │  POST /api/v1/fnol/intake
-                                  ▼
-                  ┌───────────────────────────────┐
-                  │        INPUT GUARDRAIL         │
-                  │  Policy format · Date · State  │
-                  │  Description non-blank check   │
-                  └───────────────┬───────────────┘
-                                  │  (validated payload)
-                                  ▼
-                  ┌───────────────────────────────┐
-                  │       FNOL ORCHESTRATOR        │
-                  │   Spring Boot 3.2 + Maven      │
-                  └───────────────┬───────────────┘
-                                  │
-                    ┌─────────────▼──────────────┐
-                    │  CompletableFuture FAN-OUT  │
-                    └──────┬──────────────┬───────┘
-                           │              │
-            ┌──────────────▼──┐      ┌───▼───────────────────┐
-            │   BRANCH A      │      │   BRANCH B             │
-            │ Operational AI  │      │   Legal & Compliance   │
-            ├─────────────────┤      ├────────────────────────┤
-            │ VisionDamage    │      │ PiiRedaction           │
-            │  Agent          │      │  Agent                 │
-            │  · Photo → JSON │      │  · SSN / DOB masking   │
-            │  · Severity     │      │  · GDPR / CCPA safe    │
-            │  · Confidence   │      │  · Pre-persistence     │
-            ├─────────────────┤      ├────────────────────────┤
-            │ PolicyValidator │      │ StatutoryDeadline      │
-            │  Agent          │      │  Agent                 │
-            │  · PolicyCenter │      │  · State deadline map  │
-            │  · Coverage     │      │  · CA 30d / NY 35d     │
-            │  · Deterministic│      │  · Urgency scoring     │
-            │    rules engine │      ├────────────────────────┤
-            ├─────────────────┤      │ SubrogationScorer      │
-            │ ReserveCalc     │      │  Agent                 │
-            │  Agent          │      │  · Third-party signals │
-            │  · BigDecimal   │      │  · Score 0–100         │
-            │  · 1.15× ULAE   │      │  · INVESTIGATE flag    │
-            └────────┬────────┘      └──────────┬─────────────┘
-                     │                          │
-                     └──────────┬───────────────┘
-                                │  (both branches complete)
-                                ▼
-              ┌─────────────────────────────────────┐
-              │         AI GUARDRAIL LAYER           │
-              │  OutputGuardrail   PIIGuardrail      │
-              │  ValidationGuardrail  ComplianceGuard│
-              │  Blocks out-of-range / non-compliant │
-              │  agent outputs before any DB write   │
-              └─────────────────┬───────────────────┘
-                                │
-                                ▼
-              ┌─────────────────────────────────────┐
-              │     RECONCILIATION SAFETY GATE       │
-              │  · Merges A + B results              │
-              │  · Builds WHY explanation panel      │
-              │  · Routes: STP or Human Review       │
-              │  · Pre-populates ClaimCenter file    │
-              │  · Advisory note for adjuster        │
-              └──────────┬──────────────┬────────────┘
-                         │              │
-             ┌───────────▼──┐    ┌──────▼──────────────────┐
-             │ STRAIGHT-    │    │  HUMAN REVIEW            │
-             │ THROUGH (STP)│    │  Pre-populated claim +   │
-             │ Auto-filed   │    │  WHY panel surfaced to   │
-             │ in ClaimCenter│   │  adjuster in ClaimCenter │
-             └──────────────┘    └─────────────────────────┘
-                                │
-                                ▼
-              ┌─────────────────────────────────────┐
-              │         AUDIT TRAIL AGENT            │
-              │  SHA-256 input/output hashing        │
-              │  Immutable · NAIC Model Audit Rule   │
-              └─────────────────┬───────────────────┘
-                                │
-                                ▼
-              ┌─────────────────────────────────────┐
-              │    GUIDEWIRE INTEGRATION BOUNDARY    │
-              │  PolicyCenterClient (adapter)        │
-              │  ClaimCenterClient  (adapter)        │
-              │  — swappable for live GW in prod —   │
-              └─────────────────────────────────────┘
+Both branches join
+  |
+  v
+Reconciliation Safety Gate
+  |
+  |-- Output guardrails
+  |-- PII guardrails
+  |-- Coverage validation
+  |-- WHY factor generation
+  |-- STP or human-review routing
+  v
+Claim persistence + audit trail
+  |
+  v
+Adjuster Intelligence Console
+  |
+  | POST /api/v1/fnol/{claimId}/review
+  v
+Persisted final decision
 ```
 
----
+## Repository Structure
 
-## Core Capabilities
+```text
+.
+|-- pom.xml
+|-- docker-compose.yml
+|-- README.md
+|
+|-- fnol-common/
+|   Shared Java records, request/response models, and custom exceptions.
+|
+|-- fnol-mock-guidewire/
+|   Mock PolicyCenter and ClaimCenter services for local/demo use.
+|
+|-- fnol-enrichment/
+|   Guidewire adapter layer for policy, coverage, claim history, and claim filing.
+|
+|-- fnol-agents/
+|   AI and deterministic agents for damage, reserve, PII, deadlines, subrogation, and audit.
+|
+|-- fnol-guardrails/
+|   Input, output, PII, and coverage validation guardrails.
+|
+|-- fnol-orchestrator/
+|   The dual-branch `CompletableFuture` workflow and reconciliation safety gate.
+|
+|-- fnol-api/
+|   Spring Boot REST API, persistence entities, repositories, Flyway migrations, API tests.
+|
+|-- frontend/
+|   React + Vite adjuster console.
+|
+|-- demo-scenarios/
+|   Ready-to-run request payloads and duplicate-submission script.
+|
+`-- docs/
+    Supporting architecture, API, database, and Guidewire integration notes.
+```
 
-| Capability | Description |
+## Backend Modules
+
+### `fnol-common`
+
+Contains shared domain models:
+
+- `FNOLPayload`
+- `FNOLResponse`
+- `BranchAResult`
+- `BranchBResult`
+- `DamageAssessment`
+- `PolicyValidationResult`
+- `ReserveResult`
+- `PIIResult`
+- `DeadlineResult`
+- `SubrogationResult`
+- `ExplanationObject`
+- `AdjusterReviewRequest`
+- `AdjusterReviewResponse`
+
+These records define the contract between the orchestrator, API, tests, and frontend.
+
+### `fnol-mock-guidewire`
+
+Provides local mock services that stand in for Guidewire systems:
+
+- PolicyCenter-like policy lookup.
+- Policy coverages.
+- Prior claim history.
+- ClaimCenter-like claim creation and retrieval.
+
+This lets the project run locally without real Guidewire credentials.
+
+### `fnol-enrichment`
+
+Contains adapter interfaces and mock implementations:
+
+- `PolicyCenterClient`
+- `ClaimCenterClient`
+- `ClaimHistoryEnricher`
+
+The orchestrator depends on these abstractions, so real Guidewire integrations can replace the mock clients later.
+
+### `fnol-agents`
+
+Implements the claim intelligence agents:
+
+| Agent | Purpose |
 |---|---|
-| **Async Dual-Branch Execution** | Branch A and Branch B run concurrently via `CompletableFuture` — zero sequential blocking between operational and compliance processing |
-| **Vision-Based Damage Scoring** | Loss photos analyzed to produce structured damage JSON: type, severity, estimated cost, and AI confidence score |
-| **Deterministic Coverage Verification** | Guidewire's PolicyCenter rules engine — not AI — makes the final coverage call; AI only extracts structured inputs |
-| **Pre-Persistence PII Redaction** | SSN, DOB, and claimant names are regex-masked before any data reaches the database — GDPR Article 25 by design |
-| **Statutory Deadline Engine** | State-specific settlement deadline tracking: CA 30d, NY 35d, TX 15d, FL 20d, IL 30d with urgency flags |
-| **Subrogation Discovery** | Keyword-scored third-party liability assessment (0–100); surfaces `INVESTIGATE` signal to adjuster |
-| **Reconciliation Safety Gate** | Merges both branches, applies guardrails, and either auto-files via STP or escalates with a pre-populated advisory note |
-| **Decision Explainability (WHY panel)** | Every decision surfaces structured `ExplanationObject` — pass/fail per factor, not just a verdict |
-| **AI Guardrail Layer** | Multi-tier validation wall between agent outputs and financial actions — blocks hallucinated, out-of-bounds, or non-compliant results |
-| **Timeout-Safe Escalation** | If either branch exceeds the configurable processing timeout, the claim automatically escalates to human review — no silent failures |
-| **Idempotency Enforcement** | Duplicate FNOL submissions (same policy + date + state) are detected and rejected with HTTP 409 |
-| **Immutable Audit Trail** | SHA-256 hashed per-agent records — input hash, output hash, timestamp, agent name — fully NAIC compliant |
+| `VisionDamageAgent` | Converts evidence URIs into structured damage assessment. |
+| `PolicyValidatorAgent` | Checks active policy and relevant collision coverage. |
+| `ReserveCalculatorAgent` | Calculates reserve using deterministic monetary logic. |
+| `PiiRedactionAgent` | Masks SSN, DOB, claimant names, and MRN-like values. |
+| `StatutoryDeadlineAgent` | Calculates state-specific statutory deadlines. |
+| `SubrogationScorerAgent` | Scores third-party recovery potential. |
+| `AuditTrailAgent` | Creates SHA-256 input/output hash records per agent step. |
 
----
+The project supports a deterministic mock vision provider for local testing and a Gemini provider path for AI-backed image analysis.
 
-## Module Structure
+### `fnol-guardrails`
 
-```
-fnol-intelligence-platform/              ← Parent Maven POM (multi-module)
-│
-├── fnol-common/                         ← Shared Java records & exceptions
-│   └── Models.java                      ← FNOLPayload, BranchAResult, BranchBResult,
-│                                           FNOLResponse, ApiError, AuditRecord ...
-│
-├── fnol-mock-guidewire/                 ← Standalone mock Guidewire services (:9090)
-│   ├── PolicyCenterController           ← GET /policies/{id}, coverages, history
-│   └── ClaimCenterController            ← POST /claims, GET /claims/{id}
-│
-├── fnol-enrichment/                     ← Guidewire integration adapter layer
-│   ├── PolicyCenterClient (interface)   ← Swappable for live GW in production
-│   └── ClaimCenterClient  (interface)   ← Swappable for live GW in production
-│
-├── fnol-agents/                         ← All AI agent implementations
-│   ├── VisionDamageAgent                ← Photo → DamageAssessment (type, severity, confidence)
-│   ├── PolicyValidatorAgent             ← PolicyCenter → PolicyValidationResult
-│   ├── ReserveCalculatorAgent           ← BigDecimal: damage × 1.15 ULAE factor
-│   ├── PiiRedactionAgent                ← Regex SSN/DOB/Name masking
-│   ├── StatutoryDeadlineAgent           ← State-specific deadline rules
-│   ├── SubrogationScorerAgent           ← Third-party liability scoring (0–100)
-│   └── AuditTrailAgent                  ← SHA-256 per-agent event hashing
-│
-├── fnol-guardrails/                     ← Validation wall (4-guard chain)
-│   ├── InputGuardrail                   ← Policy format, state, date, description
-│   ├── OutputGuardrail                  ← Reserve ≥ 0, subrogation 0–100
-│   ├── PIIGuardrail                     ← Raw SSN pattern block post-redaction
-│   └── ValidationGuardrail              ← Policy must be COVERED to proceed
-│
-├── fnol-orchestrator/                   ← Parallel execution + Safety Gate
-│   └── FNOLOrchestrator.java            ← CompletableFuture fan-out, timeout,
-│                                           branch merge, ClaimCenter filing
-│
-├── fnol-api/                            ← Spring Boot REST API (main entrypoint)
-│   ├── FNOLController                   ← POST /intake, GET /status/{id}, GET /health
-│   ├── ApiExceptionHandler              ← Structured error responses (400/422/504/502)
-│   ├── ClaimEntity / AuditEntity        ← JPA persistence models
-│   └── db/migration/V1__init.sql        ← Flyway schema (claims + audit_trail)
-│
-└── frontend/                            ← React + Vite + TypeScript (Jutro-style)
-    ├── FNOL intake form
-    ├── Processing state view
-    ├── Claim Intelligence Dashboard (WHY panel, metrics, audit)
-    └── Error state handling
-```
+Enforces safety before persistence or final recommendation:
 
----
+- `InputGuardrail`: policy format, valid state, non-future incident date, non-blank description.
+- `OutputGuardrail`: reserve must not be negative; subrogation score must be between 0 and 100.
+- `PIIGuardrail`: redaction confidence threshold, no raw SSN, MRN compliance block.
+- `ValidationGuardrail`: claim cannot proceed if coverage is not valid.
 
-## REST API Reference
+### `fnol-orchestrator`
 
-| Method | Endpoint | Description | Auth |
-|---|---|---|---|
-| `GET` | `/api/v1/health` | Service liveness check | None |
-| `POST` | `/api/v1/fnol/intake` | Submit FNOL → dual-branch processing | None |
-| `GET` | `/api/v1/fnol/status/{claimId}` | Retrieve claim status + result | None |
-| `GET` | `/api/v1/policies/{policyNumber}` | Policy lookup (mock PolicyCenter) | None |
-| `GET` | `/api/v1/policies/{policyNumber}/coverages` | Coverage details | None |
-| `GET` | `/api/v1/policies/{policyNumber}/history` | Prior claim history | None |
+The core engine lives in `FNOLOrchestrator`.
 
-### FNOL Intake Request
+The orchestrator:
 
-```json
-POST /api/v1/fnol/intake
+1. Validates intake payload.
+2. Enriches policy history context.
+3. Starts two async branches using `CompletableFuture`.
+4. Waits for both branches with a configurable timeout.
+5. Applies safety checks.
+6. Builds a structured explanation object.
+7. Files/prepares the claim through the ClaimCenter adapter.
+8. Creates audit records.
+9. Routes the claim as STP or human review.
+
+The reconciliation decision comes from `ExplanationBuilder`.
+
+Possible routing outputs:
+
+- `STRAIGHT_THROUGH_PROCESSING`
+- `HUMAN_REVIEW`
+
+Possible recommended actions:
+
+- `APPROVE_AND_STP`
+- `ESCALATE_TO_HUMAN`
+- `ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY`
+
+### `fnol-api`
+
+Spring Boot REST API exposing:
+
+- Health check.
+- FNOL intake.
+- Claim status lookup.
+- Adjuster review persistence.
+- Error handling for validation, duplicate requests, compliance blocks, timeouts, and downstream failures.
+
+It also owns persistence:
+
+- `ClaimEntity`
+- `AuditEntity`
+- `ClaimRepository`
+- `AuditRepository`
+- Flyway schema migrations.
+
+## Frontend
+
+The frontend is a React + Vite adjuster intelligence console.
+
+It provides:
+
+- FNOL intake form.
+- Quick-load demo scenarios.
+- Five-stage end-to-end flow strip.
+- Claim dashboard.
+- Branch A operational results.
+- Branch B compliance results.
+- WHY panel with pass/fail factors.
+- Advisory banner.
+- Audit trail page.
+- PDF export for audit trail.
+- Full adjuster final decision console.
+
+## Human Review and Final Decision Lifecycle
+
+The project includes a full adjuster review console.
+
+When a claim routes to `HUMAN_REVIEW`, the adjuster can:
+
+- Review operational findings.
+- Review compliance findings.
+- Review WHY factor pass/fail results.
+- Enter adjuster ID.
+- Enter final decision notes.
+- Persist a final decision.
+
+Supported final decision states:
+
+| State | Meaning |
+|---|---|
+| `APPROVED_BY_ADJUSTER` | Adjuster reviewed and approved the recommendation. |
+| `REJECTED_BY_ADJUSTER` | Adjuster rejected the recommendation. |
+| `NEEDS_MORE_INFO` | Adjuster requires more documents, evidence, or investigation. |
+| `CLOSED` | Claim review is closed. |
+
+The decision is persisted on the `claims` table with:
+
+- `adjuster_decision`
+- `adjuster_id`
+- `adjuster_notes`
+- `reviewed_at`
+
+Endpoint:
+
+```http
+POST /api/v1/fnol/{claimId}/review
 Content-Type: application/json
 
 {
-  "policyNumber":  "POL-AUTO-112233",
-  "incidentDate":  "2026-09-15",
-  "state":         "CA",
-  "description":   "Rear-ended at traffic light. Other driver admitted fault. Police report filed.",
-  "claimantName":  "Avery Johnson",
-  "claimantDob":   "01/02/1980",
-  "claimantSsn":   "123-45-6789",
-  "evidenceUris":  ["mock://photo/front-bumper.jpg"]
+  "decision": "APPROVED_BY_ADJUSTER",
+  "adjusterId": "ADJ-001",
+  "notes": "Reviewed WHY factors and approved final reserve."
 }
 ```
 
-### FNOL Intake Response
+Example response:
 
 ```json
-HTTP 200 OK
-
 {
   "claimId": "CLM-2026-000001",
-  "status":  "OPEN",
-
-  "branchA": {
-    "damageAssessment": {
-      "damageType":       "FRONT_BUMPER",
-      "severity":         "MODERATE",
-      "estimatedDamage":  4200.00,
-      "confidence":       0.91
-    },
-    "coverage": {
-      "covered":        true,
-      "coverageType":   "COLLISION",
-      "coverageLimit":  50000.00,
-      "deductible":     1000.00
-    },
-    "reserve": {
-      "estimatedDamage":     4200.00,
-      "factor":              1.15,
-      "recommendedReserve":  4830.00
-    }
-  },
-
-  "branchB": {
-    "pii": {
-      "piiDetected":          true,
-      "redactedDescription":  "Rear-ended at traffic light. [NAME] admitted fault. Police report filed.",
-      "detectedTypes":        ["SSN", "NAME", "DOB"]
-    },
-    "deadline": {
-      "state":       "CA",
-      "deadline":    "2026-10-15",
-      "ruleSource":  "CA Insurance Code §2695.7",
-      "disclaimer":  "Failure to acknowledge within 10 days constitutes unfair practice."
-    },
-    "subrogation": {
-      "score":               78,
-      "recommendedAction":   "INVESTIGATE",
-      "factors": {
-        "thirdPartyMention":  35,
-        "policeReportSignal": 20,
-        "damageSeverity":     23
-      }
-    },
-    "audit": [
-      { "agentName": "VisionDamageAgent",    "status": "SUCCESS", "timestamp": "2026-09-15T10:45:01Z" },
-      { "agentName": "PolicyValidatorAgent", "status": "SUCCESS", "timestamp": "2026-09-15T10:45:01Z" },
-      { "agentName": "ReserveCalculator",    "status": "SUCCESS", "timestamp": "2026-09-15T10:45:02Z" },
-      { "agentName": "ComplianceAgents",     "status": "SUCCESS", "timestamp": "2026-09-15T10:45:02Z" }
-    ]
-  },
-
-  "explanation": [
-    "AI-assisted decision support only; human claim handlers retain final decision authority.",
-    "Coverage recommendation is based on PolicyCenter contracts and deterministic rules.",
-    "Reserve equals estimated visual damage multiplied by 1.15 ULAE factor.",
-    "Subrogation score is deterministic and explained by contributing factors.",
-    "Processing time: measured (async dual-branch parallel execution)"
-  ]
+  "status": "APPROVED_BY_ADJUSTER",
+  "adjusterDecision": "APPROVED_BY_ADJUSTER",
+  "adjusterId": "ADJ-001",
+  "adjusterNotes": "Reviewed WHY factors and approved final reserve.",
+  "reviewedAt": "2026-10-13T14:40:34.612Z"
 }
 ```
 
-### Error Responses
+## WHY Panel and Safety Gate
 
-| HTTP Code | Error Code | Trigger |
+The safety gate produces six explanation factors:
+
+| Factor | Pass Requirement |
+|---|---|
+| AI Confidence | Confidence must be at least 0.85. |
+| Coverage Status | Active matching coverage must exist. |
+| Compliance (PII) | PII must be absent or properly redacted. |
+| Reserve Amount | Reserve must be at or below the STP threshold. |
+| Claim History | Claim frequency risk must not be high. |
+| Subrogation Risk | Subrogation score must be below escalation threshold. |
+
+For low-severity claims where all factors pass, the system can return:
+
+```text
+status: STRAIGHT_THROUGH_PROCESSING
+decision: STRAIGHT_THROUGH
+recommendedAction: APPROVE_AND_STP
+```
+
+If any factor fails, or if severity is medium/high, the system returns human review:
+
+```text
+status: HUMAN_REVIEW
+decision: ADVISORY_RECOMMENDED_ACTION
+recommendedAction: ESCALATE_TO_HUMAN
+```
+
+For medium/high severity:
+
+```text
+recommendedAction: ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY
+```
+
+## API Reference
+
+### Health
+
+```http
+GET /api/v1/health
+```
+
+Response:
+
+```json
+{
+  "status": "UP"
+}
+```
+
+### Submit FNOL
+
+```http
+POST /api/v1/fnol/intake
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "policyNumber": "POL-AUTO-112233",
+  "incidentDate": "2026-09-15",
+  "state": "CA",
+  "description": "Rear-ended at traffic light. Other driver admitted fault. Police report filed.",
+  "claimantName": "Avery Johnson",
+  "claimantDob": "01/02/1980",
+  "claimantSsn": "123-45-6789",
+  "evidenceUris": ["mock://photo/front-bumper.jpg"]
+}
+```
+
+Important response fields:
+
+```json
+{
+  "claimId": "CLM-2026-000001",
+  "status": "HUMAN_REVIEW",
+  "branchA": {
+    "damageAssessment": {},
+    "coverage": {},
+    "reserve": {}
+  },
+  "branchB": {
+    "pii": {},
+    "deadline": {},
+    "subrogation": {},
+    "audit": []
+  },
+  "policyContext": {},
+  "explanation": {
+    "decision": "ADVISORY_RECOMMENDED_ACTION",
+    "summary": "One or more criteria failed; escalate to human claim handler for review",
+    "factors": [],
+    "recommendedAction": "ESCALATE_TO_HUMAN",
+    "severityGate": "LOW"
+  },
+  "severityGate": "LOW",
+  "eligibleForAdvisoryPrefill": false,
+  "notes": []
+}
+```
+
+### Get Claim Status
+
+```http
+GET /api/v1/fnol/status/{claimId}
+```
+
+Returns the persisted claim row, including final adjuster decision fields once review is completed.
+
+### Submit Adjuster Review
+
+```http
+POST /api/v1/fnol/{claimId}/review
+Content-Type: application/json
+```
+
+Allowed decisions:
+
+- `APPROVED_BY_ADJUSTER`
+- `REJECTED_BY_ADJUSTER`
+- `NEEDS_MORE_INFO`
+- `CLOSED`
+
+## Error Handling
+
+| HTTP Status | Error | Trigger |
 |---|---|---|
-| `400` | `VALIDATION_ERROR` | Invalid policy format, future date, blank description |
-| `409` | `DUPLICATE_FNOL` | Same policy + incident date + state already processed |
-| `422` | `COMPLIANCE_BLOCK` | PII redaction confidence below 90% threshold |
-| `504` | `PROCESSING_TIMEOUT` | Either branch exceeds configured timeout (default 10s) |
-| `502` | `EXTERNAL_OR_PROCESSING_ERROR` | Unexpected downstream failure |
+| 400 | `VALIDATION_ERROR` | Invalid payload, unsupported review decision, blank required fields. |
+| 409 | `DUPLICATE_FNOL` | Same policy/date/state submitted twice. |
+| 422 | `COMPLIANCE_BLOCK` | PII/compliance guardrail blocks processing. |
+| 504 | `PROCESSING_TIMEOUT` | Branch processing exceeds timeout. |
+| 502 | `EXTERNAL_OR_PROCESSING_ERROR` | Unexpected downstream or processing failure. |
 
----
+## Database Schema
 
-## Guardrail Chain
+The database is managed by Flyway migrations in:
 
-All AI agent outputs pass through a multi-tier validation wall **before** any write to ClaimCenter or the database:
-
-```
-Agent Output
-     │
-     ▼
-InputGuardrail      ← Policy regex · valid state · past date · non-blank description
-     │
-     ▼
-OutputGuardrail     ← Reserve ≥ 0 · Subrogation score within 0–100
-     │
-     ▼
-PIIGuardrail        ← Blocks raw SSN/DOB pattern in redacted output
-     │
-     ▼
-ValidationGuardrail ← Policy must be COVERED (hard stop — no uncovered claim filed)
-     │
-     ▼
-ComplianceGuard     ← Redaction confidence ≥ 0.90 (GDPR Article 25 enforcement)
-     │
-     ▼
-✅  Proceed to Reconciliation Safety Gate → ClaimCenter
+```text
+fnol-api/src/main/resources/db/migration/
 ```
 
----
+### `claims`
+
+Stores claim summary, routing status, and adjuster decision fields.
+
+Key columns:
+
+- `claim_id`
+- `policy_number`
+- `status`
+- `incident_date`
+- `state`
+- `estimated_damage`
+- `reserve`
+- `adjuster_decision`
+- `adjuster_id`
+- `adjuster_notes`
+- `reviewed_at`
+- `created_at`
+- `updated_at`
+
+### `audit_trail`
+
+Stores immutable per-agent audit events:
+
+- `event_id`
+- `claim_id`
+- `agent_name`
+- `timestamp`
+- `input_hash`
+- `output_hash`
+- `status`
 
 ## Demo Scenarios
 
-Five pre-built payloads in `demo-scenarios/` walk evaluators through the full capability surface — one happy path and four controlled failure modes:
+The `demo-scenarios/` directory includes payloads for common paths:
 
-| # | Scenario | Key Signal | HTTP | Decision |
-|---|---|---|---|---|
-| 1 | ✅ Clean Straight-Through | Confidence 91%, valid policy, reserve $4,830 | `200` | `STRAIGHT_THROUGH_PROCESSING` |
-| 2 | ⚠️ Low AI Confidence | Blurry evidence URI → confidence 62% | `200` | `HUMAN_REVIEW` — ConfidenceThresholdGuard |
-| 3 | 🔴 Compliance Block | Medical Record # in claimant notes | `422` | `COMPLIANCE_BLOCK` |
-| 4 | ⏱️ API Timeout | `MOCK_GW_TIMEOUT=true` env flag | `504` | `PROCESSING_TIMEOUT` — manual escalation |
-| 5 | 🔁 Duplicate FNOL | Same payload submitted twice | `409` | `DUPLICATE_FNOL` — no second claim created |
-
----
-
-## Technology Stack
-
-| Layer | Technology | Rationale |
-|---|---|---|
-| **Language** | Java 17 (LTS) | Guidewire's platform language; strong typing for insurance domain models |
-| **Framework** | Spring Boot 3.2 | Industry-standard; `@SpringBootApplication` scans all Maven modules |
-| **Concurrency** | `java.util.concurrent.CompletableFuture` | JDK-native parallel execution — no reactive library dependency |
-| **Build** | Maven Multi-Module | Module-per-concern mirrors Guidewire's plugin architecture |
-| **Persistence** | Spring Data JPA + PostgreSQL 16 | Relational model for claims + audit trail |
-| **Migrations** | Flyway | Version-controlled schema evolution |
-| **Monetary Math** | `java.math.BigDecimal` | Never `double` — precision-safe for all reserve calculations |
-| **Frontend** | React 18 + Vite + TypeScript | Jutro Digital Portal pattern |
-| **Styling** | Tailwind CSS | Jutro-inspired design tokens |
-| **Containerisation** | Docker + Docker Compose | 4-service stack with health-check ordering |
-| **Testing** | JUnit 5 + AssertJ + MockMvc | 38 tests across all 8 modules |
-
----
-
-## Guidewire Platform Alignment
-
-| Guidewire Pattern | Our Implementation |
+| Scenario | Purpose |
 |---|---|
-| **Integration Framework (REST)** | `PolicyCenterClient` and `ClaimCenterClient` adapter interfaces — production-replaceable |
-| **ClaimCenter Claim Filing** | `POST /claims` via adapter; mock returns canonical `ClaimCreateResponse` |
-| **PolicyCenter Data Access** | `GET /policies/{id}` + coverages + history — matches Cloud API schema |
-| **Zero Gosu Core Modification** | 100% REST surface — no internal Guidewire code touched |
-| **Jutro Digital Portal** | React + Vite component patterns aligned to Jutro design system |
-| **Flyway-style Schema Migrations** | Flyway SQL in `fnol-api/src/main/resources/db/migration/` |
-| **Validation Framework** | `fnol-guardrails` module — multi-tier guard chain before any financial action |
-| **Decision Explainability** | `ExplanationObject` on every response — satisfies Guidewire audit requirements |
-| **Idempotent Event Processing** | `IdempotencyStore` — mirrors Guidewire App Events deduplication model |
-
----
-
-## Test Coverage
-
-```
-Module                  Tests    Result
-─────────────────────────────────────────
-fnol-common               —      BUILD SUCCESS
-fnol-mock-guidewire       5      ✅  0 failures
-fnol-enrichment           3      ✅  0 failures
-fnol-agents               8      ✅  0 failures
-fnol-guardrails          12      ✅  0 failures
-fnol-orchestrator         4      ✅  0 failures  ← incl. parallel timing proof + timeout test
-fnol-api                  4      ✅  0 failures  ← Spring Boot + H2 integration
-─────────────────────────────────────────
-Total                    38      BUILD SUCCESS
-```
-
----
+| `scenario_1_clean_stp.json` | Clean low-risk claim path. |
+| `scenario_2_low_confidence.json` | Low AI confidence path. |
+| `scenario_3_compliance_block.json` | Compliance-blocking input. |
+| `scenario_4_api_timeout.json` | Timeout/manual escalation path. |
+| `scenario_5_duplicate.sh` | Duplicate FNOL/idempotency path. |
 
 ## Running Locally
 
 ### Prerequisites
-- Java 17+
-- Maven 3.9+
-- Docker + Docker Compose
-- Node.js 18+ (frontend only)
 
-### Full Stack (recommended)
+- Java 17 or newer.
+- Maven 3.9 or newer.
+- Node.js 18 or newer.
+- Docker Desktop if running the full containerized stack.
 
-```bash
-git clone https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine.git
-cd Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine
+### Run Tests
 
-# Start all services: PostgreSQL · Mock Guidewire · API · Frontend
-docker compose up --build
+Backend:
 
-# API:      http://localhost:8080/api/v1/health
-# Frontend: http://localhost:5173
+```powershell
+mvn.cmd -q test
 ```
 
-### Backend Only (no Docker)
+Frontend:
 
-```bash
-# Runs all 38 tests with H2 in-memory database — no PostgreSQL required
-mvn clean test
+```powershell
+cd frontend
+npm.cmd install
+npm.cmd run build
 ```
 
-### Demo Scenarios
+### Run Frontend Only
 
-```bash
-# Scenario 1 — Clean STP
-curl -s -X POST http://localhost:8080/api/v1/fnol/intake \
-  -H "Content-Type: application/json" \
-  -d @demo-scenarios/scenario_1_clean_stp.json | python -m json.tool
-
-# Scenario 4 — API Timeout
-MOCK_GW_TIMEOUT=true docker compose up mock-guidewire
-curl -s -X POST http://localhost:8080/api/v1/fnol/intake \
-  -H "Content-Type: application/json" \
-  -d @demo-scenarios/scenario_4_api_timeout.json
-
-# Scenario 5 — Duplicate FNOL
-bash demo-scenarios/scenario_5_duplicate.sh
+```powershell
+cd frontend
+npm.cmd run dev -- --port 5173
 ```
 
-### Configuration
+Open:
+
+```text
+http://localhost:5173
+```
+
+The frontend expects the API at:
+
+```text
+http://localhost:8080
+```
+
+### Run Full Stack With Docker Compose
+
+Start Docker Desktop first. Then:
+
+```powershell
+docker compose up -d --build
+```
+
+Services:
+
+| Service | URL |
+|---|---|
+| Frontend | `http://localhost:5173` |
+| API health | `http://localhost:8080/api/v1/health` |
+| Mock PolicyCenter | `http://localhost:9090/pc/policies/POL-AUTO-112233` |
+| PostgreSQL | `localhost:5432` |
+
+Stop the stack:
+
+```powershell
+docker compose down
+```
+
+## Configuration
 
 | Environment Variable | Default | Description |
 |---|---|---|
-| `SERVER_PORT` | `8080` | API server port |
-| `MOCK_GUIDEWIRE_BASE_URL` | `http://localhost:9090` | Mock Guidewire service URL |
-| `FNOL_ORCHESTRATOR_TIMEOUT_SECONDS` | `10` | Max seconds allowed for parallel branches |
-| `MOCK_GW_TIMEOUT` | `false` | Set `true` to simulate PolicyCenter timeout (Scenario 4) |
-| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/fnol` | Database connection |
+| `SERVER_PORT` | `8080` | API server port. |
+| `MOCK_GUIDEWIRE_BASE_URL` | `http://localhost:9090` | Mock Guidewire base URL. |
+| `FNOL_ORCHESTRATOR_TIMEOUT_SECONDS` | `10` | Max wait for async branch completion. |
+| `MOCK_GW_TIMEOUT` | `false` | Simulates Guidewire timeout behavior. |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/fnol` | PostgreSQL JDBC URL. |
+| `SPRING_DATASOURCE_USERNAME` | `fnol` | DB username. |
+| `SPRING_DATASOURCE_PASSWORD` | `fnol` | DB password. |
+| `VITE_API_BASE_URL` | `http://localhost:8080` | Frontend API base URL. |
 
----
+## Verification Performed
 
-## Database Schema
+The implementation has been verified with:
 
-```sql
--- claims: core claim record
-CREATE TABLE claims (
-    claim_id         VARCHAR(50)    PRIMARY KEY,
-    policy_number    VARCHAR(50)    NOT NULL,
-    status           VARCHAR(20)    NOT NULL,
-    incident_date    DATE           NOT NULL,
-    state            VARCHAR(2)     NOT NULL,
-    damage_type      VARCHAR(100),
-    severity         VARCHAR(20),
-    estimated_damage NUMERIC(15,2),
-    reserve          NUMERIC(15,2),
-    subrogation_score INTEGER,
-    created_at       TIMESTAMPTZ    DEFAULT now()
-);
-
--- audit_trail: immutable per-agent event log
-CREATE TABLE audit_trail (
-    event_id     VARCHAR(50)    PRIMARY KEY,
-    claim_id     VARCHAR(50)    NOT NULL REFERENCES claims(claim_id),
-    agent_name   VARCHAR(100)   NOT NULL,
-    timestamp    TIMESTAMPTZ    NOT NULL,
-    input_hash   VARCHAR(64)    NOT NULL,   -- SHA-256
-    output_hash  VARCHAR(64)    NOT NULL,   -- SHA-256
-    status       VARCHAR(20)    NOT NULL
-);
+```powershell
+npm.cmd run build
+mvn.cmd -q test
 ```
 
----
+Both commands passed after adding the adjuster review console and persisted final decision workflow.
 
-## Repository Structure
+## Runtime Note
 
-```
-.
-├── README.md
-├── pom.xml                              ← Parent Maven POM (multi-module)
-├── docker-compose.yml                   ← 4-service stack with health-check ordering
-├── .env.example
-│
-├── fnol-common/                         ← Shared Java records & custom exceptions
-├── fnol-mock-guidewire/                 ← Mock PolicyCenter + ClaimCenter on :9090
-├── fnol-enrichment/                     ← Guidewire client adapter interfaces + impls
-├── fnol-agents/                         ← 7 agent implementations
-├── fnol-guardrails/                     ← 4-guard validation chain
-├── fnol-orchestrator/                   ← CompletableFuture parallel orchestrator
-├── fnol-api/                            ← Spring Boot REST API + JPA + Flyway
-├── frontend/                            ← React 18 + Vite + TypeScript
-│
-├── demo-scenarios/                      ← 5 pre-built payloads + duplicate test script
-│   ├── scenario_1_clean_stp.json
-│   ├── scenario_2_low_confidence.json
-│   ├── scenario_3_compliance_block.json
-│   ├── scenario_4_api_timeout.json
-│   └── scenario_5_duplicate.sh
-│
-└── docs/
-    ├── architecture.md
-    ├── api-contracts.md
-    ├── agent-architecture.md
-    ├── database.md
-    ├── guidewire-integration.md
-    └── architecture-decisions.md        ← ADR-001 through ADR-006
-```
+The full Docker stack requires Docker Desktop to be running. If Docker is stopped, `docker compose up -d --build` will fail because the Docker engine pipe is unavailable.
 
----
+PostgreSQL does not need to be installed separately for the Docker workflow. It is already defined as a service in `docker-compose.yml`.
 
-<div align="center">
+## Governance Model
 
-Built with **Java 17 · Spring Boot 3.2 · React 18**
+This project is intentionally human-governed:
 
-*Submitted for Guidewire DEV-Summit 2026*
+- AI can analyze.
+- AI can recommend.
+- AI can explain.
+- AI can route low-risk claims.
+- A human adjuster retains final authority for review decisions.
 
-</div>
+The adjuster console is the final governance checkpoint for claims that require review.

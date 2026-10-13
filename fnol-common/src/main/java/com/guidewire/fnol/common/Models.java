@@ -157,6 +157,21 @@ public final class Models {
             String path
     ) {}
 
+    public record AdjusterReviewRequest(
+            @NotBlank String decision,
+            @NotBlank String adjusterId,
+            String notes
+    ) {}
+
+    public record AdjusterReviewResponse(
+            String claimId,
+            String status,
+            String adjusterDecision,
+            String adjusterId,
+            String adjusterNotes,
+            Instant reviewedAt
+    ) {}
+
     public record ClaimCreateRequest(
             String policyNumber,
             LocalDate incidentDate,

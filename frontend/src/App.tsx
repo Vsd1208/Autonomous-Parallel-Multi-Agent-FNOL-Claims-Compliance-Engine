@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './style.css';
 import ClaimDashboard from './pages/ClaimDashboard';
 import AuditLog from './pages/AuditLog';
+import { apiClient } from './services/apiClient';
 import { ClaimResult, FormData } from './types';
 
 const demoScenarios = [
@@ -144,15 +145,37 @@ const mockClaim: ClaimResult = {
       },
     ],
   },
-  explanation: [
-    'AI-assisted decision support only; human claim handlers retain final decision authority.',
-    'Coverage recommendation is based on PolicyCenter contracts and deterministic rules.',
-    'Reserve equals estimated visual damage multiplied by 1.15 ULAE factor.',
-    'Subrogation score is deterministic and explained by contributing factors.',
+  explanation: {
+    decision: 'ADVISORY_RECOMMENDED_ACTION',
+    summary: 'All criteria met for advisory-guided pre-population of low-severity claim',
+    recommendedAction: 'PREFILL_LOW_SEVERITY_CLAIM',
+    severityGate: 'LOW',
+    factors: [
+      {
+        factor: 'AI Confidence',
+        value: '0.91',
+        status: 'PASS',
+        detail: 'Confidence score must be >= 0.85',
+      },
+      {
+        factor: 'Coverage Status',
+        value: 'COLLISION',
+        status: 'PASS',
+        detail: 'Relevant coverage must be active and matched',
+      },
+    ],
+  },
+  notes: [
+    'AI-assisted advisory copilot only; human claim handlers retain final authority.',
+    'Coverage verified by Guidewire PolicyCenter deterministic rules engine.',
   ],
 };
 
 function IntakeForm() {
+  const [lastClaim, setLastClaim] = useState<ClaimResult | null>(() => {
+    const stored = window.localStorage.getItem('fnol:lastClaim');
+    return stored ? JSON.parse(stored) : null;
+  });
   const [form, setForm] = useState<FormData>({
     policyNumber: '',
     incidentDate: '',
@@ -166,6 +189,12 @@ function IntakeForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<ClaimResult | null>(null);
+
+  const storeResult = (claim: ClaimResult) => {
+    window.localStorage.setItem('fnol:lastClaim', JSON.stringify(claim));
+    setLastClaim(claim);
+    setResult(claim);
+  };
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -188,12 +217,11 @@ function IntakeForm() {
     setError('');
 
     try {
-      // Simulate API call with delay
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      
-      // Generate unique claim ID
-      const claimId = `CLM-${Date.now()}`;
-      setResult({ ...mockClaim, claimId });
+      const response = await apiClient.submitFNOL({
+        ...form,
+        evidenceUris: ['mock://photo/front-bumper.jpg'],
+      });
+      storeResult(response);
     } catch (err: any) {
       setError(err.message || 'Failed to submit FNOL');
     } finally {
@@ -228,6 +256,11 @@ function IntakeForm() {
               </button>
             ))}
           </div>
+          {lastClaim && (
+            <button type="button" onClick={() => setResult(lastClaim)} className="resume-btn">
+              Resume Last Claim {lastClaim.claimId}
+            </button>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="intake-form">

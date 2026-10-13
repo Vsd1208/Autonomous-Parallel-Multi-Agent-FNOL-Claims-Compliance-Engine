@@ -83,7 +83,7 @@ class FNOLControllerTest {
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.claimId").value("CLM-2026-000001"))
-                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.status").value("HUMAN_REVIEW"))
                 .andExpect(jsonPath("$.branchA.coverage.covered").value(true))
                 .andExpect(jsonPath("$.branchA.reserve.recommendedReserve").value(4830))
                 .andExpect(jsonPath("$.branchB.pii.piiDetected").value(true))
@@ -104,6 +104,26 @@ class FNOLControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.claimId").value("CLM-2026-000001"))
                 .andExpect(jsonPath("$.policyNumber").value("POL-AUTO-112233"));
+
+        AdjusterReviewRequest review = new AdjusterReviewRequest(
+                "APPROVED_BY_ADJUSTER",
+                "ADJ-001",
+                "Reviewed WHY factors and approved final reserve."
+        );
+
+        mockMvc.perform(post("/api/v1/fnol/CLM-2026-000001/review")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(review)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.claimId").value("CLM-2026-000001"))
+                .andExpect(jsonPath("$.status").value("APPROVED_BY_ADJUSTER"))
+                .andExpect(jsonPath("$.adjusterDecision").value("APPROVED_BY_ADJUSTER"))
+                .andExpect(jsonPath("$.adjusterId").value("ADJ-001"));
+
+        mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED_BY_ADJUSTER"))
+                .andExpect(jsonPath("$.adjusterDecision").value("APPROVED_BY_ADJUSTER"));
     }
 
     @Test

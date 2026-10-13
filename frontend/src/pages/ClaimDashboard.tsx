@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClaimResult } from '../types';
+import { apiClient } from '../services/apiClient';
+import { AdjusterReviewRequest, ClaimResult } from '../types';
 
 type Props = {
   claim: ClaimResult;
@@ -25,6 +26,49 @@ function ScoreBadge({
 
 export default function ClaimDashboard({ claim }: Props) {
   const navigate = useNavigate();
+  const [currentClaim, setCurrentClaim] = useState(claim);
+  const [adjusterId, setAdjusterId] = useState('ADJ-001');
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const [savingDecision, setSavingDecision] = useState(false);
+  const [reviewSaved, setReviewSaved] = useState('');
+  claim = currentClaim;
+  const factors = claim.explanation?.factors ?? [];
+  const notes = claim.notes ?? [];
+  const recommendedAction = claim.explanation?.recommendedAction ?? 'ESCALATE_TO_HUMAN';
+  const needsHumanReview = recommendedAction.includes('ESCALATE');
+  const flowStages = [
+    ['1', 'FNOL Intake', 'Claim report received'],
+    ['2', 'Context Enrichment', 'History and policy context'],
+    ['3', 'Dual-Branch AI', 'Operational and compliance in parallel'],
+    ['4', 'Safety Gate', 'Reconcile and validate'],
+    ['5', needsHumanReview ? 'Human Review' : 'STP', needsHumanReview ? 'Adjuster final decision' : 'Proceed to next steps'],
+  ];
+
+  const submitReview = async (decision: AdjusterReviewRequest['decision']) => {
+    setSavingDecision(true);
+    setReviewError('');
+    setReviewSaved('');
+
+    try {
+      const response = await apiClient.submitAdjusterReview(claim.claimId, {
+        decision,
+        adjusterId,
+        notes: reviewNotes,
+      });
+      const nextClaim = {
+        ...claim,
+        status: response.status,
+      };
+      window.localStorage.setItem('fnol:lastClaim', JSON.stringify(nextClaim));
+      setCurrentClaim(nextClaim);
+      setReviewSaved(`${response.adjusterDecision.replace(/_/g, ' ')} saved at ${new Date(response.reviewedAt).toLocaleString()}`);
+    } catch (err: any) {
+      setReviewError(err.message || 'Unable to save adjuster decision');
+    } finally {
+      setSavingDecision(false);
+    }
+  };
 
   return (
     <main className="dashboard-page">
@@ -68,13 +112,23 @@ export default function ClaimDashboard({ claim }: Props) {
         </div>
       </header>
 
+      <section className="flow-strip" aria-label="End-to-end FNOL processing flow">
+        {flowStages.map(([step, title, detail]) => (
+          <div className="flow-step" key={step}>
+            <span>{step}</span>
+            <strong>{title}</strong>
+            <small>{detail}</small>
+          </div>
+        ))}
+      </section>
+
       <section className="advisory-banner">
-        <div className="advisory-icon">⚠️</div>
+        <div className="advisory-icon">{needsHumanReview ? '!' : 'OK'}</div>
         <div>
           <strong>Adjuster Advisory</strong>
           <p>
-            Recommended action: {claim.branchA.damageAssessment.severity} severity —
-            proceed with manual review for reserve and subrogation signals.
+            {claim.explanation.summary}. Recommended action:{' '}
+            {recommendedAction.replace(/_/g, ' ')}.
           </p>
         </div>
       </section>
@@ -95,31 +149,14 @@ export default function ClaimDashboard({ claim }: Props) {
         </div>
 
         <div className="score-grid">
-          <ScoreBadge
-            label="AI Confidence"
-            value={`${(claim.branchA.damageAssessment.confidence * 100).toFixed(0)}%`}
-            pass={claim.branchA.damageAssessment.confidence >= 0.85}
-          />
-          <ScoreBadge
-            label="Coverage"
-            value={claim.branchA.coverage.covered ? 'PASS' : 'FAIL'}
-            pass={claim.branchA.coverage.covered}
-          />
-          <ScoreBadge
-            label="Reserve"
-            value={claim.branchA.reserve.recommendedReserve > 0 ? 'PASS' : 'FAIL'}
-            pass={claim.branchA.reserve.recommendedReserve <= 25000}
-          />
-          <ScoreBadge
-            label="Subrogation"
-            value={`${claim.branchB.subrogation.score}/100`}
-            pass={claim.branchB.subrogation.score < 70}
-          />
-          <ScoreBadge
-            label="History"
-            value="PASS"
-            pass={true}
-          />
+          {factors.map((factor) => (
+            <ScoreBadge
+              key={factor.factor}
+              label={factor.factor}
+              value={factor.value}
+              pass={factor.status === 'PASS'}
+            />
+          ))}
         </div>
       </section>
 
@@ -201,11 +238,85 @@ export default function ClaimDashboard({ claim }: Props) {
 
       <section className="explanation-panel">
         <h3>Decision Rationale</h3>
+        <div className="rationale-summary">
+          <strong>{claim.explanation.decision.replace(/_/g, ' ')}</strong>
+          <p>{claim.explanation.summary}</p>
+        </div>
         <ul>
-          {claim.explanation.map((item, index) => (
-            <li key={index}>{item}</li>
+          {factors.map((factor) => (
+            <li key={factor.factor}>
+              <strong>{factor.factor}:</strong> {factor.status} ({factor.value}) - {factor.detail}
+            </li>
+          ))}
+          {notes.map((item, index) => (
+            <li key={`note-${index}`}>{item}</li>
           ))}
         </ul>
+      </section>
+
+      <section className="review-console">
+        <div className="panel-header">
+          <h2>Adjuster Final Decision</h2>
+          <span>{claim.status.replace(/_/g, ' ')}</span>
+        </div>
+
+        <div className="review-grid">
+          <div className="form-field">
+            <label>Adjuster ID</label>
+            <input
+              value={adjusterId}
+              onChange={(event) => setAdjusterId(event.target.value)}
+              placeholder="ADJ-001"
+            />
+          </div>
+          <div className="form-field full-width">
+            <label>Decision Notes</label>
+            <textarea
+              value={reviewNotes}
+              onChange={(event) => setReviewNotes(event.target.value)}
+              rows={4}
+              placeholder="Record final review rationale, documents requested, or override reason..."
+            />
+          </div>
+        </div>
+
+        {reviewError && <div className="error-box">{reviewError}</div>}
+        {reviewSaved && <div className="success-box">{reviewSaved}</div>}
+
+        <div className="decision-actions">
+          <button
+            type="button"
+            className="decision-btn approve"
+            disabled={savingDecision || !adjusterId.trim()}
+            onClick={() => submitReview('APPROVED_BY_ADJUSTER')}
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            className="decision-btn reject"
+            disabled={savingDecision || !adjusterId.trim()}
+            onClick={() => submitReview('REJECTED_BY_ADJUSTER')}
+          >
+            Reject
+          </button>
+          <button
+            type="button"
+            className="decision-btn info"
+            disabled={savingDecision || !adjusterId.trim()}
+            onClick={() => submitReview('NEEDS_MORE_INFO')}
+          >
+            Need More Info
+          </button>
+          <button
+            type="button"
+            className="decision-btn close"
+            disabled={savingDecision || !adjusterId.trim()}
+            onClick={() => submitReview('CLOSED')}
+          >
+            Close
+          </button>
+        </div>
       </section>
     </main>
   );
