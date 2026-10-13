@@ -27,7 +27,7 @@ public class ClaimTypeValidatorTest {
      */
     @Test
     public void testGlassOnlyLowSeverityEligible() {
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "GLASS_ONLY", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")
         );
 
@@ -43,7 +43,7 @@ public class ClaimTypeValidatorTest {
      */
     @Test
     public void testMinorCollisionLowSeverityEligible() {
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "MINOR_COLLISION", "MINOR", new BigDecimal("4500"), new BigDecimal("0.88")
         );
 
@@ -59,7 +59,7 @@ public class ClaimTypeValidatorTest {
      */
     @Test
     public void testTheftAccessoryLowSeverityEligible() {
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "THEFT_ACCESSORY", "MINOR", new BigDecimal("3000"), new BigDecimal("0.90")
         );
 
@@ -75,7 +75,7 @@ public class ClaimTypeValidatorTest {
      */
     @Test
     public void testVandalismCosmeticLowSeverityEligible() {
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "VANDALISM_COSMETIC", "MINOR", new BigDecimal("1800"), new BigDecimal("0.85")
         );
 
@@ -91,7 +91,7 @@ public class ClaimTypeValidatorTest {
      */
     @Test
     public void testStructuralDamageNotEligible() {
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "STRUCTURAL_DAMAGE", "SEVERE", new BigDecimal("4500"), new BigDecimal("0.91")
         );
 
@@ -107,7 +107,7 @@ public class ClaimTypeValidatorTest {
      */
     @Test
     public void testMediumSeverityNotEligible() {
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "GLASS_ONLY", "MODERATE", new BigDecimal("12000"), new BigDecimal("0.91")
         );
 
@@ -123,7 +123,7 @@ public class ClaimTypeValidatorTest {
      */
     @Test
     public void testHighFrequencyRiskNotEligible() {
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "GLASS_ONLY", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")
         );
 
@@ -140,7 +140,7 @@ public class ClaimTypeValidatorTest {
      */
     @Test
     public void testMediumFrequencyRiskEligible() {
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "GLASS_ONLY", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")
         );
 

@@ -34,7 +34,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
         );
 
@@ -79,7 +79,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.72")
         );
 
@@ -121,7 +121,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
         );
 
@@ -163,7 +163,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
         );
 
@@ -208,7 +208,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "BUMPER", "MODERATE", new BigDecimal("30000"), new BigDecimal("0.91")
         );
 
@@ -253,7 +253,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
         );
 
@@ -296,7 +296,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
         );
 
@@ -342,7 +342,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "GLASS_ONLY", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")
         );
 
@@ -375,7 +375,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "GLASS_ONLY", "MINOR", new BigDecimal("2500"), new BigDecimal("0.72")  // LOW confidence
         );
 
@@ -413,7 +413,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "DOOR_PANEL", "MODERATE", new BigDecimal("12000"), new BigDecimal("0.91")  // MEDIUM severity
         );
 
@@ -444,7 +444,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "STRUCTURAL_DAMAGE", "SEVERE", new BigDecimal("35000"), new BigDecimal("0.91")  // HIGH severity
         );
 
@@ -475,7 +475,7 @@ public class ExplanationBuilderTest {
                 new BigDecimal("50000"), new BigDecimal("1000"), List.of()
         );
 
-        DamageAssessment damage = new DamageAssessment(
+        DamageAssessment damage = DamageAssessment.of(
                 "GLASS_ONLY", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")
         );
 

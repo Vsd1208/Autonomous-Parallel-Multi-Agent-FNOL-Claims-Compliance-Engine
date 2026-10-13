@@ -50,13 +50,25 @@ public class GeminiVisionProvider implements VisionProvider {
               "damageType": "FRONT_BUMPER | REAR_BUMPER | WINDSHIELD | SIDE_PANEL | ROOF | MULTIPLE | UNKNOWN",
               "severity": "MINOR | MODERATE | SEVERE",
               "estimatedDamage": <integer USD repair cost estimate>,
-              "confidence": <decimal 0.0 to 1.0>
+              "confidence": <decimal 0.0 to 1.0>,
+              "photoQuality": "CLEAR | BLURRY | PARTIAL | UNUSABLE",
+              "damageTypeProbabilities": {
+                "FRONT_BUMPER": <0.0-1.0>,
+                "REAR_BUMPER": <0.0-1.0>,
+                "WINDSHIELD": <0.0-1.0>,
+                "SIDE_PANEL": <0.0-1.0>,
+                "ROOF": <0.0-1.0>,
+                "MULTIPLE": <0.0-1.0>,
+                "UNKNOWN": <0.0-1.0>
+              }
             }
             Rules:
-            - damageType must be exactly one of the listed enum values.
+            - damageType must be exactly one of the listed enum values (the highest-probability type).
             - severity must be MINOR (< $2,000), MODERATE ($2,000–$10,000), or SEVERE (> $10,000).
             - estimatedDamage must be a plain integer (no $ sign, no commas).
-            - confidence reflects your certainty in the assessment (1.0 = fully confident).
+            - confidence reflects your overall certainty in the entire assessment (1.0 = fully confident).
+            - photoQuality: CLEAR = sharp and well-lit, BLURRY = out of focus, PARTIAL = partially visible, UNUSABLE = cannot assess.
+            - damageTypeProbabilities must sum to approximately 1.0 across all types.
             - Do NOT include any explanation, markdown, or text outside the JSON object.
             """;
 
@@ -159,19 +171,32 @@ public class GeminiVisionProvider implements VisionProvider {
         log.debug("[GeminiVision] Raw Gemini JSON response: {}", text);
 
         JsonNode assessment = objectMapper.readTree(text);
-        String damageType     = assessment.path("damageType").asText("UNKNOWN");
-        String severity       = assessment.path("severity").asText("MODERATE");
-        int estimatedDamage   = assessment.path("estimatedDamage").asInt(3500);
-        double confidence     = assessment.path("confidence").asDouble(0.75);
+        String damageType   = assessment.path("damageType").asText("UNKNOWN");
+        String severity     = assessment.path("severity").asText("MODERATE");
+        int estimatedDamage = assessment.path("estimatedDamage").asInt(3500);
+        double confidence   = assessment.path("confidence").asDouble(0.75);
+        String photoQuality = assessment.path("photoQuality").asText("UNKNOWN");
 
-        log.info("[GeminiVision] Parsed assessment — type={}, severity={}, estimate={}, confidence={}",
-                damageType, severity, estimatedDamage, confidence);
+        // Parse damageTypeProbabilities map
+        Map<String, BigDecimal> probabilities = new java.util.LinkedHashMap<>();
+        JsonNode probNode = assessment.path("damageTypeProbabilities");
+        if (probNode.isObject()) {
+            probNode.fields().forEachRemaining(entry ->
+                probabilities.put(entry.getKey(), BigDecimal.valueOf(entry.getValue().asDouble()))
+            );
+        }
+
+        log.info("[GeminiVision] Assessment — type={}, severity={}, estimate={}, confidence={}, photoQuality={}",
+                damageType, severity, estimatedDamage, confidence, photoQuality);
+        log.debug("[GeminiVision] Damage type probabilities: {}", probabilities);
 
         return new DamageAssessment(
                 damageType,
                 severity,
                 new BigDecimal(estimatedDamage),
-                BigDecimal.valueOf(confidence)
+                BigDecimal.valueOf(confidence),
+                photoQuality,
+                probabilities
         );
     }
 
@@ -182,6 +207,11 @@ public class GeminiVisionProvider implements VisionProvider {
     private DamageAssessment fallback(String reason) {
         log.warn("[GeminiVision] Using fallback assessment — reason={}", reason);
         // Low confidence (0.60) ensures ExplanationBuilder will route to HUMAN_REVIEW
-        return new DamageAssessment("UNKNOWN", "MODERATE", new BigDecimal("3500"), new BigDecimal("0.60"));
+        // photoQuality = UNUSABLE signals the adjuster that no valid image was processed
+        return new DamageAssessment(
+                "UNKNOWN", "MODERATE", new BigDecimal("3500"), new BigDecimal("0.60"),
+                reason.equals("NO_IMAGE") ? "UNUSABLE" : "UNKNOWN",
+                Map.of("UNKNOWN", BigDecimal.ONE)
+        );
     }
 }

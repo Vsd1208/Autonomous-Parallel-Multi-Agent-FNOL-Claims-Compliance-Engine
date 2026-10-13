@@ -270,7 +270,7 @@ class FNOLOrchestratorTest {
 
         VisionProvider sleepyVision = payload -> {
             try { Thread.sleep(3000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            return new DamageAssessment("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
+            return DamageAssessment.of("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
         };
 
         ClaimHistoryEnricher historyEnricher = new ClaimHistoryEnricher(slowPolicyClient);

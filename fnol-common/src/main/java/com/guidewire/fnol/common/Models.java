@@ -60,8 +60,21 @@ public final class Models {
             String damageType,
             String severity,
             BigDecimal estimatedDamage,
-            BigDecimal confidence
-    ) {}
+            BigDecimal confidence,
+            String photoQuality,                          // "CLEAR" | "BLURRY" | "PARTIAL" | "UNUSABLE" | "UNKNOWN"
+            Map<String, BigDecimal> damageTypeProbabilities  // e.g. {"FRONT_BUMPER": 0.87, "SIDE_PANEL": 0.09, ...}
+    ) {
+        /**
+         * Backward-compatible factory used by internal stubs and tests that do not
+         * supply Gemini vision metadata. Defaults photoQuality to "UNKNOWN" and
+         * probability map to empty.
+         */
+        public static DamageAssessment of(String damageType, String severity,
+                                          BigDecimal estimatedDamage, BigDecimal confidence) {
+            return new DamageAssessment(damageType, severity, estimatedDamage, confidence,
+                    "UNKNOWN", Map.of());
+        }
+    }
 
     public record ReserveResult(
             BigDecimal estimatedDamage,

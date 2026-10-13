@@ -38,6 +38,9 @@ class AgentTests {
         assertThat(assessment.severity()).isEqualTo("MODERATE");
         assertThat(assessment.estimatedDamage()).isEqualByComparingTo("4200");
         assertThat(assessment.confidence()).isEqualByComparingTo("0.91");
+        assertThat(assessment.photoQuality()).isEqualTo("CLEAR");
+        assertThat(assessment.damageTypeProbabilities()).containsKey("FRONT_BUMPER");
+        assertThat(assessment.damageTypeProbabilities().get("FRONT_BUMPER")).isEqualByComparingTo("0.91");
     }
 
     @Test
@@ -45,7 +48,7 @@ class AgentTests {
     void reserveCalculatorAgent_computesCorrectReserve() {
         ReserveCalculatorAgent agent = new ReserveCalculatorAgent();
 
-        DamageAssessment assessment = new DamageAssessment("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
+        DamageAssessment assessment = DamageAssessment.of("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
         ReserveResult result = agent.execute(assessment);
 
         assertThat(result.estimatedDamage()).isEqualByComparingTo("4200");
@@ -118,7 +121,7 @@ class AgentTests {
     @DisplayName("SubrogationScorerAgent calculates deterministic score with factor breakdown")
     void subrogationScorerAgent_scoresWithFactorBreakdown() {
         SubrogationScorerAgent agent = new SubrogationScorerAgent(new DeterministicSubrogationScorer());
-        DamageAssessment damage = new DamageAssessment("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
+        DamageAssessment damage = DamageAssessment.of("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
 
         FNOLPayload highSubro = createPayload("CA", "Rear-ended by other driver at stoplight. Police report filed.", null, null, null);
         SubrogationResult highResult = agent.execute(highSubro, damage);
@@ -128,7 +131,7 @@ class AgentTests {
         assertThat(highResult.factors()).containsKeys("thirdPartyMention", "policeReportSignal", "damageSeverity");
 
         FNOLPayload lowSubro = createPayload("CA", "Hit stationary post in garage.", null, null, null);
-        SubrogationResult lowResult = agent.execute(lowSubro, new DamageAssessment("DOOR", "MINOR", new BigDecimal("800"), new BigDecimal("0.95")));
+        SubrogationResult lowResult = agent.execute(lowSubro, DamageAssessment.of("DOOR", "MINOR", new BigDecimal("800"), new BigDecimal("0.95")));
 
         assertThat(lowResult.score()).isEqualTo(25);
         assertThat(lowResult.recommendedAction()).isEqualTo("MONITOR");

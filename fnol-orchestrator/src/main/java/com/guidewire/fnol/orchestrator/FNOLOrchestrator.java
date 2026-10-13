@@ -219,7 +219,7 @@ public class FNOLOrchestrator {
 
         // Step B3: Subrogation scoring — third-party liability keyword analysis (0–100)
         // Uses description text only — independent of Branch A's damage assessment
-        DamageAssessment textOnlyDamage = new DamageAssessment(
+        DamageAssessment textOnlyDamage = DamageAssessment.of(
                 "PENDING", "MODERATE", java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO
         );
         SubrogationResult sub = subro.execute(payload, textOnlyDamage);

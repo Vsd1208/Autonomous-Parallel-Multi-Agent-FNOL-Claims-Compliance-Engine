@@ -58,12 +58,12 @@ class GeminiVisionProviderTest {
                   "candidates": [{
                     "content": {
                       "parts": [{
-                        "text": "{ \\"damageType\\": \\"%s\\", \\"severity\\": \\"%s\\", \\"estimatedDamage\\": %d, \\"confidence\\": %.2f }"
+                        "text": "{ \\"damageType\\": \\"%s\\", \\"severity\\": \\"%s\\", \\"estimatedDamage\\": %d, \\"confidence\\": %.2f, \\"photoQuality\\": \\"CLEAR\\", \\"damageTypeProbabilities\\": { \\"%s\\": %.2f, \\"UNKNOWN\\": 0.05 } }"
                       }]
                     }
                   }]
                 }
-                """.formatted(damageType, severity, estimate, confidence);
+                """.formatted(damageType, severity, estimate, confidence, damageType, confidence);
     }
 
     @Test
@@ -79,6 +79,9 @@ class GeminiVisionProviderTest {
         assertThat(result.severity()).isEqualTo("MODERATE");
         assertThat(result.estimatedDamage()).isEqualByComparingTo("4200");
         assertThat(result.confidence()).isEqualByComparingTo("0.91");
+        assertThat(result.photoQuality()).isEqualTo("CLEAR");
+        assertThat(result.damageTypeProbabilities()).containsKey("FRONT_BUMPER");
+        assertThat(result.damageTypeProbabilities().get("FRONT_BUMPER")).isEqualByComparingTo("0.91");
     }
 
     @Test
@@ -94,6 +97,8 @@ class GeminiVisionProviderTest {
         assertThat(result.severity()).isEqualTo("SEVERE");
         assertThat(result.estimatedDamage()).isEqualByComparingTo("12500");
         assertThat(result.confidence()).isEqualByComparingTo("0.88");
+        assertThat(result.photoQuality()).isEqualTo("CLEAR");
+        assertThat(result.damageTypeProbabilities()).containsKey("REAR_BUMPER");
     }
 
     @Test
@@ -128,9 +133,10 @@ class GeminiVisionProviderTest {
 
         DamageAssessment result = provider.assess(payloadWithUri("https://example.com/photo.jpg"));
 
-        // Fallback: UNKNOWN type, MODERATE severity, 0.60 confidence (routes to HUMAN_REVIEW)
+        // Fallback: UNKNOWN type, UNUSABLE/UNKNOWN photoQuality, 0.60 confidence (routes to HUMAN_REVIEW)
         assertThat(result.damageType()).isEqualTo("UNKNOWN");
         assertThat(result.confidence()).isEqualByComparingTo("0.60");
+        assertThat(result.photoQuality()).isIn("UNKNOWN", "UNUSABLE");
     }
 
     @Test
@@ -145,6 +151,7 @@ class GeminiVisionProviderTest {
 
         assertThat(result.damageType()).isEqualTo("UNKNOWN");
         assertThat(result.confidence()).isEqualByComparingTo("0.60");
+        assertThat(result.photoQuality()).isEqualTo("UNUSABLE");  // no image = UNUSABLE
         // No REST call should have been made
         verifyNoInteractions(restTemplate);
     }
