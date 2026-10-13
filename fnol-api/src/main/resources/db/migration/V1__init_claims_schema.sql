@@ -3,7 +3,7 @@ CREATE TABLE claims (
   policy_number VARCHAR(32) NOT NULL,
   status VARCHAR(32) NOT NULL,
   incident_date DATE NOT NULL,
-  state CHAR(2) NOT NULL,
+  state VARCHAR(255) NOT NULL,
   estimated_damage NUMERIC(14,2) NOT NULL CHECK (estimated_damage >= 0),
   reserve NUMERIC(14,2) NOT NULL CHECK (reserve >= 0),
   created_at TIMESTAMPTZ NOT NULL,
