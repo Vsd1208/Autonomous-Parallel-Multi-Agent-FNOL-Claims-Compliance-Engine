@@ -133,6 +133,15 @@ public class FNOLOrchestrator {
         log.info("[FNOL] History enriched — risk={}, priorClaims={}",
                 policyContext.claimFrequencyRisk(), policyContext.totalPriorClaims());
 
+        // ── Human Review Point 1: High-risk input escalation flag ─────────────────────
+        // If the policy has a HIGH claim-frequency risk, we flag this claim for mandatory
+        // human validation BEFORE it proceeds to dual-branch processing.
+        boolean highRiskEscalation = "HIGH".equalsIgnoreCase(policyContext.claimFrequencyRisk());
+        if (highRiskEscalation) {
+            log.warn("[FNOL] HIGH-risk policy detected — mandatory human validation required: policy={}",
+                    payload.policyNumber());
+        }
+
         // ── Stage 3: Async dual-branch fan-out ────────────────────────────────────────
         log.info("[FNOL] Launching dual-branch fan-out — policy={}", payload.policyNumber());
         long startTime = System.currentTimeMillis();
@@ -173,7 +182,7 @@ public class FNOLOrchestrator {
         log.info("[FNOL] Dual-branch completed in {}ms — policy={}", elapsed, payload.policyNumber());
 
         // ── Stage 5: Reconciliation Safety Gate ──────────────────────────────────────
-        return reconcile(payload, branchA, branchB, policyContext, elapsed);
+        return reconcile(payload, branchA, branchB, policyContext, elapsed, highRiskEscalation);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────
@@ -238,7 +247,8 @@ public class FNOLOrchestrator {
             BranchAResult branchA,
             BranchBResult branchB,
             PolicyHistoryContext policyContext,
-            long elapsedMs
+            long elapsedMs,
+            boolean highRiskEscalation
     ) {
         log.info("[FNOL] Entering Reconciliation Safety Gate — policy={}", payload.policyNumber());
 
@@ -285,14 +295,28 @@ public class FNOLOrchestrator {
         // Gate Step 5: Compose adjuster advisory note
         //  - STP:          claim auto-filed; advisory confirms no human action needed
         //  - HUMAN_REVIEW: claim pre-populated; advisory surfaces WHY for adjuster
-        boolean isStp = "STRAIGHT_THROUGH".equals(explanation.decision());
+        boolean isStp = "STRAIGHT_THROUGH".equals(explanation.decision()) && !highRiskEscalation;
+        // High-risk claims NEVER qualify for STP regardless of confidence score
+        boolean requiresHumanValidation = highRiskEscalation || !isStp;
+
         String adjusterAdvisory = isStp
                 ? "Claim meets all STP criteria. Auto-filed. No adjuster action required."
                 : "Claim requires human review: " + explanation.summary() +
                   " | Recommended action: " + explanation.recommendedAction();
 
-        log.info("[FNOL] Gate decision={} — policy={}, claimId={}",
-                explanation.decision(), payload.policyNumber(), created.claimId());
+        log.info("[FNOL] Gate decision={} requiresHumanValidation={} — policy={}, claimId={}",
+                explanation.decision(), requiresHumanValidation, payload.policyNumber(), created.claimId());
+
+        List<String> notes = new java.util.ArrayList<>();
+        if (highRiskEscalation) {
+            notes.add("⚠ HIGH-RISK POLICY: This claim has been flagged for mandatory human validation " +
+                      "due to elevated claim frequency risk. Auto-STP is disabled.");
+        }
+        notes.add("AI-assisted ADVISORY copilot only; human claim handlers retain final authority.");
+        notes.add("Pre-population recommended for LOW-severity eligible claim types only.");
+        notes.add("Coverage verified by Guidewire PolicyCenter deterministic rules engine.");
+        notes.add("Subrogation score is deterministic and explained by contributing factors.");
+        notes.add("Processing time: " + elapsedMs + "ms (async dual-branch parallel execution)");
 
         return new FNOLResponse(
                 created.claimId(),
@@ -303,13 +327,8 @@ public class FNOLOrchestrator {
                 explanation,
                 explanation.severityGate(),
                 eligibleForAdvisoryPrefill,
-                List.of(
-                        "AI-assisted ADVISORY copilot only; human claim handlers retain final authority.",
-                        "Pre-population recommended for LOW-severity eligible claim types only.",
-                        "Coverage verified by Guidewire PolicyCenter deterministic rules engine.",
-                        "Subrogation score is deterministic and explained by contributing factors.",
-                        "Processing time: " + elapsedMs + "ms (async dual-branch parallel execution)"
-                )
+                requiresHumanValidation,
+                java.util.Collections.unmodifiableList(notes)
         );
     }
 }

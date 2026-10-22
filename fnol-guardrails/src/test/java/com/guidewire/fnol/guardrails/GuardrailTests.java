@@ -37,7 +37,8 @@ class GuardrailTests {
                 "Avery Johnson",
                 "01/02/1980",
                 "123-45-6789",
-                List.of("mock://photo/1.jpg")
+                List.of("mock://photo/1.jpg"),
+                null
         );
     }
 
@@ -54,7 +55,7 @@ class GuardrailTests {
                 LocalDate.now().minusDays(1),
                 "CA",
                 "Valid description",
-                null, null, null, List.of()
+                null, null, null, List.of(), null
         );
 
         assertThatThrownBy(() -> inputGuardrail.validate(bad))
@@ -69,7 +70,7 @@ class GuardrailTests {
                 LocalDate.now().plusDays(1),
                 "CA",
                 "Valid description",
-                null, null, null, List.of()
+                null, null, null, List.of(), null
         );
 
         assertThatThrownBy(() -> inputGuardrail.validate(bad))
@@ -85,7 +86,7 @@ class GuardrailTests {
                 LocalDate.now().minusDays(1),
                 "ZZ",
                 "Valid description",
-                null, null, null, List.of()
+                null, null, null, List.of(), null
         );
 
         assertThatThrownBy(() -> inputGuardrail.validate(bad))
@@ -101,7 +102,7 @@ class GuardrailTests {
                 LocalDate.now().minusDays(1),
                 "CA",
                 "   ",
-                null, null, null, List.of()
+                null, null, null, List.of(), null
         );
 
         assertThatThrownBy(() -> inputGuardrail.validate(bad))

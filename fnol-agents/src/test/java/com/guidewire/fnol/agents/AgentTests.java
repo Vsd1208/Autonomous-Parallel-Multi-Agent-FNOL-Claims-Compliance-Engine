@@ -23,7 +23,8 @@ class AgentTests {
                 name,
                 dob,
                 ssn,
-                List.of("mock://photo/evidence-1.jpg")
+                List.of("mock://photo/evidence-1.jpg"),
+                null   // channel not required in tests
         );
     }
 
@@ -97,23 +98,23 @@ class AgentTests {
         LocalDate incident = LocalDate.of(2026, 8, 16);
 
         // CA = 30 days
-        DeadlineResult ca = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "CA", "loss", null, null, null, List.of()));
+        DeadlineResult ca = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "CA", "loss", null, null, null, List.of(), null));
         assertThat(ca.deadline()).isEqualTo(incident.plusDays(30));
 
         // TX = 15 days
-        DeadlineResult tx = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "TX", "loss", null, null, null, List.of()));
+        DeadlineResult tx = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "TX", "loss", null, null, null, List.of(), null));
         assertThat(tx.deadline()).isEqualTo(incident.plusDays(15));
 
         // NY = 35 days
-        DeadlineResult ny = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "NY", "loss", null, null, null, List.of()));
+        DeadlineResult ny = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "NY", "loss", null, null, null, List.of(), null));
         assertThat(ny.deadline()).isEqualTo(incident.plusDays(35));
 
         // FL = 20 days
-        DeadlineResult fl = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "FL", "loss", null, null, null, List.of()));
+        DeadlineResult fl = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "FL", "loss", null, null, null, List.of(), null));
         assertThat(fl.deadline()).isEqualTo(incident.plusDays(20));
 
         // IL = 30 days
-        DeadlineResult il = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "IL", "loss", null, null, null, List.of()));
+        DeadlineResult il = agent.execute(new FNOLPayload("POL-AUTO-112233", incident, "IL", "loss", null, null, null, List.of(), null));
         assertThat(il.deadline()).isEqualTo(incident.plusDays(30));
     }
 

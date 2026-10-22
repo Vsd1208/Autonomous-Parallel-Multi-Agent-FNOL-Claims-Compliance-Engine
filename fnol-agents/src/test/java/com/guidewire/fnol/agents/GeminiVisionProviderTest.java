@@ -48,7 +48,8 @@ class GeminiVisionProviderTest {
                 "Avery Johnson",
                 "01/02/1980",
                 "123-45-6789",
-                List.of(uri)
+                List.of(uri),
+                null
         );
     }
 
@@ -144,7 +145,7 @@ class GeminiVisionProviderTest {
     void assess_noImageProvided_returnsFallbackAssessment() {
         FNOLPayload payload = new FNOLPayload(
                 "POL-AUTO-112233", LocalDate.of(2026, 8, 16), "CA",
-                "No photo available", null, null, null, List.of()
+                "No photo available", null, null, null, List.of(), null
         );
 
         DamageAssessment result = provider.assess(payload);

@@ -132,7 +132,8 @@ class FNOLOrchestratorTest {
                 "Avery Johnson",
                 "01/02/1980",
                 "123-45-6789",
-                List.of("mock://photo/front-bumper.jpg")
+                List.of("mock://photo/front-bumper.jpg"),
+                null
         );
 
         FNOLResponse response = orchestrator.process(payload);
@@ -180,6 +181,8 @@ class FNOLOrchestratorTest {
         assertThat(response.notes()).anyMatch(s -> s.contains("ADVISORY"));
         assertThat(response.notes()).anyMatch(s -> s.contains("human"));
         assertThat(response.notes()).anyMatch(s -> s.contains("final authority"));
+        // requiresHumanValidation flag must be present
+        assertThat(response.requiresHumanValidation()).isNotNull();
     }
 
     @Test
@@ -190,7 +193,7 @@ class FNOLOrchestratorTest {
                 LocalDate.now(),
                 "CA",
                 "Valid description",
-                null, null, null, List.of()
+                null, null, null, List.of(), null
         );
 
         assertThatThrownBy(() -> orchestrator.process(badPayload))
@@ -206,7 +209,7 @@ class FNOLOrchestratorTest {
                 "CA",
                 "Minor fender bender in parking lot",
                 "Avery Johnson", "01/02/1980", "123-45-6789",
-                List.of("mock://photo/front-bumper.jpg")
+                List.of("mock://photo/front-bumper.jpg"), null
         );
 
         FNOLResponse response = orchestrator.process(payload);
@@ -299,7 +302,7 @@ class FNOLOrchestratorTest {
                 "CA",
                 "Minor fender bender in parking lot",
                 "Avery Johnson", "01/02/1980", "123-45-6789",
-                List.of("mock://photo/front-bumper.jpg")
+                List.of("mock://photo/front-bumper.jpg"), null
         );
 
         assertThatThrownBy(() -> timeoutOrch.process(payload))

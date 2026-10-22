@@ -17,7 +17,8 @@ public final class Models {
             String claimantName,
             String claimantDob,
             String claimantSsn,
-            List<String> evidenceUris
+            List<String> evidenceUris,
+            String channel   // intake source: WEB | MOBILE | PHONE | API (optional)
     ) {}
 
     public record Coverage(
@@ -146,6 +147,7 @@ public final class Models {
             ExplanationObject explanation,
             String severityGate,
             Boolean eligibleForAdvisoryPrefill,
+            Boolean requiresHumanValidation,   // true when HIGH-risk or low-confidence
             List<String> notes
     ) {}
 

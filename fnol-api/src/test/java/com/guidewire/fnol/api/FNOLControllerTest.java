@@ -75,7 +75,8 @@ class FNOLControllerTest {
                 "Avery Johnson",
                 "01/02/1980",
                 "123-45-6789",
-                List.of("mock://photo/evidence.jpg")
+                List.of("mock://photo/evidence.jpg"),
+                "WEB"
         );
 
         mockMvc.perform(post("/api/v1/fnol/intake")
@@ -97,7 +98,8 @@ class FNOLControllerTest {
                 .andExpect(jsonPath("$.explanation.factors.length()").value(6))
                 .andExpect(jsonPath("$.explanation.recommendedAction").exists())
                 .andExpect(jsonPath("$.policyContext").exists())
-                .andExpect(jsonPath("$.policyContext.claimFrequencyRisk").exists());
+                .andExpect(jsonPath("$.policyContext.claimFrequencyRisk").exists())
+                .andExpect(jsonPath("$.requiresHumanValidation").isBoolean());
 
         // Check claim status retrieval
         mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000001"))
@@ -124,6 +126,10 @@ class FNOLControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED_BY_ADJUSTER"))
                 .andExpect(jsonPath("$.adjusterDecision").value("APPROVED_BY_ADJUSTER"));
+
+        // Test new WHY panel endpoint — must return persisted explanation
+        mockMvc.perform(get("/api/v1/fnol/CLM-2026-000001/explanation"))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -134,7 +140,7 @@ class FNOLControllerTest {
                 LocalDate.now().plusDays(5), // Future date
                 "ZZ", // Invalid state
                 "", // Blank description
-                null, null, null, List.of()
+                null, null, null, List.of(), null
         );
 
         mockMvc.perform(post("/api/v1/fnol/intake")
