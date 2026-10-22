@@ -20,7 +20,7 @@ import java.util.Map;
 /**
  * Real AI vision provider for Branch A (Operational AI).
  *
- * Sends car damage photos to Google Gemini 1.5 Flash and parses the structured
+ * Sends car damage photos to Google Gemini 2.5 Flash and parses the structured
  * JSON response into a {@link DamageAssessment} used by the Guidewire reserve
  * calculation pipeline.
  *
@@ -143,10 +143,22 @@ public class GeminiVisionProvider implements VisionProvider {
             ));
         } else {
             // Public image URL (https:// or http://)
-            return Map.of("file_data", Map.of(
-                    "mime_type", "image/jpeg",
-                    "file_uri", uri
-            ));
+            // Download and convert to base64 inline_data — Gemini's file_data only works
+            // with Google Cloud Storage URIs, not arbitrary public URLs.
+            try {
+                byte[] imageBytes = restTemplate.getForObject(uri, byte[].class);
+                String base64 = java.util.Base64.getEncoder().encodeToString(imageBytes);
+                // Detect mime type from URL extension, default to image/jpeg
+                String mime = "image/jpeg";
+                if (uri.toLowerCase().endsWith(".png"))  mime = "image/png";
+                if (uri.toLowerCase().endsWith(".webp")) mime = "image/webp";
+                if (uri.toLowerCase().endsWith(".gif"))  mime = "image/gif";
+                return Map.of("inline_data", Map.of("mime_type", mime, "data", base64));
+            } catch (Exception e) {
+                log.warn("[GeminiVision] Could not download image from URL '{}' — falling back to URL-as-text hint. Cause: {}", uri, e.getMessage());
+                // Last resort: pass the URL as a text hint in the prompt
+                return Map.of("text", "Image URL (describe damage as if viewed): " + uri);
+            }
         }
     }
 

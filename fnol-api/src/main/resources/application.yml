@@ -9,7 +9,7 @@ gemini:
   api-key: ${GEMINI_API_KEY:}
   vision:
     enabled: ${GEMINI_VISION_ENABLED:true}
-    model: ${GEMINI_VISION_MODEL:gemini-1.5-flash}
+    model: ${GEMINI_VISION_MODEL:gemini-2.5-flash}
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/fnol}
