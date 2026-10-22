@@ -41,6 +41,9 @@ services:
       SPRING_DATASOURCE_USERNAME: fnol
       SPRING_DATASOURCE_PASSWORD: fnol
       MOCK_GUIDEWIRE_BASE_URL: http://mock-guidewire:9090
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      GEMINI_VISION_ENABLED: "${GEMINI_VISION_ENABLED:-true}"
+      GEMINI_VISION_MODEL: "${GEMINI_VISION_MODEL:-gemini-1.5-flash}"
     ports:
       - "8080:8080"
     depends_on:
