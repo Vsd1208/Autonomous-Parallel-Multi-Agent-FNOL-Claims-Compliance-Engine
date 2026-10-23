@@ -1,75 +1,67 @@
 # FNOL Intelligence Platform — System Architecture
 
 ## Overview
-The **Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine** is an enterprise decision-support platform for Property & Casualty (P&C) insurance intake. It evaluates visual damage, policy coverage, reserve sizing, PII redaction, statutory deadlines, subrogation potential, and audit logging.
+The **Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine** is a decision-support platform for P&C First Notice of Loss. It runs operational analysis (damage, coverage, reserve) and legal analysis (PII, deadlines) in parallel, reconciles them through a safety gate that explains its reasoning, pre-files the claim in ClaimCenter, and gives an adjuster a console and a queue for the final decision. Failed intakes are saved and escalated rather than dropped.
 
-## Core Architectural Layers
+## Request flow
 
 ```
-                     +---------------------------------------+
-                     |         Jutro Digital Portal          |
-                     |       (React + Vite + Tailwind)       |
-                     +---------------------------------------+
-                                         |
-                                         | HTTP POST /api/v1/fnol/intake
-                                         v
-                     +---------------------------------------+
-                     |           FNOL REST API               |
-                     |           (Spring Boot 3)             |
-                     +---------------------------------------+
-                                         |
-                                         v
-                     +---------------------------------------+
-                     |         Input Guardrails              |
-                     +---------------------------------------+
-                                         |
-                                         v
-                     +---------------------------------------+
-                     |          FNOL Orchestrator            |
-                     +---------------------------------------+
-                                    /         \
-                                   /           \
-                                  v             v
-             +-----------------------+       +-----------------------+
-             |       BRANCH A        |       |       BRANCH B        |
-             |      Operational      |       |  Legal & Compliance   |
-             +-----------------------+       +-----------------------+
-             | - VisionDamageAgent   |       | - PiiRedactionAgent   |
-             | - PolicyValidatorAgent|       | - StatutoryDeadline   |
-             | - ReserveCalculator   |       | - SubrogationScorer   |
-             +-----------------------+       | - AuditTrailAgent     |
-                         |                   +-----------------------+
-                         |                               |
-                         +---------------+---------------+
-                                         |
-                                         v
-                     +---------------------------------------+
-                     |        Output & PII Guardrails        |
-                     +---------------------------------------+
-                                         |
-                                         v
-                     +---------------------------------------+
-                     |       ClaimCenter Client Adapter      |
-                     |    (HTTP POST /cc/claims -> Mock CC)  |
-                     +---------------------------------------+
-                                         |
-                                         v
-                     +---------------------------------------+
-                     |        PostgreSQL Persistence         |
-                     |      (claims + audit_trail tables)    |
-                     +---------------------------------------+
+  React console (Vite)                        X-Adjuster-Token on review / audit / explanation / queue
+        |  POST /api/v1/fnol/intake
+        v
+  FNOLController ── duplicate check (IdempotencyStore: in-memory + DB, REJ- rows ignored) ──> 409
+        |
+        v
+  FNOLOrchestrator
+    1. InputGuardrail ............................................ 400 VALIDATION_ERROR
+    2. ClaimHistoryEnricher (PolicyCenter /history) -> frequency risk
+       PolicyCenter getPolicy ....................................... unknown policy -> NOT ELIGIBLE
+    3. IntakeReviewService (Human Review Point 1) -> inputFlags
+    4. Bounded executor (pool 8, queue 32), one 10 s deadline, interrupt on timeout
+          |                                         |
+     BRANCH A  Operational                     BRANCH B  Legal
+     VisionDamageAgent (Gemini | mock)         PiiRedactionAgent -> PIIGuardrail ...... 422 BLOCK
+       └ EvidenceImageLoader (SSRF guard)      StatutoryDeadlineAgent (ack / decide / urgency)
+     PolicyValidatorAgent + CoverageRuleProvider
+       └ ValidationGuardrail ........................................... 502 NOT ELIGIBLE
+     ReserveCalculatorAgent
+          |                                         |
+          +-------------------+---------------------+
+                              v
+    5. Reconciliation Safety Gate
+       SubrogationScorerAgent (Branch A severity) -> OutputGuardrail
+       ExplanationBuilder: 6 factors + severity (fnol.stp.*)  -> WHY panel
+       ClaimCenter createClaim + attach WHY panel and evidence list (best effort)
+       Route: STP-eligible -> PENDING_ADVISORY_REVIEW (default) | STRAIGHT_THROUGH_PROCESSING
+              otherwise    -> HUMAN_REVIEW
+       AuditTrailAgent: 7 hashed records (sanitized inputs only)
+                              |
+                              v
+  FNOLController: CLAIM_ID_CONFLICT check -> save claim -> AuditService.append (hash chain)
+
+  Failure lane: 422 / 502 NOT ELIGIBLE / 504 (deadline, full executor, Guidewire timeout)
+     -> FailedIntakeRecorder: REJ-xxxxxxxx claim (BLOCKED_COMPLIANCE | HUMAN_REVIEW),
+        failure_reason, "Intake" audit event; HTTP error returned with claimId
+
+  Adjuster (Human Review Points 2 and 3)
+     GET /fnol/queue  ->  console claim page  ->  POST /fnol/{id}/review
+        state check (409 INVALID_STATE) -> conditional update -> AdjusterReview audit event
+        -> ClaimCenter PUT /cc/claims/{id} (failure => cc_sync_status=FAILED, review still succeeds)
+     GET /fnol/{id}/audit (chainValid)  ·  GET /fnol/{id}/audit/pdf  ·  GET /fnol/{id}/explanation
 ```
 
-## Maven Module Structure
+## Maven modules
 
-- **`fnol-common`**: Shared immutable records (DTOs) and domain contracts.
-- **`fnol-mock-guidewire`**: Standalone HTTP microservice mimicking PolicyCenter and ClaimCenter REST endpoints.
-- **`fnol-enrichment`**: External client adapters (`PolicyCenterClient`, `ClaimCenterClient`) and policy history enrichment.
-- **`fnol-agents`**: Focused, single-responsibility AI agent implementations.
-- **`fnol-guardrails`**: Deterministic validation barrier protecting against invalid inputs, negative reserves, and PII leakage.
-- **`fnol-orchestrator`**: Orchestrates agent workflow execution, guardrails, and claim assembly.
-- **`fnol-api`**: Main Spring Boot entry point, REST controllers, exception handlers, and Flyway persistence.
-- **`frontend`**: Modern Juilio-style React UI console.
+| Module | Responsibility |
+|---|---|
+| `fnol-common` | Records in `Models.java`; `ComplianceBlockException`, `CoverageNotEligibleException`, `ProcessingTimeoutException` |
+| `fnol-mock-guidewire` | Spring Boot service on 9090 imitating PolicyCenter and ClaimCenter (create, read, update, attachments) with failure switches |
+| `fnol-enrichment` | `PolicyCenterClient`, `ClaimCenterClient`, their HTTP mock clients, `ClaimHistoryEnricher`, the primary Guidewire `RestTemplate` (2 s / 3 s) |
+| `fnol-agents` | Agents, vision providers, `EvidenceImageLoader`, deadline / coverage / subrogation providers, Gemini `RestTemplate` |
+| `fnol-guardrails` | Input, output, PII and validation guardrails |
+| `fnol-orchestrator` | `FNOLOrchestrator`, `IntakeReviewService`, `ExplanationBuilder`, `ClaimTypeValidator`, `OrchestratorProperties`, `StpProperties` |
+| `fnol-api` | REST controller, error mapping, adjuster-token and CORS filters, `AuditService` (hash chain), `FailedIntakeRecorder`, `IdempotencyStore`, JPA entities, Flyway V1–V6, PDF report |
+| `frontend` | React + Vite console: intake, claim dashboard, adjuster queue, audit trail |
 
-## Human-in-the-Loop Philosophy
-The system is built strictly for **decision support**. Final adjudication authority rests with human claims adjusters. Every recommendation includes human-readable explainability factors and SHA-256 hashed audit events.
+## Human-in-the-loop
+The platform recommends; adjusters decide. With the default `fnol.stp.require-advisory-review=true`, every claim — including STP-eligible ones — waits in the adjuster queue for a human decision. Turning the flag off lets STP-eligible claims be filed without a human step; that is a business decision, see ADR-009. Statutory deadlines, coverage rules and subrogation weights are synthetic prototype values.

@@ -1,172 +1,155 @@
 package com.guidewire.fnol.enrichment;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guidewire.fnol.common.Models.ClaimHistory;
 import com.guidewire.fnol.common.Models.PolicyHistoryContext;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-@RunWith(MockitoJUnitRunner.class)
-public class ClaimHistoryEnricherTest {
+@ExtendWith(MockitoExtension.class)
+class ClaimHistoryEnricherTest {
 
     @Mock
     private PolicyCenterClient policyClient;
 
     private ClaimHistoryEnricher enricher;
 
-    @Before
-    public void setup() {
+    @BeforeEach
+    void setup() {
         enricher = new ClaimHistoryEnricher(policyClient);
     }
 
-    /**
-     * Test 1: Policy with 0 claims should be LOW risk
-     */
     @Test
-    public void testPolicyWith0ClaimsIsLowRisk() {
-        String policyNumber = "POL-AUTO-001";
+    @DisplayName("Policy with 0 claims is LOW risk")
+    void policyWith0ClaimsIsLowRisk() {
+        when(policyClient.getPolicyClaimHistory("POL-AUTO-001")).thenReturn(new ArrayList<>());
 
-        when(policyClient.getPolicyClaimHistory(policyNumber))
-                .thenReturn(new ArrayList<>());
+        PolicyHistoryContext result = enricher.enrich("POL-AUTO-001");
 
-        PolicyHistoryContext result = enricher.enrich(policyNumber);
-
-        assertEquals("LOW", result.claimFrequencyRisk());
-        assertEquals(0, result.totalPriorClaims());
-        assertEquals(0, result.claimsLast6Months());
-        assertEquals(0, result.claimsLast12Months());
+        assertThat(result.claimFrequencyRisk()).isEqualTo("LOW");
+        assertThat(result.totalPriorClaims()).isZero();
+        assertThat(result.claimsLast6Months()).isZero();
+        assertThat(result.claimsLast12Months()).isZero();
     }
 
-    /**
-     * Test 2: Policy with 1 claim in last 12 months AND 0 in last 6 months = MEDIUM risk
-     */
     @Test
-    public void testPolicyWith1ClaimIn12MonthsIsMediumRisk() {
-        String policyNumber = "POL-AUTO-002";
+    @DisplayName("One claim 6-12 months ago is MEDIUM risk")
+    void policyWith1ClaimIn12MonthsIsMediumRisk() {
+        when(policyClient.getPolicyClaimHistory("POL-AUTO-002")).thenReturn(List.of(
+                new ClaimHistory("CLM-001", LocalDate.now().minusDays(200), "CLOSED", new BigDecimal("1800"), "Theft")
+        ));
 
-        List<ClaimHistory> history = List.of(
-                new ClaimHistory(
-                        "CLM-001",
-                        LocalDate.now().minusDays(200),
-                        "CLOSED",
-                        new BigDecimal("1800"),
-                        "Theft"
-                )
-        );
-        when(policyClient.getPolicyClaimHistory(policyNumber))
-                .thenReturn(history);
+        PolicyHistoryContext result = enricher.enrich("POL-AUTO-002");
 
-        PolicyHistoryContext result = enricher.enrich(policyNumber);
-
-        assertEquals("MEDIUM", result.claimFrequencyRisk());
-        assertEquals(1, result.totalPriorClaims());
-        assertEquals(0, result.claimsLast6Months());
-        assertEquals(1, result.claimsLast12Months());
+        assertThat(result.claimFrequencyRisk()).isEqualTo("MEDIUM");
+        assertThat(result.totalPriorClaims()).isEqualTo(1);
+        assertThat(result.claimsLast6Months()).isZero();
+        assertThat(result.claimsLast12Months()).isEqualTo(1);
     }
 
-    /**
-     * Test 3: Policy with 2 claims in 12 months = HIGH risk
-     */
     @Test
-    public void testPolicyWith2ClaimsIn12MonthsIsHighRisk() {
-        String policyNumber = "POL-AUTO-003";
+    @DisplayName("Two claims in 12 months is HIGH risk")
+    void policyWith2ClaimsIn12MonthsIsHighRisk() {
+        when(policyClient.getPolicyClaimHistory("POL-AUTO-003")).thenReturn(List.of(
+                new ClaimHistory("CLM-001", LocalDate.now().minusDays(45), "CLOSED", new BigDecimal("2500"), "Collision"),
+                new ClaimHistory("CLM-002", LocalDate.now().minusDays(200), "CLOSED", new BigDecimal("1800"), "Theft")
+        ));
 
-        List<ClaimHistory> history = List.of(
-                new ClaimHistory(
-                        "CLM-001",
-                        LocalDate.now().minusDays(45),
-                        "CLOSED",
-                        new BigDecimal("2500"),
-                        "Collision"
-                ),
-                new ClaimHistory(
-                        "CLM-002",
-                        LocalDate.now().minusDays(200),
-                        "CLOSED",
-                        new BigDecimal("1800"),
-                        "Theft"
-                )
-        );
-        when(policyClient.getPolicyClaimHistory(policyNumber))
-                .thenReturn(history);
+        PolicyHistoryContext result = enricher.enrich("POL-AUTO-003");
 
-        PolicyHistoryContext result = enricher.enrich(policyNumber);
-
-        assertEquals("HIGH", result.claimFrequencyRisk());
-        assertEquals(2, result.totalPriorClaims());
-        assertEquals(1, result.claimsLast6Months());
-        assertEquals(2, result.claimsLast12Months());
+        assertThat(result.claimFrequencyRisk()).isEqualTo("HIGH");
+        assertThat(result.totalPriorClaims()).isEqualTo(2);
+        assertThat(result.claimsLast6Months()).isEqualTo(1);
+        assertThat(result.claimsLast12Months()).isEqualTo(2);
     }
 
-    /**
-     * Test 4: Policy with 1 claim in last 6 months = HIGH risk
-     */
     @Test
-    public void testPolicyWithClaimInLast6MonthsIsHighRisk() {
-        String policyNumber = "POL-AUTO-004";
+    @DisplayName("One claim in the last 6 months is HIGH risk")
+    void policyWithClaimInLast6MonthsIsHighRisk() {
+        when(policyClient.getPolicyClaimHistory("POL-AUTO-004")).thenReturn(List.of(
+                new ClaimHistory("CLM-001", LocalDate.now().minusDays(45), "CLOSED", new BigDecimal("1500"), "Collision")
+        ));
 
-        List<ClaimHistory> history = List.of(
-                new ClaimHistory(
-                        "CLM-001",
-                        LocalDate.now().minusDays(45),
-                        "CLOSED",
-                        new BigDecimal("1500"),
-                        "Collision"
-                )
-        );
+        PolicyHistoryContext result = enricher.enrich("POL-AUTO-004");
+
+        assertThat(result.claimFrequencyRisk()).isEqualTo("HIGH");
+        assertThat(result.claimsLast6Months()).isEqualTo(1);
     }
 
-    /**
-     * Test 5: Verify open claims are counted
-     */
     @Test
-    public void testOpenClaimsAreCountedCorrectly() {
-        String policyNumber = "POL-AUTO-005";
-
-        List<ClaimHistory> history = List.of(
+    @DisplayName("Open claims are counted")
+    void openClaimsAreCountedCorrectly() {
+        when(policyClient.getPolicyClaimHistory("POL-AUTO-005")).thenReturn(List.of(
                 new ClaimHistory("CLM-001", LocalDate.now().minusDays(10), "OPEN", new BigDecimal("5000"), "Collision"),
                 new ClaimHistory("CLM-002", LocalDate.now().minusDays(30), "CLOSED", new BigDecimal("2000"), "Theft"),
                 new ClaimHistory("CLM-003", LocalDate.now().minusDays(60), "OPEN", new BigDecimal("3000"), "Collision")
-        );
-        when(policyClient.getPolicyClaimHistory(policyNumber))
-                .thenReturn(history);
+        ));
 
-        PolicyHistoryContext result = enricher.enrich(policyNumber);
+        PolicyHistoryContext result = enricher.enrich("POL-AUTO-005");
 
-        assertEquals(2, result.openClaimsCount());
-        assertEquals(3, result.totalPriorClaims());
+        assertThat(result.openClaimsCount()).isEqualTo(2);
+        assertThat(result.totalPriorClaims()).isEqualTo(3);
     }
 
-    /**
-     * Test 6: Verify most recent claim details are captured
-     */
     @Test
-    public void testMostRecentClaimDetailsAreCaptured() {
-        String policyNumber = "POL-AUTO-006";
-
+    @DisplayName("Most recent claim details are captured")
+    void mostRecentClaimDetailsAreCaptured() {
         LocalDate recentDate = LocalDate.now().minusDays(10);
-
-        List<ClaimHistory> history = List.of(
+        when(policyClient.getPolicyClaimHistory("POL-AUTO-006")).thenReturn(List.of(
                 new ClaimHistory("CLM-001", recentDate, "OPEN", new BigDecimal("5000"), "Collision"),
                 new ClaimHistory("CLM-002", LocalDate.now().minusDays(200), "CLOSED", new BigDecimal("2000"), "Theft")
-        );
-        when(policyClient.getPolicyClaimHistory(policyNumber))
-                .thenReturn(history);
+        ));
 
-        PolicyHistoryContext result = enricher.enrich(policyNumber);
+        PolicyHistoryContext result = enricher.enrich("POL-AUTO-006");
 
-        assertEquals(recentDate, result.lastClaimDate());
-        assertEquals("OPEN", result.lastClaimType());
-        assertEquals(new BigDecimal("5000"), result.lastClaimAmount());
+        assertThat(result.lastClaimDate()).isEqualTo(recentDate);
+        assertThat(result.lastClaimType()).isEqualTo("OPEN");
+        assertThat(result.lastClaimAmount()).isEqualByComparingTo("5000");
+    }
+
+    @Test
+    @DisplayName("D1: history is loaded over HTTP from /history, so POL-AUTO-445566 is HIGH and POL-AUTO-112233 is LOW")
+    void enricherLoadsHistoryOverHttp() throws Exception {
+        RestTemplate rest = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.createServer(rest);
+        ObjectMapper json = new ObjectMapper().findAndRegisterModules();
+
+        server.expect(requestTo("http://localhost:9090/pc/policies/POL-AUTO-445566/history"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(json.writeValueAsString(List.of(
+                        new ClaimHistory("HIST-5566-01", LocalDate.now().minusDays(40), "CLOSED", new BigDecimal("2200"), "Rear bumper"),
+                        new ClaimHistory("HIST-5566-02", LocalDate.now().minusDays(130), "OPEN", new BigDecimal("3100"), "Side panel")
+                )), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://localhost:9090/pc/policies/POL-AUTO-112233/history"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(json.writeValueAsString(List.of(
+                        new ClaimHistory("HIST-2233-01", LocalDate.now().minusYears(2), "CLOSED", new BigDecimal("1850"), "Glass")
+                )), MediaType.APPLICATION_JSON));
+
+        ClaimHistoryEnricher httpEnricher =
+                new ClaimHistoryEnricher(new MockPolicyCenterClient(rest, "http://localhost:9090"));
+
+        assertThat(httpEnricher.enrich("POL-AUTO-445566").claimFrequencyRisk()).isEqualTo("HIGH");
+        assertThat(httpEnricher.enrich("POL-AUTO-112233").claimFrequencyRisk()).isEqualTo("LOW");
+        server.verify();
     }
 }

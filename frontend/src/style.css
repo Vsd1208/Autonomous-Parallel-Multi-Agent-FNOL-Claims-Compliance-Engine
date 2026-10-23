@@ -568,3 +568,77 @@ button, input, textarea, select {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Console additions: navigation, intake flags, queue, audit chain ── */
+.nav-btn {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.nav-btn.secondary { background: var(--color-neutral-500); }
+.nav-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.quick-load-btn.active { outline: 2px solid var(--color-primary); }
+
+.flag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.flag-chip {
+  background: var(--color-warning-light);
+  color: #8a5300;
+  border: 1px solid var(--color-warning);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.warning-box {
+  background: var(--color-warning-light);
+  border: 1px solid var(--color-warning);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.muted { color: var(--color-neutral-500); font-size: var(--font-size-sm); }
+.urgency.warning { color: #b26a00; }
+.urgency.critical { color: var(--color-error); }
+
+.table-scroll { overflow-x: auto; margin-top: 16px; }
+.queue-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
+.queue-table th,
+.queue-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--color-neutral-200); }
+.queue-table th { color: var(--color-neutral-700); }
+
+.chain-badge { border-radius: 10px; padding: 10px 14px; font-weight: 600; }
+.chain-badge.valid { background: var(--color-success-light); color: var(--color-success); }
+.chain-badge.broken { background: var(--color-error-light); color: var(--color-error); }
+
+.audit-event {
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-300);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.audit-event-title { font-weight: 600; margin-bottom: 6px; }
+.hash-line { font-family: monospace; font-size: var(--font-size-xs); color: var(--color-neutral-500); word-break: break-all; }
+.audit-status {
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}

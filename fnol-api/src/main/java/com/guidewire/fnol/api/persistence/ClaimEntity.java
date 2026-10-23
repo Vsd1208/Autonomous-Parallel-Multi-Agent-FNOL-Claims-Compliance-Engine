@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 import java.math.*;
 import java.time.*;
 
+/** A claim row. Never holds the description, SSN, DOB, claimant name, phone or email. */
 @Entity
 @Table(name = "claims")
 public class ClaimEntity {
@@ -34,6 +35,22 @@ public class ClaimEntity {
   @Column(length = 32)
   public String channel;
 
+  /** Why a failed intake was saved for human attention (REJ-... claims only). Never contains PII. */
+  @Column(length = 500)
+  public String failureReason;
+
+  /** LOW | MEDIUM | HIGH from the WHY panel. */
+  @Column(length = 16)
+  public String severityGate;
+
+  /** Comma-separated Human Review Point 1 flags. */
+  @Column(length = 500)
+  public String inputFlags;
+
+  /** SYNCED | FAILED | NOT_FILED — whether ClaimCenter has the latest advisory and decision. */
+  @Column(length = 16)
+  public String ccSyncStatus;
+
   private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
   public static ClaimEntity from(FNOLResponse r, FNOLPayload p) {
@@ -46,6 +63,9 @@ public class ClaimEntity {
     e.estimatedDamage = r.branchA().damageAssessment().estimatedDamage();
     e.reserve        = r.branchA().reserve().recommendedReserve();
     e.channel        = p.channel();
+    e.severityGate   = r.severityGate();
+    e.inputFlags     = r.inputFlags() == null || r.inputFlags().isEmpty() ? null : String.join(",", r.inputFlags());
+    e.ccSyncStatus   = r.ccSyncStatus();
     e.createdAt      = Instant.now();
     e.updatedAt      = e.createdAt;
     try {

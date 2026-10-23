@@ -1,19 +1,20 @@
-
 {
   "scenario": "low_confidence",
-  "description": "Blurry evidence results in low AI confidence and human review",
+  "description": "Blurry photo: vision confidence 0.61 fails the 0.85 AI Confidence factor, so the claim goes to a human.",
   "payload": {
     "policyNumber": "POL-AUTO-112233",
     "incidentDate": "2026-09-27",
     "state": "CA",
     "description": "Vehicle involved in a collision. Front bumper damaged.",
-    "claimantName": "Demo User",
+    "claimantName": "Avery Johnson",
     "claimantDob": "01/01/1990",
     "claimantSsn": "123-45-6789",
     "evidenceUris": [
-      "https://example.com/blurry-damage.jpg"
-    ]
+      "mock://photo/blurry-damage.jpg"
+    ],
+    "channel": "API"
   },
   "expectedStatus": 200,
-  "expectedDecision": "HUMAN_REVIEW"
+  "expectedClaimStatus": "HUMAN_REVIEW",
+  "expectedDecision": "ADVISORY_RECOMMENDED_ACTION"
 }

@@ -1,213 +1,95 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Link, Route, Routes, useNavigate } from 'react-router-dom';
 import './style.css';
-import ClaimDashboard from './pages/ClaimDashboard';
+import ClaimDashboard, { ClaimRoute, fromIntake } from './pages/ClaimDashboard';
 import AuditLog from './pages/AuditLog';
-import { apiClient } from './services/apiClient';
+import ClaimQueue from './pages/ClaimQueue';
+import { ApiError, apiClient } from './services/apiClient';
+import { claimStore } from './services/claimStore';
 import { ClaimResult, FormData } from './types';
 
-const demoScenarios = [
+/** A recent incident date that is unique per load, so re-running a scenario is not a duplicate. */
+function recentDate(): string {
+  const daysAgo = 31 + Math.floor(Math.random() * 120);
+  const d = new Date(Date.now() - daysAgo * 86_400_000);
+  return d.toISOString().slice(0, 10);
+}
+
+type Scenario = { name: string; evidenceUri: string; data: Omit<FormData, 'incidentDate'> };
+
+const insured = { claimantDob: '01/02/1980', claimantSsn: '123-45-6789', claimantPhone: '', claimantEmail: '' };
+
+// Mirrors demo-scenarios/*.json; mock:// photo keywords drive MockVisionProvider (GEMINI_VISION_ENABLED=false).
+const demoScenarios: Scenario[] = [
   {
     name: 'Clean STP',
-    data: {
-      policyNumber: 'POL-AUTO-112233',
-      incidentDate: '2026-09-15',
-      state: 'CA',
-      description: 'Rear-ended at traffic light. Other driver admitted fault. Police report filed.',
-      claimantName: 'Avery Johnson',
-      claimantDob: '01/02/1980',
-      claimantSsn: '123-45-6789',
-    },
+    evidenceUri: 'mock://photo/normal-front-bumper.jpg',
+    data: { ...insured, policyNumber: 'POL-AUTO-112233', state: 'CA', claimantName: 'Avery Johnson',
+      description: 'Vehicle involved in a minor collision. Front bumper damaged.' },
   },
   {
     name: 'Low Confidence',
-    data: {
-      policyNumber: 'POL-AUTO-223344',
-      incidentDate: '2026-09-14',
-      state: 'NY',
-      description: 'Blurry photo evidence. Need manual review.',
-      claimantName: 'Jane Doe',
-      claimantDob: '05/10/1985',
-      claimantSsn: '987-65-4321',
-    },
+    evidenceUri: 'mock://photo/blurry-damage.jpg',
+    data: { ...insured, policyNumber: 'POL-AUTO-112233', state: 'CA', claimantName: 'Avery Johnson',
+      description: 'Vehicle involved in a collision. Front bumper damaged.' },
   },
   {
     name: 'Compliance Block',
-    data: {
-      policyNumber: 'POL-AUTO-334455',
-      incidentDate: '2026-09-13',
-      state: 'TX',
-      description: 'Medical Record #MR-2026-12345 attached.',
-      claimantName: 'John Smith',
-      claimantDob: '03/20/1975',
-      claimantSsn: '555-66-7777',
-    },
+    evidenceUri: 'mock://photo/normal-damage.jpg',
+    data: { ...insured, policyNumber: 'POL-AUTO-112233', state: 'CA', claimantName: 'Avery Johnson',
+      description: 'Vehicle collision. Patient medical record number MRN-123456 is included in the report.' },
   },
   {
-    name: 'Timeout Test',
-    data: {
-      policyNumber: 'POL-AUTO-445566',
-      incidentDate: '2026-09-12',
-      state: 'FL',
-      description: 'Testing timeout scenario.',
-      claimantName: 'Bob Wilson',
-      claimantDob: '12/31/1980',
-      claimantSsn: '111-22-3333',
-    },
+    name: 'Timeout',
+    evidenceUri: 'mock://photo/slow-damage.jpg',
+    data: { ...insured, policyNumber: 'POL-AUTO-112233', state: 'CA', claimantName: 'Avery Johnson',
+      description: 'Vehicle involved in a collision. Front bumper damaged.' },
   },
   {
-    name: 'Duplicate Test',
-    data: {
-      policyNumber: 'POL-AUTO-556677',
-      incidentDate: '2026-09-11',
-      state: 'IL',
-      description: 'Duplicate submission test.',
-      claimantName: 'Alice Brown',
-      claimantDob: '07/15/1990',
-      claimantSsn: '444-55-6666',
-    },
+    name: 'High Claim Frequency',
+    evidenceUri: 'mock://photo/normal-rear-bumper.jpg',
+    data: { ...insured, policyNumber: 'POL-AUTO-445566', state: 'CA', claimantName: 'Jordan Rivera',
+      description: 'Scraped a pole while parking. Rear bumper dented.' },
+  },
+  {
+    name: 'Home Policy',
+    evidenceUri: 'mock://photo/water-damage.jpg',
+    data: { ...insured, policyNumber: 'POL-HOME-334455', state: 'TX', claimantName: 'Riley Smith',
+      description: 'Kitchen pipe burst and caused water damage to the floor and cabinets.' },
   },
 ];
 
-const mockClaim: ClaimResult = {
-  claimId: 'CLM-2026-000001',
-  status: 'OPEN',
-  branchA: {
-    damageAssessment: {
-      damageType: 'FRONT_BUMPER',
-      severity: 'MODERATE',
-      estimatedDamage: 4200.0,
-      confidence: 0.91,
-    },
-    coverage: {
-      covered: true,
-      coverageType: 'COLLISION',
-      coverageLimit: 50000.0,
-      deductible: 1000.0,
-    },
-    reserve: {
-      estimatedDamage: 4200.0,
-      factor: 1.15,
-      recommendedReserve: 4830.0,
-    },
-  },
-  branchB: {
-    pii: {
-      piiDetected: true,
-      redactedDescription: 'Rear-ended at traffic light. [NAME] admitted fault. Police report filed.',
-      detectedTypes: ['SSN', 'NAME', 'DOB'],
-    },
-    deadline: {
-      state: 'CA',
-      deadline: '2026-10-15',
-      ruleSource: 'CA Insurance Code §2695.7',
-      disclaimer: 'Failure to acknowledge within 10 days constitutes unfair practice.',
-    },
-    subrogation: {
-      score: 78,
-      recommendedAction: 'INVESTIGATE',
-      factors: {
-        thirdPartyMention: 35,
-        policeReportSignal: 20,
-        damageSeverity: 23,
-      },
-    },
-    audit: [
-      {
-        agentName: 'VisionDamageAgent',
-        status: 'SUCCESS',
-        timestamp: '2026-09-15T10:45:00Z',
-      },
-      {
-        agentName: 'PolicyValidatorAgent',
-        status: 'SUCCESS',
-        timestamp: '2026-09-15T10:45:01Z',
-      },
-      {
-        agentName: 'ReserveCalculatorAgent',
-        status: 'SUCCESS',
-        timestamp: '2026-09-15T10:45:02Z',
-      },
-      {
-        agentName: 'PiiRedactionAgent',
-        status: 'SUCCESS',
-        timestamp: '2026-09-15T10:45:02Z',
-      },
-      {
-        agentName: 'StatutoryDeadlineAgent',
-        status: 'SUCCESS',
-        timestamp: '2026-09-15T10:45:03Z',
-      },
-      {
-        agentName: 'SubrogationScorerAgent',
-        status: 'SUCCESS',
-        timestamp: '2026-09-15T10:45:03Z',
-      },
-    ],
-  },
-  explanation: {
-    decision: 'ADVISORY_RECOMMENDED_ACTION',
-    summary: 'All criteria met for advisory-guided pre-population of low-severity claim',
-    recommendedAction: 'PREFILL_LOW_SEVERITY_CLAIM',
-    severityGate: 'LOW',
-    factors: [
-      {
-        factor: 'AI Confidence',
-        value: '0.91',
-        status: 'PASS',
-        detail: 'Confidence score must be >= 0.85',
-      },
-      {
-        factor: 'Coverage Status',
-        value: 'COLLISION',
-        status: 'PASS',
-        detail: 'Relevant coverage must be active and matched',
-      },
-    ],
-  },
-  notes: [
-    'AI-assisted advisory copilot only; human claim handlers retain final authority.',
-    'Coverage verified by Guidewire PolicyCenter deterministic rules engine.',
-  ],
+const emptyForm: FormData = {
+  policyNumber: '',
+  incidentDate: '',
+  state: 'CA',
+  description: '',
+  claimantName: '',
+  claimantDob: '',
+  claimantSsn: '',
+  claimantPhone: '',
+  claimantEmail: '',
 };
 
 function IntakeForm() {
-  const [lastClaim, setLastClaim] = useState<ClaimResult | null>(() => {
-    const stored = window.localStorage.getItem('fnol:lastClaim');
-    return stored ? JSON.parse(stored) : null;
-  });
-  const [form, setForm] = useState<FormData>({
-    policyNumber: '',
-    incidentDate: '',
-    state: 'CA',
-    description: '',
-    claimantName: '',
-    claimantDob: '',
-    claimantSsn: '',
-  });
-
+  const navigate = useNavigate();
+  const lastClaimId = claimStore.lastClaimId();
+  const [form, setForm] = useState<FormData>(emptyForm);
+  const [evidenceUri, setEvidenceUri] = useState('mock://photo/normal-front-bumper.jpg');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [escalatedClaimId, setEscalatedClaimId] = useState('');
   const [result, setResult] = useState<ClaimResult | null>(null);
 
-  const storeResult = (claim: ClaimResult) => {
-    window.localStorage.setItem('fnol:lastClaim', JSON.stringify(claim));
-    setLastClaim(claim);
-    setResult(claim);
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    setForm({
-      ...form,
-      [e.target.name]: e.target.value,
-    });
-  };
-
-  const handleQuickLoad = (scenario: (typeof demoScenarios)[0]) => {
-    setForm(scenario.data);
+  const handleQuickLoad = (scenario: Scenario) => {
+    setForm({ ...scenario.data, incidentDate: recentDate() });
+    setEvidenceUri(scenario.evidenceUri);
     setError('');
+    setEscalatedClaimId('');
     setResult(null);
   };
 
@@ -215,22 +97,27 @@ function IntakeForm() {
     e.preventDefault();
     setLoading(true);
     setError('');
-
+    setEscalatedClaimId('');
     try {
       const response = await apiClient.submitFNOL({
         ...form,
-        evidenceUris: ['mock://photo/front-bumper.jpg'],
+        claimantPhone: form.claimantPhone || undefined,
+        claimantEmail: form.claimantEmail || undefined,
+        evidenceUris: evidenceUri.trim() ? [evidenceUri.trim()] : [],
+        channel: 'WEB',
       });
-      storeResult(response);
+      claimStore.save(response);
+      setResult(response);
     } catch (err: any) {
       setError(err.message || 'Failed to submit FNOL');
+      if (err instanceof ApiError && err.claimId) setEscalatedClaimId(err.claimId);
     } finally {
       setLoading(false);
     }
   };
 
   if (result) {
-    return <ClaimDashboard claim={result} />;
+    return <ClaimDashboard claim={fromIntake(result)} />;
   }
 
   return (
@@ -240,25 +127,23 @@ function IntakeForm() {
           <p className="eyebrow">FNOL INTAKE</p>
           <h1>Adjuster Intelligence Console</h1>
           <p>AI-Assisted Claims Decision Support with Guidewire Integration</p>
+          <p>
+            <Link to="/queue">Open the adjuster queue →</Link>
+          </p>
         </header>
 
         <div className="quick-load-section">
           <h2>Quick-Load Demo Scenarios</h2>
           <div className="button-grid">
-            {demoScenarios.map((scenario, index) => (
-              <button
-                key={index}
-                type="button"
-                onClick={() => handleQuickLoad(scenario)}
-                className="quick-load-btn"
-              >
+            {demoScenarios.map((scenario) => (
+              <button key={scenario.name} type="button" onClick={() => handleQuickLoad(scenario)} className="quick-load-btn">
                 {scenario.name}
               </button>
             ))}
           </div>
-          {lastClaim && (
-            <button type="button" onClick={() => setResult(lastClaim)} className="resume-btn">
-              Resume Last Claim {lastClaim.claimId}
+          {lastClaimId && (
+            <button type="button" onClick={() => navigate(`/claim/${lastClaimId}`)} className="resume-btn">
+              Resume Last Claim {lastClaimId}
             </button>
           )}
         </div>
@@ -270,35 +155,16 @@ function IntakeForm() {
             <div className="form-grid">
               <div className="form-field">
                 <label>Policy Number</label>
-                <input
-                  type="text"
-                  name="policyNumber"
-                  value={form.policyNumber}
-                  onChange={handleInputChange}
-                  placeholder="POL-AUTO-112233"
-                  required
-                />
+                <input type="text" name="policyNumber" value={form.policyNumber} onChange={handleInputChange}
+                  placeholder="POL-AUTO-112233" required />
               </div>
-
               <div className="form-field">
                 <label>Incident Date</label>
-                <input
-                  type="date"
-                  name="incidentDate"
-                  value={form.incidentDate}
-                  onChange={handleInputChange}
-                  required
-                />
+                <input type="date" name="incidentDate" value={form.incidentDate} onChange={handleInputChange} required />
               </div>
-
               <div className="form-field">
                 <label>State</label>
-                <select
-                  name="state"
-                  value={form.state}
-                  onChange={handleInputChange}
-                  required
-                >
+                <select name="state" value={form.state} onChange={handleInputChange} required>
                   <option value="CA">California</option>
                   <option value="NY">New York</option>
                   <option value="TX">Texas</option>
@@ -306,58 +172,56 @@ function IntakeForm() {
                   <option value="IL">Illinois</option>
                 </select>
               </div>
-
               <div className="form-field">
                 <label>Claimant Name</label>
-                <input
-                  type="text"
-                  name="claimantName"
-                  value={form.claimantName}
-                  onChange={handleInputChange}
-                  placeholder="Avery Johnson"
-                  required
-                />
+                <input type="text" name="claimantName" value={form.claimantName} onChange={handleInputChange}
+                  placeholder="Avery Johnson" required />
               </div>
-
               <div className="form-field">
                 <label>Claimant DOB</label>
-                <input
-                  type="text"
-                  name="claimantDob"
-                  value={form.claimantDob}
-                  onChange={handleInputChange}
-                  placeholder="01/02/1980"
-                  required
-                />
+                <input type="text" name="claimantDob" value={form.claimantDob} onChange={handleInputChange}
+                  placeholder="01/02/1980" />
               </div>
-
               <div className="form-field">
                 <label>Claimant SSN</label>
-                <input
-                  type="text"
-                  name="claimantSsn"
-                  value={form.claimantSsn}
-                  onChange={handleInputChange}
-                  placeholder="123-45-6789"
-                  required
-                />
+                <input type="text" name="claimantSsn" value={form.claimantSsn} onChange={handleInputChange}
+                  placeholder="123-45-6789" />
+              </div>
+              <div className="form-field">
+                <label>Claimant Phone (optional)</label>
+                <input type="tel" name="claimantPhone" value={form.claimantPhone} onChange={handleInputChange}
+                  placeholder="555-0100" />
+              </div>
+              <div className="form-field">
+                <label>Claimant Email (optional)</label>
+                <input type="email" name="claimantEmail" value={form.claimantEmail} onChange={handleInputChange}
+                  placeholder="avery@example.com" />
               </div>
             </div>
 
             <div className="form-field full-width">
+              <label>Evidence Photo URI</label>
+              <input type="text" value={evidenceUri} onChange={(e) => setEvidenceUri(e.target.value)}
+                placeholder="mock://photo/normal.jpg, data:image/jpeg;base64,… or an allow-listed https URL" />
+            </div>
+
+            <div className="form-field full-width">
               <label>Description</label>
-              <textarea
-                name="description"
-                value={form.description}
-                onChange={handleInputChange}
-                rows={5}
-                placeholder="Describe the incident in detail..."
-                required
-              />
+              <textarea name="description" value={form.description} onChange={handleInputChange} rows={5}
+                placeholder="Describe the incident in detail..." required />
             </div>
           </div>
 
-          {error && <div className="error-box">❌ {error}</div>}
+          {error && (
+            <div className="error-box">
+              ❌ {error}
+              {escalatedClaimId && (
+                <>
+                  {' '}Saved for human attention as <Link to={`/claim/${escalatedClaimId}`}>{escalatedClaimId}</Link>.
+                </>
+              )}
+            </div>
+          )}
 
           <button type="submit" className="submit-btn" disabled={loading}>
             {loading ? 'Processing FNOL...' : 'Submit FNOL'}
@@ -373,7 +237,8 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<IntakeForm />} />
-        <Route path="/claim/:claimId" element={<ClaimDashboard claim={mockClaim} />} />
+        <Route path="/queue" element={<ClaimQueue />} />
+        <Route path="/claim/:claimId" element={<ClaimRoute />} />
         <Route path="/audit/:claimId" element={<AuditLog />} />
       </Routes>
     </Router>

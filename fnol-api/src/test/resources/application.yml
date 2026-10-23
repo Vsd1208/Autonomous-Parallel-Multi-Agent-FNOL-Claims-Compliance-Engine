@@ -5,8 +5,10 @@ mock-guidewire:
 fnol:
   orchestrator:
     timeout-seconds: 10
+  security:
+    adjuster-token: test-adjuster-token
 # Disable Gemini Vision in tests — MockVisionProvider is used instead.
-# This keeps all 38 tests fast, offline, and API-key-free.
+# This keeps the tests fast, offline, and API-key-free.
 gemini:
   vision:
     enabled: false

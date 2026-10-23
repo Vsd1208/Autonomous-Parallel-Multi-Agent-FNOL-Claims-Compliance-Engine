@@ -45,6 +45,21 @@ class AgentTests {
     }
 
     @Test
+    @DisplayName("MockVisionProvider keywords: blurry lowers confidence, severe is HIGH damage, water is a home loss")
+    void mockVisionProvider_keywords() {
+        MockVisionProvider provider = new MockVisionProvider();
+        java.util.function.Function<String, DamageAssessment> assess = uri -> provider.assess(
+                new FNOLPayload("POL-AUTO-112233", LocalDate.now(), "CA", "loss", null, null, null, List.of(uri), null));
+
+        assertThat(assess.apply("mock://photo/normal.jpg").confidence()).isEqualByComparingTo("0.91");
+        assertThat(assess.apply("mock://photo/blurry.jpg").confidence()).isEqualByComparingTo("0.61");
+        assertThat(assess.apply("mock://photo/severe.jpg").estimatedDamage()).isEqualByComparingTo("24000");
+        assertThat(assess.apply("mock://photo/water.jpg").damageType()).isEqualTo("WATER_DAMAGE");
+        assertThat(provider.assess(new FNOLPayload("POL-AUTO-112233", LocalDate.now(), "CA", "loss",
+                null, null, null, List.of(), null)).confidence()).isEqualByComparingTo("0.60");
+    }
+
+    @Test
     @DisplayName("ReserveCalculatorAgent computes reserve = estimatedDamage * 1.15 using BigDecimal")
     void reserveCalculatorAgent_computesCorrectReserve() {
         ReserveCalculatorAgent agent = new ReserveCalculatorAgent();
@@ -127,15 +142,31 @@ class AgentTests {
         FNOLPayload highSubro = createPayload("CA", "Rear-ended by other driver at stoplight. Police report filed.", null, null, null);
         SubrogationResult highResult = agent.execute(highSubro, damage);
 
-        assertThat(highResult.score()).isEqualTo(78);
+        // 35 (third party) + 20 (police) + 15 (MODERATE)
+        assertThat(highResult.score()).isEqualTo(70);
         assertThat(highResult.recommendedAction()).isEqualTo("INVESTIGATE");
         assertThat(highResult.factors()).containsKeys("thirdPartyMention", "policeReportSignal", "damageSeverity");
 
         FNOLPayload lowSubro = createPayload("CA", "Hit stationary post in garage.", null, null, null);
         SubrogationResult lowResult = agent.execute(lowSubro, DamageAssessment.of("DOOR", "MINOR", new BigDecimal("800"), new BigDecimal("0.95")));
 
-        assertThat(lowResult.score()).isEqualTo(25);
+        // 10 + 5 + 5 (MINOR)
+        assertThat(lowResult.score()).isEqualTo(20);
         assertThat(lowResult.recommendedAction()).isEqualTo("MONITOR");
+    }
+
+    @Test
+    @DisplayName("D12: subrogation severity points follow Branch A's real severity: MINOR 5, MODERATE 15, SEVERE 25")
+    void subrogationScorer_usesRealSeverity() {
+        SubrogationScorerAgent agent = new SubrogationScorerAgent(new DeterministicSubrogationScorer());
+        FNOLPayload payload = createPayload("CA", "Hit stationary post in garage.", null, null, null);
+
+        assertThat(agent.execute(payload, DamageAssessment.of("X", "MINOR", BigDecimal.ONE, BigDecimal.ONE))
+                .factors().get("damageSeverity")).isEqualTo(5);
+        assertThat(agent.execute(payload, DamageAssessment.of("X", "MODERATE", BigDecimal.ONE, BigDecimal.ONE))
+                .factors().get("damageSeverity")).isEqualTo(15);
+        assertThat(agent.execute(payload, DamageAssessment.of("X", "SEVERE", BigDecimal.ONE, BigDecimal.ONE))
+                .factors().get("damageSeverity")).isEqualTo(25);
     }
 
     @Test
@@ -143,22 +174,18 @@ class AgentTests {
     void policyValidatorAgent_validatesCoveredPolicy() {
         PolicyCenterClient mockPc = new PolicyCenterClient() {
             public Policy getPolicy(String n) {
-                return new Policy(n, "AUTO", "ACTIVE", LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1), "Avery Johnson", "CA", "Car", List.of());
+                return new Policy(n, "AUTO", "ACTIVE", LocalDate.now().minusMonths(6), LocalDate.now().plusMonths(6), "Avery Johnson", "CA", "Car", List.of());
             }
             public List<Coverage> getCoverages(String n) {
                 return List.of(new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000")));
             }
-            public List<ClaimHistory> getPolicyHistory(String n) {
-                return List.of();
-            }
-
             @Override
             public List<ClaimHistory> getPolicyClaimHistory(String policyNumber) {
                 return List.of();
             }
         };
 
-        PolicyValidatorAgent agent = new PolicyValidatorAgent(mockPc);
+        PolicyValidatorAgent agent = new PolicyValidatorAgent(mockPc, new SyntheticCoverageRuleProvider());
         PolicyValidationResult result = agent.execute("POL-AUTO-112233");
 
         assertThat(result.policyFound()).isTrue();
@@ -171,26 +198,22 @@ class AgentTests {
     }
 
     @Test
-    @DisplayName("PolicyValidatorAgent handles policy without collision coverage")
+    @DisplayName("PolicyValidatorAgent rejects an auto policy with only liability coverage")
     void policyValidatorAgent_handlesMissingCoverage() {
         PolicyCenterClient mockPc = new PolicyCenterClient() {
             public Policy getPolicy(String n) {
-                return new Policy(n, "AUTO", "ACTIVE", LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1), "Avery Johnson", "CA", "Car", List.of());
+                return new Policy(n, "AUTO", "ACTIVE", LocalDate.now().minusMonths(6), LocalDate.now().plusMonths(6), "Avery Johnson", "CA", "Car", List.of());
             }
             public List<Coverage> getCoverages(String n) {
-                return List.of(new Coverage("COMPREHENSIVE", new BigDecimal("40000"), new BigDecimal("500")));
+                return List.of(new Coverage("LIABILITY", new BigDecimal("100000"), new BigDecimal("0")));
             }
-            public List<ClaimHistory> getPolicyHistory(String n) {
-                return List.of();
-            }
-
             @Override
             public List<ClaimHistory> getPolicyClaimHistory(String policyNumber) {
                 return List.of();
             }
         };
 
-        PolicyValidatorAgent agent = new PolicyValidatorAgent(mockPc);
+        PolicyValidatorAgent agent = new PolicyValidatorAgent(mockPc, new SyntheticCoverageRuleProvider());
         PolicyValidationResult result = agent.execute("POL-AUTO-112233");
 
         assertThat(result.policyFound()).isTrue();

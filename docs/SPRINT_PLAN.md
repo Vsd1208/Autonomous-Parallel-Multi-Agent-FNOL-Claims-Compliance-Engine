@@ -1,5 +1,7 @@
 # ??? Sprint Plan — Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine
 
+> **Historical document.** This was the original 4-week plan. Some items differ from what was built (for example vision uses Google Gemini, not LangChain4j/GPT-4o, and the branches run in parallel). For the current system see the [README](../README.md), [architecture](architecture.md) and [ADRs](architecture-decisions.md).
+
 > **Team Size:** 3 Students
 > **Total Duration:** 4 Weeks
 > **Methodology:** Agile Scrum (1-week sprints)

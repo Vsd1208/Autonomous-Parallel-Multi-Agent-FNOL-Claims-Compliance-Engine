@@ -18,8 +18,18 @@ public final class Models {
             String claimantDob,
             String claimantSsn,
             List<String> evidenceUris,
-            String channel   // intake source: WEB | MOBILE | PHONE | API (optional)
-    ) {}
+            String channel,         // intake source: WEB | MOBILE | PHONE | API (optional)
+            String claimantPhone,   // optional; PII — never persisted or logged
+            String claimantEmail    // optional; PII — never persisted or logged
+    ) {
+        /** Payload without claimant contact details. */
+        public FNOLPayload(String policyNumber, LocalDate incidentDate, String state, String description,
+                           String claimantName, String claimantDob, String claimantSsn,
+                           List<String> evidenceUris, String channel) {
+            this(policyNumber, incidentDate, state, description, claimantName, claimantDob, claimantSsn,
+                    evidenceUris, channel, null, null);
+        }
+    }
 
     public record Coverage(
             String type,
@@ -54,7 +64,27 @@ public final class Models {
             LocalDate incidentDate,
             String state,
             BigDecimal estimatedDamage,
-            BigDecimal reserve
+            BigDecimal reserve,
+            String notes,
+            List<ClaimAttachment> attachments
+    ) {
+        public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
+                     BigDecimal estimatedDamage, BigDecimal reserve) {
+            this(claimId, status, policyNumber, incidentDate, state, estimatedDamage, reserve, null, List.of());
+        }
+    }
+
+    /** ClaimCenter update after an adjuster decision (PUT /cc/claims/{id}). */
+    public record ClaimUpdateRequest(
+            String status,
+            String notes
+    ) {}
+
+    /** A document attached to a ClaimCenter claim (POST /cc/claims/{id}/attachments). */
+    public record ClaimAttachment(
+            String name,
+            String contentType,
+            Object body          // JSON document
     ) {}
 
     public record DamageAssessment(
@@ -92,9 +122,12 @@ public final class Models {
 
     public record DeadlineResult(
             String state,
-            LocalDate deadline,
+            LocalDate deadline,         // kept for existing clients; equals acknowledgeBy
             String ruleSource,
-            String disclaimer
+            String disclaimer,
+            LocalDate acknowledgeBy,
+            LocalDate decisionBy,
+            String urgencyFlag          // OK | WARNING (acknowledgeBy within 3 days) | CRITICAL (past due)
     ) {}
 
     public record SubrogationResult(
@@ -147,8 +180,10 @@ public final class Models {
             ExplanationObject explanation,
             String severityGate,
             Boolean eligibleForAdvisoryPrefill,
-            Boolean requiresHumanValidation,   // true when HIGH-risk or low-confidence
-            List<String> notes
+            Boolean requiresHumanValidation,   // true when any factor fails, HIGH risk, or any input flag
+            List<String> notes,
+            List<String> inputFlags,           // Human Review Point 1 flags, e.g. MISSING_EVIDENCE
+            String ccSyncStatus                // SYNCED | FAILED: were the advisory and evidence attached in ClaimCenter
     ) {}
 
     public record ApiError(
@@ -156,8 +191,28 @@ public final class Models {
             int status,
             String error,
             String message,
-            String path
-    ) {}
+            String path,
+            String claimId     // set when a failed intake was saved for human attention (REJ-...)
+    ) {
+        public ApiError(Instant timestamp, int status, String error, String message, String path) {
+            this(timestamp, status, error, message, path, null);
+        }
+    }
+
+    /**
+     * The only view of an intake that may be hashed into the audit trail: no claimant name,
+     * DOB, SSN or raw description, so audit hashes can never be matched against raw PII.
+     */
+    public record SanitizedIntake(
+            String policyNumber,
+            String state,
+            LocalDate incidentDate,
+            String redactedDescription
+    ) {
+        public static SanitizedIntake of(FNOLPayload p, String redactedDescription) {
+            return new SanitizedIntake(p.policyNumber(), p.state(), p.incidentDate(), redactedDescription);
+        }
+    }
 
     public record AdjusterReviewRequest(
             @NotBlank String decision,

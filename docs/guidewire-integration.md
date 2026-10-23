@@ -15,7 +15,28 @@ Guidewire PolicyCenter and ClaimCenter are enterprise core systems with extensiv
 
 2. **ClaimCenter (Claim File Ingestion)**:
    - Initial claim file creation with preliminary reserve allocations (`POST /cc/claims`)
-   - Claim status inquiry (`GET /cc/claims/{claimId}`)
+   - Claim inquiry, including notes and attachments (`GET /cc/claims/{claimId}`)
+   - Adjuster decision and notes (`PUT /cc/claims/{claimId}`)
+   - Attached documents: the WHY-panel advisory and the evidence list (`POST /cc/claims/{claimId}/attachments`)
+
+ClaimCenter calls after the claim exists (attachments, decision updates) are best effort: a failure is logged and the claim's `cc_sync_status` is set to `FAILED` for a retry job, so a ClaimCenter outage never fails an intake or a review.
+
+### Seeded data and failure switches
+
+| Policy | Line | State | Insured | Notes |
+|---|---|---|---|---|
+| `POL-AUTO-112233` | AUTO | CA | Avery Johnson | No claims in the last 12 months |
+| `POL-AUTO-223344` | AUTO | NY | Morgan Lee | |
+| `POL-AUTO-445566` | AUTO | CA | Jordan Rivera | Two claims in the last 150 days (HIGH frequency) |
+| `POL-HOME-334455` | HOME | TX | Riley Smith | DWELLING and PERSONAL_PROPERTY coverage |
+
+Policy terms start six months before today and run for a year, so the data never goes stale.
+
+| Variable | Effect |
+|---|---|
+| `MOCK_GW_TIMEOUT=true` | `POST /cc/claims` waits 11 s (trips the API's 3 s read timeout after the fan-out) |
+| `MOCK_PC_TIMEOUT=true` | `GET /pc/policies/{id}/coverages` waits 12 s (trips the 3 s read timeout inside Branch A) |
+| `MOCK_CC_START_SEQUENCE=N` | First claim number issued; the counter is in memory, so raise it after a restart to avoid reissuing stored IDs (the API refuses a reused ID with 409 `CLAIM_ID_CONFLICT`) |
 
 ## Adapter Abstraction Architecture
 
@@ -48,7 +69,7 @@ MockClaimCenterClient   ----->  GuidewireClaimCenterClient  (OAuth2 / Cloud API 
 ```
 
 No changes are required in:
-- `VisionDamageAgent`, `PolicyValidatorAgent`, or any other agent
+- `VisionDamageAgent`, `PolicyValidatorAgent`, or any other agent (coverage rules live in `CoverageRuleProvider`)
 - `FNOLOrchestrator`
 - `FNOLController` or REST endpoints
 - Guardrails or validation layers

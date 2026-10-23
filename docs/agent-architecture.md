@@ -1,67 +1,62 @@
 # Agent Architecture & Provider Design
 
 ## Overview
-Every AI and rule-based evaluation in the FNOL Intelligence Platform follows the `FNOLAgent<I, O>` contract:
+Most evaluations follow the `FNOLAgent<I, O>` contract (`O execute(I input)`). Each agent has one responsibility, typed input and output records, and is testable without a Spring context. Anything that would differ between a prototype and production (vision model, deadline rules, coverage rules, subrogation weights) sits behind a provider interface.
 
-```java
-public interface FNOLAgent<I, O> {
-    O execute(I input);
-}
-```
+| Agent | Where it runs | Provider | Output |
+|---|---|---|---|
+| `VisionDamageAgent` | Branch A | `VisionProvider`: `GeminiVisionProvider` or `MockVisionProvider` | `DamageAssessment` |
+| `PolicyValidatorAgent` | Branch A | `PolicyCenterClient`, `CoverageRuleProvider` | `PolicyValidationResult` |
+| `ReserveCalculatorAgent` | Branch A | — | `ReserveResult` |
+| `PiiRedactionAgent` | Branch B | — | `PIIResult` |
+| `StatutoryDeadlineAgent` | Branch B | `DeadlineRuleProvider` | `DeadlineResult` |
+| `SubrogationScorerAgent` | Reconciliation gate (needs Branch A's severity) | `SubrogationScorer` | `SubrogationResult` |
+| `AuditTrailAgent` | Gate, failed intakes, reviews | — | `AuditRecord` |
 
-Each agent:
-- Has a single, focused responsibility
-- Accepts typed input records
-- Returns typed output records
-- Is independently testable without Spring context or external dependencies
-- Uses dependency injection with interface abstractions for underlying providers
+Before the fan-out, `ClaimHistoryEnricher` builds the claim-history context and `IntakeReviewService` (Human Review Point 1, in `fnol-orchestrator`) raises intake flags.
 
 ---
 
 ## Branch A — Operational Loss Triage
 
-### 1. `VisionDamageAgent`
-- **Responsibility**: Analyzes vehicle loss photos / evidence to extract damage classification, severity, estimated repair cost, and confidence score.
-- **Provider Interface**: `VisionProvider`
-- **Current Implementation**: `MockVisionProvider` (deterministic, synthetic estimation).
-- **Extensibility**: Designed to be replaced with a multimodal vision LLM provider (e.g. GPT-4o Vision or Claude 3.5 Sonnet) via `VisionProvider` without modifying agent logic.
+### `VisionDamageAgent`
+Extracts damage type, severity, estimated repair cost, confidence, photo quality and per-type probabilities from the first evidence URI.
 
-### 2. `PolicyValidatorAgent`
-- **Responsibility**: Queries PolicyCenter via `PolicyCenterClient` to verify policy existence, active status, effective dates, and line-of-business coverage applicability (e.g. Collision coverage).
-- **Output**: `PolicyValidationResult` with explicit reasoning list for explainability.
+**`GeminiVisionProvider`** (active when `gemini.vision.enabled=true`, the default)
+- Calls Google Gemini (`gemini.vision.model`, default `gemini-2.5-flash`) with a structured-JSON prompt; strips markdown fences from the reply.
+- Uses its own `RestTemplate` bean (`geminiRestTemplate`, injected by qualifier): 3 s connect, `gemini.vision.read-timeout-seconds` (default 8) read — below the 10 s orchestrator deadline so the fallback can still be returned.
+- Sends the key in the `x-goog-api-key` header, never in the URL; logs only scheme and host of evidence URIs.
+- Loads evidence through **`EvidenceImageLoader`**, which accepts only `data:image/(jpeg|png|webp|gif);base64` (≤ 5 MB) and `https://` URLs whose host is in `fnol.evidence.allowed-hosts` (default empty = no downloads), resolve only to public addresses (no loopback, link-local such as 169.254.169.254, private, carrier-grade NAT or unique-local ranges), answer 200 without redirect, send `image/*` and ≤ 5 MB. `http:`, `file:` and `mock:` URIs are refused.
+- **Fallback** (confidence 0.60, which always routes to a human): no evidence (`NO_IMAGE`), refused evidence (`EVIDENCE_REJECTED`), no API key (`NO_API_KEY`), Gemini error (`API_ERROR`) or unparseable reply (`PARSE_ERROR`).
 
-### 3. `ReserveCalculatorAgent`
-- **Responsibility**: Calculates preliminary loss reserve recommendation.
-- **Formula**: `recommendedReserve = estimatedDamage * 1.15` (15% ULAE buffer).
-- **Type Safety**: Strictly uses `java.math.BigDecimal` with `RoundingMode.HALF_UP`. Never uses `double`.
-- **Explainability**: Outputs the raw estimated damage, the explicit factor (1.15), and the final recommended reserve.
+**`MockVisionProvider`** (active when `gemini.vision.enabled=false`; tests and `.env.demo`)
+Keywords in the first evidence URI: `blurry` → confidence 0.61; `severe` → MULTIPLE, $24,000, SEVERE; `water` → WATER_DAMAGE, $4,200; `slow` → sleeps 12 s (exercises the orchestrator deadline; interruptible); anything else → FRONT_BUMPER, MODERATE, $4,200, confidence 0.91. No evidence → the 0.60 fallback.
+
+### `PolicyValidatorAgent`
+Reads the policy and coverages from PolicyCenter. Covered = policy found, status `ACTIVE`, today within the policy term, and a coverage accepted by the line-of-business rule from **`CoverageRuleProvider`**. `SyntheticCoverageRuleProvider` (prototype values): AUTO → COLLISION or COMPREHENSIVE; HOME → DWELLING or PERSONAL_PROPERTY; other lines → nothing qualifies. The matched rule and coverage are written into `reasoning`. `ValidationGuardrail` turns "not covered" into `CoverageNotEligibleException` (HTTP 502, saved as a REJ- claim).
+
+### `ReserveCalculatorAgent`
+`recommendedReserve = estimatedDamage × 1.15`, `BigDecimal`, `HALF_UP` to whole dollars.
 
 ---
 
 ## Branch B — Legal & Regulatory Compliance
 
-### 1. `PiiRedactionAgent`
-- **Responsibility**: Detects and sanitizes sensitive Personally Identifiable Information (PII) before storage or downstream processing.
-- **Entities Detected**: Social Security Numbers (SSN), Dates of Birth (DOB), and Claimant Full Names.
-- **Compliance**: Aligns with GDPR Article 25 and CCPA redaction requirements.
-- **Output**: `PIIResult` with sanitized description, detected entity types list, and boolean flag.
+### `PiiRedactionAgent`
+Regex redaction of SSN (`***-**-****`), DOB (`**/**/****`), MRN (`[REDACTED_MRN]`) and literal occurrences of the claimant's name, phone and email in the description. Redaction confidence is a fixed 0.95. `PIIGuardrail` then blocks (HTTP 422) if confidence < 0.90, a raw SSN pattern remains, or an MRN was detected.
 
-### 2. `StatutoryDeadlineAgent`
-- **Responsibility**: Computes state-mandated claim acknowledgement and decision deadlines.
-- **Provider Interface**: `DeadlineRuleProvider`
-- **Supported States**: CA (30 days), NY (35 days), TX (15 days), FL (20 days), IL (30 days).
-- **Output**: `DeadlineResult` with statutory deadline date, rule source identifier, and regulatory disclaimer.
+### `StatutoryDeadlineAgent`
+`SyntheticDeadlineRuleProvider` returns `acknowledgeBy` (incident + CA 30 / NY 35 / TX 15 / FL 20 / IL 30 days; also returned as the legacy `deadline` field), `decisionBy` (incident + CA 70 / NY 65 / TX 45 / FL 90 / IL 75 days) and `urgencyFlag` against today: `CRITICAL` past `acknowledgeBy`, `WARNING` within 3 days, else `OK`. Every value is labelled **PROTOTYPE PLACEHOLDER** in `disclaimer`; Compliance must confirm real state rules before production use.
 
-### 3. `SubrogationScorerAgent`
-- **Responsibility**: Evaluates third-party liability signals and recommends investigation or monitoring.
-- **Scorer Interface**: `SubrogationScorer`
-- **Scoring Breakdown**:
-  - Third-party mentions ("other driver", "rear-ended"): +35 pts
-  - Police report filing: +20 pts
-  - Moderate/Severe damage: +23 pts
-- **Output**: Score constrained between 0–100, recommended action (`INVESTIGATE` if ≥ 70, else `MONITOR`), and map of contributing factor weights.
+---
 
-### 4. `AuditTrailAgent`
-- **Responsibility**: Generates immutable audit records for regulatory compliance (NAIC Model Audit Rule).
-- **Cryptographic Integrity**: Computes SHA-256 hashes of both input and output payloads.
-- **Output**: `AuditRecord` stored in the `audit_trail` table.
+## Reconciliation gate
+
+### `SubrogationScorerAgent`
+`DeterministicSubrogationScorer`, scored with Branch A's real severity: third-party mention ("other driver", "rear-ended") 35 else 10; "police" 20 else 5; severity MINOR 5 / MODERATE 15 / SEVERE 25 (other values 15). Score capped at 100; `INVESTIGATE` at 70 or more, else `MONITOR`. A rear-end claim with a police report and MODERATE damage scores 70, so it goes to a human for subrogation.
+
+### `AuditTrailAgent`
+SHA-256 (hex) of `String.valueOf(input)` and of the output. Callers pass a `SanitizedIntake` or agent outputs, never the raw payload. `AuditService` (in `fnol-api`) chains the records — see `docs/database.md`.
+
+### `ExplanationBuilder` and routing
+Six factors, thresholds from `fnol.stp.*` (`StpProperties`): AI confidence ≥ 0.85; coverage active and matched; PII absent, or redacted with confidence ≥ 0.90; reserve ≤ $25,000; claim-frequency risk LOW or MEDIUM; subrogation score < 70. Severity: LOW ≤ $5,000, MEDIUM ≤ $20,000, else HIGH. STP requires LOW or MEDIUM severity, all six factors passing and no intake flag; HIGH always goes to a human. `ClaimTypeValidator` maps vision damage types to claim types (WINDSHIELD → GLASS_ONLY; FRONT/REAR_BUMPER, SIDE_PANEL → MINOR_COLLISION) for `eligibleForAdvisoryPrefill` (informational; it does not change the route).

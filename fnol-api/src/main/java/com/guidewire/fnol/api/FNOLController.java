@@ -5,43 +5,71 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guidewire.fnol.common.Models.*;
 import com.guidewire.fnol.common.ProcessingTimeoutException;
 import com.guidewire.fnol.common.ComplianceBlockException;
+import com.guidewire.fnol.common.CoverageNotEligibleException;
 import com.guidewire.fnol.orchestrator.*;
 import com.guidewire.fnol.api.persistence.*;
 import com.guidewire.fnol.api.pdf.AuditPdfGenerator;
+import com.guidewire.fnol.agents.AuditTrailAgent;
+import com.guidewire.fnol.enrichment.ClaimCenterClient;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 
 import jakarta.servlet.http.*;
 import jakarta.validation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.time.*;
 import java.util.*;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/v1")
 public class FNOLController {
 
+    private static final Logger log = LoggerFactory.getLogger(FNOLController.class);
+
     private final FNOLOrchestrator orchestrator;
     private final ClaimRepository claims;
-    private final AuditRepository audits;
+    private final AuditService auditService;
+    private final FailedIntakeRecorder failedIntakes;
     private final IdempotencyStore idempotencyStore;
     private final AuditPdfGenerator pdfGenerator;
+    private final AuditTrailAgent auditAgent;
+    private final ClaimCenterClient claimCenter;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+
+    /** Request attribute carrying the REJ-... ID of a failed intake into the error response. */
+    static final String ESCALATED_CLAIM_ID = "fnol.escalatedClaimId";
 
     public FNOLController(
             FNOLOrchestrator orchestrator,
             ClaimRepository claims,
-            AuditRepository audits,
+            AuditService auditService,
+            FailedIntakeRecorder failedIntakes,
             IdempotencyStore idempotencyStore,
-            AuditPdfGenerator pdfGenerator) {
+            AuditPdfGenerator pdfGenerator,
+            AuditTrailAgent auditAgent,
+            ClaimCenterClient claimCenter) {
         this.orchestrator      = orchestrator;
         this.claims            = claims;
-        this.audits            = audits;
+        this.auditService      = auditService;
+        this.failedIntakes     = failedIntakes;
         this.idempotencyStore  = idempotencyStore;
         this.pdfGenerator      = pdfGenerator;
+        this.auditAgent        = auditAgent;
+        this.claimCenter       = claimCenter;
     }
+
+    /** Statuses in which an adjuster may record a decision. Final decisions are not reviewable again. */
+    static final Set<String> REVIEWABLE_STATUSES =
+            Set.of("HUMAN_REVIEW", "PENDING_ADVISORY_REVIEW", "NEEDS_MORE_INFO");
+    static final Set<String> ADJUSTER_DECISIONS =
+            Set.of("APPROVED_BY_ADJUSTER", "REJECTED_BY_ADJUSTER", "NEEDS_MORE_INFO", "CLOSED");
 
     // ── Health ──────────────────────────────────────────────────────────────
     @GetMapping("/health")
@@ -51,7 +79,7 @@ public class FNOLController {
 
     // ── FNOL Intake ─────────────────────────────────────────────────────────
     @PostMapping("/fnol/intake")
-    FNOLResponse intake(@Valid @RequestBody FNOLPayload payload) {
+    FNOLResponse intake(@Valid @RequestBody FNOLPayload payload, HttpServletRequest request) {
 
         String policyNumber  = payload.policyNumber();
         LocalDate incidentDate = payload.incidentDate();
@@ -62,20 +90,62 @@ public class FNOLController {
             throw new DuplicateFNOLException("This FNOL has already been submitted");
         }
 
+        FNOLResponse response;
         try {
-            FNOLResponse response = orchestrator.process(payload);
+            response = orchestrator.process(payload);
+        } catch (RuntimeException e) {
+            // Nothing was filed in ClaimCenter, so a corrected submission may be retried.
+            idempotencyStore.release(policyNumber, incidentDate.toString(), state);
+            escalateFailedIntake(payload, e, request);
+            throw e;
+        }
 
+        // From here on ClaimCenter holds a claim under response.claimId().
+        String claimId = response.claimId();
+        if (claims.existsById(claimId)) {
+            // A restarted ClaimCenter counter can reissue an ID we already stored; saving would
+            // silently overwrite that claim. Refuse, and leave the new ClaimCenter claim for reconciliation.
+            log.error("[FNOL] CLAIM_ID_CONFLICT: ClaimCenter issued claimId={} which already exists in the database; "
+                    + "refusing to overwrite it. The new ClaimCenter claim is orphaned and must be reconciled.", claimId);
+            idempotencyStore.release(policyNumber, incidentDate.toString(), state);
+            throw new ClaimIdConflictException(
+                    "ClaimCenter returned claim ID " + claimId + " which already exists; the existing claim was not overwritten");
+        }
+
+        try {
             // Persist claim (includes explanationJson and channel)
             claims.save(ClaimEntity.from(response, payload));
 
-            // Persist audit trail records
-            response.branchB().audit()
-                    .forEach(a -> audits.save(AuditEntity.from(a)));
-
-            return response;
-        } catch (Exception e) {
-            idempotencyStore.release(policyNumber, incidentDate.toString(), state);
+            // Persist audit trail records as a hash chain
+            auditService.append(claimId, response.branchB().audit(), AuditService.SYSTEM_ACTOR);
+        } catch (RuntimeException e) {
+            // Keep the idempotency key held: releasing it would let a retry file a second ClaimCenter claim.
+            log.error("[FNOL] Persisting claimId={} failed after ClaimCenter created it; idempotency key kept. "
+                    + "Reconcile this orphaned ClaimCenter claim.", claimId, e);
             throw e;
+        }
+        return response;
+    }
+
+    /**
+     * D6: a blocked, uncovered or timed-out intake is saved as a REJ-... claim with an audit event
+     * (BLOCKED_COMPLIANCE or HUMAN_REVIEW) instead of disappearing. The HTTP error is unchanged.
+     */
+    private void escalateFailedIntake(FNOLPayload payload, RuntimeException e, HttpServletRequest request) {
+        String claimId;
+        if (e instanceof ComplianceBlockException) {
+            claimId = failedIntakes.record(payload, "BLOCKED_COMPLIANCE", "COMPLIANCE_BLOCK", e.getMessage());
+        } else if (e instanceof CoverageNotEligibleException) {
+            claimId = failedIntakes.record(payload, "HUMAN_REVIEW", "EXTERNAL_OR_PROCESSING_ERROR", e.getMessage());
+        } else if (e instanceof ProcessingTimeoutException || e instanceof ResourceAccessException) {
+            claimId = failedIntakes.record(payload, "HUMAN_REVIEW", "PROCESSING_TIMEOUT",
+                    e instanceof ProcessingTimeoutException ? e.getMessage()
+                            : "Guidewire integration call timed out or was unreachable");
+        } else {
+            return;
+        }
+        if (claimId != null) {
+            request.setAttribute(ESCALATED_CLAIM_ID, claimId);
         }
     }
 
@@ -112,6 +182,50 @@ public class FNOLController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    /**
+     * Pushes the adjuster decision to ClaimCenter. A ClaimCenter outage must not fail the review,
+     * so failures are logged and the claim is marked FAILED for the retry job.
+     */
+    private String syncDecisionToClaimCenter(ClaimEntity claim, String decision, String notes) {
+        if (claim.claimId.startsWith("REJ-")) {
+            return "NOT_FILED";   // failed intake: there is no ClaimCenter claim to update
+        }
+        try {
+            claimCenter.updateClaim(claim.claimId, new ClaimUpdateRequest(decision, notes));
+            return "SYNCED";
+        } catch (RuntimeException e) {
+            log.warn("[FNOL] ClaimCenter update failed for claimId={} after review; cc_sync_status=FAILED: {}",
+                    claim.claimId, e.getMessage());
+            return "FAILED";
+        }
+    }
+
+    // ── Adjuster Queue ────────────────────────────────────────────────────────
+    @GetMapping("/fnol/queue")
+    QueuePage queue(@RequestParam(name = "status", defaultValue = "HUMAN_REVIEW") String status,
+                    @RequestParam(name = "page", defaultValue = "0") int page,
+                    @RequestParam(name = "size", defaultValue = "20") int size) {
+        Set<String> statuses = new TreeSet<>();
+        for (String s : status.split(",")) {
+            if (!s.isBlank()) statuses.add(s.trim().toUpperCase(Locale.ROOT));
+        }
+        if (statuses.isEmpty() || page < 0 || size < 1 || size > 100) {
+            throw new IllegalArgumentException("status must be non-empty, page >= 0 and size between 1 and 100");
+        }
+        Page<ClaimEntity> result = claims.findByStatusInOrderByCreatedAtAsc(statuses, PageRequest.of(page, size));
+        return new QueuePage(result.getContent().stream().map(QueueItem::of).toList(),
+                page, size, result.getTotalElements(), result.getTotalPages());
+    }
+
+    // ── Audit Trail (hash chain) ──────────────────────────────────────────────
+    @GetMapping("/fnol/{claimId}/audit")
+    ResponseEntity<?> audit(@PathVariable("claimId") String claimId) {
+        if (!claims.existsById(claimId)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(auditService.trail(claimId));
+    }
+
     // ── Audit PDF Export ──────────────────────────────────────────────────────
     /**
      * Compliance export: generates a SHA-256 hashed PDF audit report for a claim,
@@ -121,8 +235,8 @@ public class FNOLController {
     ResponseEntity<byte[]> auditPdf(@PathVariable("claimId") String claimId) {
         return claims.findById(claimId)
                 .<ResponseEntity<byte[]>>map(claim -> {
-                    List<AuditEntity> auditRecords = audits.findByClaimId(claimId);
-                    byte[] pdfBytes = pdfGenerator.generate(claim, auditRecords);
+                    AuditService.AuditTrail trail = auditService.trail(claimId);
+                    byte[] pdfBytes = pdfGenerator.generate(claim, trail.records(), trail.chainValid());
                     return ResponseEntity.ok()
                             .header(HttpHeaders.CONTENT_DISPOSITION,
                                     "attachment; filename=\"FNOL_Audit_" + claimId + ".pdf\"")
@@ -132,53 +246,79 @@ public class FNOLController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    // ── Adjuster Review (Human Review Point 3) ────────────────────────────────
+    // ── Adjuster Review (Human Review Points 2 and 3) ─────────────────────────
     @PostMapping("/fnol/{claimId}/review")
+    @Transactional
     ResponseEntity<?> review(
             @PathVariable("claimId") String claimId,
             @Valid @RequestBody AdjusterReviewRequest request) {
 
-        return claims.findById(claimId)
-                .<ResponseEntity<?>>map(claim -> {
-                    String decision = request.decision().trim().toUpperCase(Locale.ROOT);
-                    Set<String> allowed = Set.of(
-                            "APPROVED_BY_ADJUSTER",
-                            "REJECTED_BY_ADJUSTER",
-                            "NEEDS_MORE_INFO",
-                            "CLOSED"
-                    );
-                    if (!allowed.contains(decision)) {
-                        throw new IllegalArgumentException(
-                                "Unsupported adjuster decision: " + request.decision());
-                    }
+        String decision = request.decision().trim().toUpperCase(Locale.ROOT);
+        if (!ADJUSTER_DECISIONS.contains(decision)) {
+            throw new IllegalArgumentException("Unsupported adjuster decision: " + request.decision());
+        }
+        ClaimEntity claim = claims.findById(claimId).orElse(null);
+        if (claim == null) {
+            return ResponseEntity.notFound().build();
+        }
 
-                    claim.adjusterDecision = decision;
-                    claim.adjusterId       = request.adjusterId();
-                    claim.adjusterNotes    = request.notes();
-                    claim.reviewedAt       = Instant.now();
-                    claim.updatedAt        = claim.reviewedAt;
-                    claim.status           = decision;
-                    claims.save(claim);
+        String previousStatus = claim.status;
+        Instant reviewedAt = Instant.now();
+        int applied = claims.applyReview(claimId, decision, request.adjusterId(), request.notes(),
+                reviewedAt, REVIEWABLE_STATUSES);
+        if (applied == 0) {
+            throw new InvalidStateException("Claim " + claimId + " is in status " + previousStatus
+                    + "; a decision can only be recorded for " + String.join(", ", new TreeSet<>(REVIEWABLE_STATUSES)));
+        }
 
-                    return ResponseEntity.ok(new AdjusterReviewResponse(
-                            claim.claimId,
-                            claim.status,
-                            claim.adjusterDecision,
-                            claim.adjusterId,
-                            claim.adjusterNotes,
-                            claim.reviewedAt
-                    ));
-                })
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        // Audit: who decided what; the free-text notes are stored only as a hash.
+        auditService.append(claimId, List.of(auditAgent.record(claimId, "AdjusterReview",
+                "adjusterId=" + request.adjusterId() + ";decision=" + decision
+                        + ";notesSha256=" + AuditTrailAgent.sha256(Objects.toString(request.notes(), "")),
+                "previousStatus=" + previousStatus + ";status=" + decision + ";reviewedAt=" + reviewedAt,
+                decision)), request.adjusterId());
+
+        ClaimEntity updated = claims.findById(claimId).orElseThrow();
+        updated.ccSyncStatus = syncDecisionToClaimCenter(updated, decision, request.notes());
+        claims.save(updated);
+        return ResponseEntity.ok(new AdjusterReviewResponse(
+                updated.claimId,
+                updated.status,
+                updated.adjusterDecision,
+                updated.adjusterId,
+                updated.adjusterNotes,
+                updated.reviewedAt
+        ));
     }
 }
+
+/** Adjuster queue entry (GET /api/v1/fnol/queue). */
+record QueueItem(String claimId, String status, String policyNumber, java.math.BigDecimal reserve,
+                 String severityGate, String inputFlags, String failureReason, Instant createdAt) {
+    static QueueItem of(ClaimEntity c) {
+        return new QueueItem(c.claimId, c.status, c.policyNumber, c.reserve, c.severityGate,
+                c.inputFlags, c.failureReason, c.createdAt);
+    }
+}
+
+record QueuePage(List<QueueItem> items, int page, int size, long totalElements, int totalPages) {}
 
 class DuplicateFNOLException extends RuntimeException {
     public DuplicateFNOLException(String message) { super(message); }
 }
 
+class ClaimIdConflictException extends RuntimeException {
+    public ClaimIdConflictException(String message) { super(message); }
+}
+
+class InvalidStateException extends RuntimeException {
+    public InvalidStateException(String message) { super(message); }
+}
+
 @RestControllerAdvice
 class ApiExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler({IllegalArgumentException.class, MethodArgumentNotValidException.class})
     ResponseEntity<ApiError> bad(Exception e, HttpServletRequest r) {
@@ -192,22 +332,45 @@ class ApiExceptionHandler {
                 new ApiError(Instant.now(), 409, "DUPLICATE_FNOL", e.getMessage(), r.getRequestURI()));
     }
 
+    @ExceptionHandler(ClaimIdConflictException.class)
+    ResponseEntity<ApiError> claimIdConflict(ClaimIdConflictException e, HttpServletRequest r) {
+        return ResponseEntity.status(409).body(
+                new ApiError(Instant.now(), 409, "CLAIM_ID_CONFLICT", e.getMessage(), r.getRequestURI()));
+    }
+
+    @ExceptionHandler(InvalidStateException.class)
+    ResponseEntity<ApiError> invalidState(InvalidStateException e, HttpServletRequest r) {
+        return ResponseEntity.status(409).body(
+                new ApiError(Instant.now(), 409, "INVALID_STATE", e.getMessage(), r.getRequestURI()));
+    }
+
     @ExceptionHandler(ComplianceBlockException.class)
     ResponseEntity<ApiError> compliance(ComplianceBlockException e, HttpServletRequest r) {
         return ResponseEntity.status(422).body(
-                new ApiError(Instant.now(), 422, "COMPLIANCE_BLOCK", e.getMessage(), r.getRequestURI()));
+                new ApiError(Instant.now(), 422, "COMPLIANCE_BLOCK", e.getMessage(), r.getRequestURI(), escalatedId(r)));
+    }
+
+    @ExceptionHandler(CoverageNotEligibleException.class)
+    ResponseEntity<ApiError> coverage(CoverageNotEligibleException e, HttpServletRequest r) {
+        return ResponseEntity.status(502).body(
+                new ApiError(Instant.now(), 502, "EXTERNAL_OR_PROCESSING_ERROR",
+                        e.getMessage() + ". Claim escalated for manual review.", r.getRequestURI(), escalatedId(r)));
     }
 
     @ExceptionHandler({ProcessingTimeoutException.class, org.springframework.web.client.ResourceAccessException.class})
     ResponseEntity<ApiError> timeout(Exception e, HttpServletRequest r) {
         return ResponseEntity.status(504).body(
                 new ApiError(Instant.now(), 504, "PROCESSING_TIMEOUT",
-                        "FNOL processing timed out. Claim escalated for manual review.", r.getRequestURI()));
+                        "FNOL processing timed out. Claim escalated for manual review.", r.getRequestURI(), escalatedId(r)));
+    }
+
+    private static String escalatedId(HttpServletRequest r) {
+        return (String) r.getAttribute(FNOLController.ESCALATED_CLAIM_ID);
     }
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> server(Exception e, HttpServletRequest r) {
-        e.printStackTrace();
+        log.error("[FNOL] Unhandled error on {}", r.getRequestURI(), e);
         return ResponseEntity.status(502).body(
                 new ApiError(Instant.now(), 502, "EXTERNAL_OR_PROCESSING_ERROR",
                         "FNOL processing could not be completed", r.getRequestURI()));

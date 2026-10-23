@@ -41,7 +41,7 @@ public class AuditPdfGenerator {
     private static final Color PASS_GREEN  = new Color(21, 128, 61);
     private static final Color FAIL_RED    = new Color(185, 28, 28);
 
-    public byte[] generate(ClaimEntity claim, List<AuditEntity> auditRecords) {
+    public byte[] generate(ClaimEntity claim, List<AuditEntity> auditRecords, boolean chainValid) {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             Document doc = new Document(PageSize.A4, 50, 50, 60, 60);
             PdfWriter writer = PdfWriter.getInstance(doc, baos);
@@ -63,6 +63,12 @@ public class AuditPdfGenerator {
             addRow(meta, "Estimated Damage", "$" + claim.estimatedDamage);
             addRow(meta, "Reserve",          "$" + claim.reserve);
             addRow(meta, "Created At",       String.valueOf(claim.createdAt));
+            if (claim.failureReason != null) {
+                addRow(meta, "Failure Reason", claim.failureReason);
+            }
+            addRow(meta, "Severity Gate",    nvl(claim.severityGate, "N/A"));
+            addRow(meta, "Intake Flags",     nvl(claim.inputFlags, "None"));
+            addRow(meta, "ClaimCenter Sync", nvl(claim.ccSyncStatus, "N/A"));
             doc.add(meta);
             doc.add(Chunk.NEWLINE);
 
@@ -85,23 +91,24 @@ public class AuditPdfGenerator {
 
             // ── Audit Trail ──────────────────────────────────────────────────
             addSectionHeader(doc, "3. Audit Trail Events");
-            PdfPTable audit = new PdfPTable(new float[]{2.5f, 1.5f, 3f, 3f, 1f});
+            PdfPTable audit = new PdfPTable(new float[]{0.5f, 2.4f, 1.8f, 2.4f, 2.4f, 2.4f, 1.6f});
             audit.setWidthPercentage(100);
-            for (String h : new String[]{"Agent", "Status", "Input Hash (SHA-256)", "Output Hash (SHA-256)", "Timestamp"}) {
+            for (String h : new String[]{"#", "Agent / Actor", "Status", "Input Hash", "Output Hash", "Chain Hash", "Timestamp"}) {
                 PdfPCell hc = new PdfPCell(new Phrase(h, LABEL_FONT));
                 hc.setBackgroundColor(LIGHT_BLUE);
                 hc.setPadding(5);
                 audit.addCell(hc);
             }
             for (AuditEntity a : auditRecords) {
-                audit.addCell(cell(a.agentName,  VALUE_FONT));
+                audit.addCell(cell(a.seq != null ? String.valueOf(a.seq) : "—", MONO_FONT));
+                audit.addCell(cell(a.agentName + (a.actor != null ? "\n(" + a.actor + ")" : ""), VALUE_FONT));
                 PdfPCell statusCell = new PdfPCell(new Phrase(a.status,
-                        FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9,
-                                "SUCCESS".equals(a.status) ? PASS_GREEN : FAIL_RED)));
+                        FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, statusColor(a.status))));
                 statusCell.setPadding(5);
                 audit.addCell(statusCell);
-                audit.addCell(cell(truncate(a.inputHash, 28),  MONO_FONT));
-                audit.addCell(cell(truncate(a.outputHash, 28), MONO_FONT));
+                audit.addCell(cell(truncate(a.inputHash, 16),  MONO_FONT));
+                audit.addCell(cell(truncate(a.outputHash, 16), MONO_FONT));
+                audit.addCell(cell(truncate(a.chainHash, 16),  MONO_FONT));
                 audit.addCell(cell(shortTime(a.timestamp),     MONO_FONT));
             }
             doc.add(audit);
@@ -119,6 +126,13 @@ public class AuditPdfGenerator {
 
             // ── Document Integrity Hash ───────────────────────────────────────
             addSectionHeader(doc, "5. Document Integrity — SHA-256");
+            String head = auditRecords.isEmpty() ? null : auditRecords.get(auditRecords.size() - 1).chainHash;
+            Paragraph chain = new Paragraph(
+                    "Audit chain: " + (chainValid ? "VALID — every link recomputes" : "BROKEN — stored hashes do not recompute")
+                    + "\nChain head (SHA-256): " + nvl(head, "none"),
+                    FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, chainValid ? PASS_GREEN : FAIL_RED));
+            chain.setSpacingAfter(6);
+            doc.add(chain);
             String docHash = sha256(claim.claimId + claim.status + claim.policyNumber
                     + claim.estimatedDamage + Instant.now());
             PdfPTable hashTable = new PdfPTable(1);
@@ -203,6 +217,15 @@ public class AuditPdfGenerator {
         } catch (Exception e) {
             return "HASH_ERROR";
         }
+    }
+
+    private static Color statusColor(String status) {
+        if (status == null) return Color.DARK_GRAY;
+        return switch (status) {
+            case "SUCCESS", "STRAIGHT_THROUGH_PROCESSING", "PENDING_ADVISORY_REVIEW", "APPROVED_BY_ADJUSTER" -> PASS_GREEN;
+            case "COMPLIANCE_BLOCK", "PROCESSING_TIMEOUT", "EXTERNAL_OR_PROCESSING_ERROR", "REJECTED_BY_ADJUSTER" -> FAIL_RED;
+            default -> BRAND_BLUE;
+        };
     }
 
     private String nvl(String s, String fallback) {

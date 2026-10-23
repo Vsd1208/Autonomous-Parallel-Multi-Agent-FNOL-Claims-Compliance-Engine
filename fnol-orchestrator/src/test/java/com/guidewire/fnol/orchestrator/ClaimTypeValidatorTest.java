@@ -1,25 +1,39 @@
 package com.guidewire.fnol.orchestrator;
 
 import com.guidewire.fnol.common.Models.*;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@RunWith(MockitoJUnitRunner.class)
 public class ClaimTypeValidatorTest {
 
     private ClaimTypeValidator validator;
 
-    @Before
+    @BeforeEach
     public void setup() {
-        validator = new ClaimTypeValidator();
+        validator = new ClaimTypeValidator(new StpProperties());
+    }
+
+    /**
+     * D17: vision damage types map to claim types, so a LOW bumper or windshield claim is eligible.
+     */
+    @Test
+    public void testVisionDamageTypesMapToEligibleClaimTypes() {
+        PolicyHistoryContext history = new PolicyHistoryContext(0, 0, 0, null, null, null, 0, "LOW");
+
+        for (String visionType : new String[]{"FRONT_BUMPER", "REAR_BUMPER", "SIDE_PANEL", "WINDSHIELD"}) {
+            DamageAssessment damage = DamageAssessment.of(visionType, "MINOR", new BigDecimal("2500"), new BigDecimal("0.91"));
+            assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history), visionType);
+        }
+        assertFalse(validator.isEligibleForAdvisoryPrefill(
+                DamageAssessment.of("ROOF", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")), history));
+        assertFalse(validator.isEligibleForAdvisoryPrefill(
+                DamageAssessment.of("UNKNOWN", "MODERATE", new BigDecimal("3500"), new BigDecimal("0.60")), history));
     }
 
     /**

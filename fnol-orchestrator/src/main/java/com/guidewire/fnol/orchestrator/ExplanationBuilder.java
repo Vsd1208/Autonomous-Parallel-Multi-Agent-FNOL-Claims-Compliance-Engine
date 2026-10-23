@@ -7,8 +7,20 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Builds the six-factor WHY panel and the recommended route.
+ *
+ * <p>STP requires severity LOW or MEDIUM and all six factors passing. HIGH severity always goes
+ * to a human. Thresholds come from {@link StpProperties} ({@code fnol.stp.*}).
+ */
 @Component
 public class ExplanationBuilder {
+
+    private final StpProperties stp;
+
+    public ExplanationBuilder(StpProperties stp) {
+        this.stp = stp;
+    }
 
     public ExplanationObject build(
             PolicyValidationResult coverage,
@@ -18,95 +30,89 @@ public class ExplanationBuilder {
             SubrogationResult subrogation,
             PolicyHistoryContext historyContext) {
 
-        // Calculate severity FIRST
         String severityGate = calculateClaimSeverity(damage);
-
-        // Build 6 factors (same as before)
         List<ExplanationFactor> factors = new ArrayList<>();
 
         // Factor 1: AI Confidence
-        BigDecimal confidenceThreshold = new BigDecimal("0.85");
-        boolean aiConfidencePassed = damage.confidence().compareTo(confidenceThreshold) >= 0;
+        boolean aiConfidencePassed = damage.confidence().compareTo(stp.getConfidence()) >= 0;
         factors.add(new ExplanationFactor("AI Confidence",
                 String.format("%.2f", damage.confidence()),
-                aiConfidencePassed ? "PASS" : "FAIL",
-                "Confidence score must be >= 0.85"));
+                status(aiConfidencePassed),
+                "Vision confidence must be >= " + stp.getConfidence()));
 
         // Factor 2: Coverage Status
-        boolean coveragePassed = coverage.covered();
         factors.add(new ExplanationFactor("Coverage Status",
                 coverage.coverageType() != null ? coverage.coverageType() : "NONE",
-                coveragePassed ? "PASS" : "FAIL",
-                "Relevant coverage must be active and matched"));
+                status(coverage.covered()),
+                "Policy must be active with a coverage the line-of-business rule accepts"));
 
-        // Factor 3: Compliance (PII)
-        boolean compliancePassed = !pii.piiDetected();
+        // Factor 3: Compliance (PII) — redacted PII is acceptable. The PII guardrail has already
+        // blocked raw SSNs and MRNs before this point; here we also require confident redaction.
+        boolean redactedConfidently = pii.redactionConfidence() != null
+                && pii.redactionConfidence().compareTo(stp.getPiiRedactionConfidence()) >= 0;
+        boolean compliancePassed = !pii.piiDetected() || redactedConfidently;
         factors.add(new ExplanationFactor("Compliance (PII)",
-                pii.piiDetected() ? "DETECTED" : "CLEAN",
-                compliancePassed ? "PASS" : "FAIL",
-                "PII must be redacted or absent"));
+                pii.piiDetected() ? "REDACTED " + pii.detectedTypes() : "CLEAN",
+                status(compliancePassed),
+                "No PII detected, or PII redacted with confidence >= " + stp.getPiiRedactionConfidence()));
 
         // Factor 4: Reserve Amount
-        BigDecimal stpCeiling = new BigDecimal("25000");
-        boolean reservePassed = reserve.recommendedReserve().compareTo(stpCeiling) <= 0;
+        boolean reservePassed = reserve.recommendedReserve().compareTo(stp.getReserveCeiling()) <= 0;
         factors.add(new ExplanationFactor("Reserve Amount",
                 "$" + reserve.recommendedReserve(),
-                reservePassed ? "PASS" : "FAIL",
-                "Reserve must be <= $25,000 for advisory prefill"));
+                status(reservePassed),
+                "Recommended reserve must be <= $" + stp.getReserveCeiling().toPlainString() + " for STP"));
 
         // Factor 5: Claim History
         boolean historyPassed = !"HIGH".equals(historyContext.claimFrequencyRisk());
         factors.add(new ExplanationFactor("Claim History",
                 historyContext.claimFrequencyRisk() + " (" + historyContext.claimsLast12Months() + " in 12 months)",
-                historyPassed ? "PASS" : "FAIL",
-                "Frequency risk must be LOW or MEDIUM"));
+                status(historyPassed),
+                "Claim frequency risk must be LOW or MEDIUM"));
 
-        // Factor 6: Subrogation Risk
-        boolean subrogationPassed = subrogation.score() < 70;
+        // Factor 6: Subrogation Risk (scored at the gate with Branch A's real severity)
+        boolean subrogationPassed = subrogation.score() < stp.getSubrogationMax();
         factors.add(new ExplanationFactor("Subrogation Risk",
                 String.valueOf(subrogation.score()),
-                subrogationPassed ? "PASS" : "FAIL",
-                "Subrogation score must be < 70"));
+                status(subrogationPassed),
+                "Subrogation score must be < " + stp.getSubrogationMax()
+                        + "; higher scores go to a human to pursue recovery"));
 
-        // Determine recommended action based on severity gate and pass/fail factors.
         boolean allPassed = factors.stream().allMatch(f -> "PASS".equals(f.status()));
-        String recommendedAction;
         String decision;
+        String recommendedAction;
         String summary;
 
-        if ("LOW".equals(severityGate)) {
-            if (allPassed) {
-                decision = "STRAIGHT_THROUGH";
-                recommendedAction = "APPROVE_AND_STP";
-                summary = "All criteria met for automated straight-through processing";
-            } else {
-                decision = "ADVISORY_RECOMMENDED_ACTION";
-                recommendedAction = "ESCALATE_TO_HUMAN";
-                summary = "One or more criteria failed; escalate to human claim handler for review";
-            }
-        } else {
+        if ("HIGH".equals(severityGate)) {
             decision = "ADVISORY_RECOMMENDED_ACTION";
             recommendedAction = "ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY";
-            summary = "Claim severity is " + severityGate + "; escalate to human claim handler regardless of factors";
+            summary = "Claim severity is HIGH (estimated damage above $" + stp.getMediumSeverityMax().toPlainString()
+                    + "); escalate to human claim handler regardless of factors";
+        } else if (allPassed) {
+            decision = "STRAIGHT_THROUGH";
+            recommendedAction = "APPROVE_AND_STP";
+            summary = "All criteria met for automated straight-through processing";
+        } else {
+            decision = "ADVISORY_RECOMMENDED_ACTION";
+            recommendedAction = "ESCALATE_TO_HUMAN";
+            summary = "One or more criteria failed; escalate to human claim handler for review";
         }
 
         return new ExplanationObject(decision, summary, factors, recommendedAction, severityGate);
     }
 
-    /**
-     * Calculate claim severity based on estimated damage
-     */
+    /** LOW up to lowSeverityMax, MEDIUM up to mediumSeverityMax, otherwise HIGH (by estimated damage). */
     public String calculateClaimSeverity(DamageAssessment damage) {
         BigDecimal estimatedDamage = damage.estimatedDamage();
-        BigDecimal lowThreshold = new BigDecimal("5000");
-        BigDecimal mediumThreshold = new BigDecimal("20000");
-
-        if (estimatedDamage.compareTo(lowThreshold) <= 0) {
-            return "LOW";  // Eligible for advisory pre-population
-        } else if (estimatedDamage.compareTo(mediumThreshold) <= 0) {
+        if (estimatedDamage.compareTo(stp.getLowSeverityMax()) <= 0) {
+            return "LOW";
+        } else if (estimatedDamage.compareTo(stp.getMediumSeverityMax()) <= 0) {
             return "MEDIUM";
-        } else {
-            return "HIGH";
         }
+        return "HIGH";
+    }
+
+    private static String status(boolean pass) {
+        return pass ? "PASS" : "FAIL";
     }
 }

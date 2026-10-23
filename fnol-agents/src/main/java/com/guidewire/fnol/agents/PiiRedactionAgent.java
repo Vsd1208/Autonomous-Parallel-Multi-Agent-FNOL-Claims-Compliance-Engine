@@ -43,6 +43,16 @@ public class PiiRedactionAgent implements FNOLAgent<FNOLPayload, PIIResult> {
             text = text.replace(p.claimantName(), "[REDACTED_NAME]");
         }
 
+        if (p.claimantPhone() != null && !p.claimantPhone().isBlank() && text.contains(p.claimantPhone())) {
+            types.add("PHONE");
+            text = text.replace(p.claimantPhone(), "[REDACTED_PHONE]");
+        }
+
+        if (p.claimantEmail() != null && !p.claimantEmail().isBlank() && text.contains(p.claimantEmail())) {
+            types.add("EMAIL");
+            text = text.replace(p.claimantEmail(), "[REDACTED_EMAIL]");
+        }
+
         BigDecimal confidence = new BigDecimal("0.95");
 
         return new PIIResult(

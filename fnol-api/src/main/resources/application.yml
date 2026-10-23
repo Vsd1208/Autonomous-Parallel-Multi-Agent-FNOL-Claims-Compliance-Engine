@@ -5,11 +5,26 @@ mock-guidewire:
 fnol:
   orchestrator:
     timeout-seconds: ${FNOL_ORCHESTRATOR_TIMEOUT_SECONDS:10}
+    pool-size: ${FNOL_ORCHESTRATOR_POOL_SIZE:8}
+    queue-size: ${FNOL_ORCHESTRATOR_QUEUE_SIZE:32}
+  stp:
+    # true: STP-eligible claims are pre-filed but wait as PENDING_ADVISORY_REVIEW for an adjuster.
+    require-advisory-review: ${FNOL_STP_REQUIRE_ADVISORY_REVIEW:true}
+  security:
+    # Shared secret for adjuster-only endpoints (review, audit, audit/pdf, explanation, queue).
+    # Empty means those endpoints reject every request.
+    adjuster-token: ${FNOL_ADJUSTER_TOKEN:}
+  cors:
+    allowed-origins: ${FNOL_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  evidence:
+    # Comma-separated https hosts the API may download evidence photos from. Empty = data: URIs only.
+    allowed-hosts: ${FNOL_EVIDENCE_ALLOWED_HOSTS:}
 gemini:
   api-key: ${GEMINI_API_KEY:}
   vision:
     enabled: ${GEMINI_VISION_ENABLED:true}
     model: ${GEMINI_VISION_MODEL:gemini-2.5-flash}
+    read-timeout-seconds: ${GEMINI_VISION_READ_TIMEOUT_SECONDS:8}
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/fnol}

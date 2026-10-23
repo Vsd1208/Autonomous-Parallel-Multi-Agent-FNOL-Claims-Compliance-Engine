@@ -3,6 +3,7 @@ package com.guidewire.fnol.guardrails;
 
 import com.guidewire.fnol.common.Models.*;
 import com.guidewire.fnol.common.ComplianceBlockException;
+import com.guidewire.fnol.common.CoverageNotEligibleException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -234,7 +235,7 @@ class GuardrailTests {
         );
 
         assertThatThrownBy(() -> validationGuardrail.requireCovered(invalid))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Policy is not eligible");
+                .isInstanceOf(CoverageNotEligibleException.class)
+                .hasMessageContaining("is not eligible");
     }
 }

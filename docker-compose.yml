@@ -7,7 +7,8 @@ services:
       POSTGRES_USER: fnol
       POSTGRES_PASSWORD: fnol
     ports:
-      - "5432:5432"
+      # host port is configurable in case 5432 is already in use; the API connects over the compose network
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fnol -d fnol"]
       interval: 5s
@@ -20,7 +21,12 @@ services:
       dockerfile: fnol-mock-guidewire/Dockerfile
     environment:
       SERVER_PORT: 9090
+      # true delays ClaimCenter create by 11 s (trips the API's 3 s Guidewire read timeout after the fan-out)
       MOCK_GW_TIMEOUT: "${MOCK_GW_TIMEOUT:-false}"
+      # true delays PolicyCenter coverages (Branch A) by 12 s (trips the 3 s read timeout inside the branch)
+      MOCK_PC_TIMEOUT: "${MOCK_PC_TIMEOUT:-false}"
+      # first ClaimCenter claim number; raise it after a restart so IDs do not collide with stored claims
+      MOCK_CC_START_SEQUENCE: "${MOCK_CC_START_SEQUENCE:-1}"
     ports:
       - "9090:9090"
     healthcheck:
@@ -43,7 +49,13 @@ services:
       MOCK_GUIDEWIRE_BASE_URL: http://mock-guidewire:9090
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       GEMINI_VISION_ENABLED: "${GEMINI_VISION_ENABLED:-true}"
-      GEMINI_VISION_MODEL: "${GEMINI_VISION_MODEL:-gemini-1.5-flash}"
+      GEMINI_VISION_MODEL: "${GEMINI_VISION_MODEL:-gemini-2.5-flash}"
+      FNOL_ORCHESTRATOR_TIMEOUT_SECONDS: "${FNOL_ORCHESTRATOR_TIMEOUT_SECONDS:-10}"
+      FNOL_STP_REQUIRE_ADVISORY_REVIEW: "${FNOL_STP_REQUIRE_ADVISORY_REVIEW:-true}"
+      # Empty token = adjuster endpoints (review, audit, explanation, queue) reject every request.
+      FNOL_ADJUSTER_TOKEN: "${FNOL_ADJUSTER_TOKEN:-}"
+      FNOL_CORS_ALLOWED_ORIGINS: "${FNOL_CORS_ALLOWED_ORIGINS:-http://localhost:5173}"
+      FNOL_EVIDENCE_ALLOWED_HOSTS: "${FNOL_EVIDENCE_ALLOWED_HOSTS:-}"
     ports:
       - "8080:8080"
     depends_on:
@@ -65,6 +77,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_BASE_URL: http://localhost:8080
+        VITE_ADJUSTER_TOKEN: "${FNOL_ADJUSTER_TOKEN:-}"
     ports:
       - "5173:5173"
     depends_on:

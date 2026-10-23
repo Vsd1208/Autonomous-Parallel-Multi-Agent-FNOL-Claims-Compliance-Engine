@@ -3,7 +3,7 @@ package com.guidewire.fnol.orchestrator;
 import com.guidewire.fnol.common.Models.*;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -21,40 +21,39 @@ public class ClaimTypeValidator {
             "VANDALISM_COSMETIC"   // Paint, scratches, no structural damage
     );
 
-    /**
-     * Determines if a claim is eligible for advisory pre-population prefill.
-     * Requirements:
-     * 1. Damage type must be in safe list
-     * 2. Estimated damage must be LOW severity (< $5,000)
-     * 3. Claim history frequency risk must NOT be HIGH
-     */
-    public boolean isEligibleForAdvisoryPrefill(
-            DamageAssessment damage,
-            PolicyHistoryContext history) {
+    // D17: the vision model reports the damaged area, not a claim type. Map areas to claim types.
+    private static final Map<String, String> VISION_DAMAGE_TO_CLAIM_TYPE = Map.of(
+            "WINDSHIELD", "GLASS_ONLY",
+            "FRONT_BUMPER", "MINOR_COLLISION",
+            "REAR_BUMPER", "MINOR_COLLISION",
+            "SIDE_PANEL", "MINOR_COLLISION"
+    );
 
-        // Requirement 1: Claim type must be in safe list
-        if (!ELIGIBLE_CLAIM_TYPES.contains(damage.damageType())) {
-            return false;
-        }
+    private final StpProperties stp;
 
-        // Requirement 2: Severity must be LOW
-        if (!isLowSeverity(damage)) {
-            return false;
-        }
-
-        // Requirement 3: Claimant history must not be high-risk
-        if ("HIGH".equals(history.claimFrequencyRisk())) {
-            return false;
-        }
-
-        return true;
+    public ClaimTypeValidator(StpProperties stp) {
+        this.stp = stp;
     }
 
     /**
-     * Checks if damage is low severity (< $5,000)
+     * Requirements:
+     * 1. Damage type (mapped to a claim type) must be in the safe list
+     * 2. Estimated damage must be LOW severity (at most fnol.stp.low-severity-max)
+     * 3. Claim history frequency risk must NOT be HIGH
      */
-    private boolean isLowSeverity(DamageAssessment damage) {
-        BigDecimal lowThreshold = new BigDecimal("5000");
-        return damage.estimatedDamage().compareTo(lowThreshold) <= 0;
+    public boolean isEligibleForAdvisoryPrefill(DamageAssessment damage, PolicyHistoryContext history) {
+        if (!ELIGIBLE_CLAIM_TYPES.contains(claimTypeFor(damage.damageType()))) {
+            return false;
+        }
+        if (damage.estimatedDamage().compareTo(stp.getLowSeverityMax()) > 0) {
+            return false;
+        }
+        return !"HIGH".equals(history.claimFrequencyRisk());
+    }
+
+    /** Claim type for a vision damage type; claim types pass through unchanged. */
+    static String claimTypeFor(String damageType) {
+        if (damageType == null) return "UNKNOWN";
+        return VISION_DAMAGE_TO_CLAIM_TYPE.getOrDefault(damageType, damageType);
     }
 }

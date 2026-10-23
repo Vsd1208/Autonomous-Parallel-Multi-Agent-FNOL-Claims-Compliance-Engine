@@ -1,0 +1,20 @@
+{
+  "scenario": "home_policy",
+  "description": "Home policy POL-HOME-334455 with DWELLING coverage: covered under the HOME line-of-business rule instead of failing the old COLLISION-only check.",
+  "payload": {
+    "policyNumber": "POL-HOME-334455",
+    "incidentDate": "2026-09-27",
+    "state": "TX",
+    "description": "Kitchen pipe burst and caused water damage to the floor and cabinets.",
+    "claimantName": "Riley Smith",
+    "claimantDob": "01/01/1990",
+    "claimantSsn": "123-45-6789",
+    "evidenceUris": [
+      "mock://photo/water-damage.jpg"
+    ],
+    "channel": "API"
+  },
+  "expectedStatus": 200,
+  "expectedClaimStatus": "PENDING_ADVISORY_REVIEW",
+  "expectedDecision": "STRAIGHT_THROUGH"
+}

@@ -54,7 +54,7 @@ class FNOLControllerTest {
     void intakeEndpoint_processesValidFNOL() throws Exception {
         Policy mockPolicy = new Policy(
                 "POL-AUTO-112233", "AUTO", "ACTIVE",
-                LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1),
+                LocalDate.now().minusMonths(6), LocalDate.now().plusMonths(6),
                 "Avery Johnson", "CA", "2025 Camry", List.of()
         );
         List<Coverage> mockCoverages = List.of(
@@ -114,6 +114,7 @@ class FNOLControllerTest {
         );
 
         mockMvc.perform(post("/api/v1/fnol/CLM-2026-000001/review")
+                        .header("X-Adjuster-Token", "test-adjuster-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(review)))
                 .andExpect(status().isOk())
@@ -128,7 +129,8 @@ class FNOLControllerTest {
                 .andExpect(jsonPath("$.adjusterDecision").value("APPROVED_BY_ADJUSTER"));
 
         // Test new WHY panel endpoint — must return persisted explanation
-        mockMvc.perform(get("/api/v1/fnol/CLM-2026-000001/explanation"))
+        mockMvc.perform(get("/api/v1/fnol/CLM-2026-000001/explanation")
+                        .header("X-Adjuster-Token", "test-adjuster-token"))
                 .andExpect(status().isOk());
     }
 

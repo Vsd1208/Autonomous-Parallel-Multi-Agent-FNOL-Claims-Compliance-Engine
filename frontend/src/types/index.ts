@@ -9,9 +9,10 @@ export interface DamageAssessment {
 
 export interface Coverage {
   covered: boolean;
-  coverageType: string;
+  coverageType: string | null;
   coverageLimit: number;
   deductible: number;
+  reasoning?: string[];
 }
 
 export interface Reserve {
@@ -38,6 +39,9 @@ export interface Deadline {
   deadline: string;
   ruleSource: string;
   disclaimer: string;
+  acknowledgeBy?: string;
+  decisionBy?: string;
+  urgencyFlag?: 'OK' | 'WARNING' | 'CRITICAL' | string;
 }
 
 export interface Subrogation {
@@ -47,11 +51,21 @@ export interface Subrogation {
 }
 
 export interface AuditEvent {
+  eventId?: string;
   agentName: string;
   status: string;
   timestamp: string;
   inputHash?: string;
   outputHash?: string;
+  chainHash?: string | null;
+  seq?: number | null;
+  actor?: string | null;
+}
+
+export interface AuditTrail {
+  claimId: string;
+  chainValid: boolean;
+  records: AuditEvent[];
 }
 
 export interface BranchBResult {
@@ -87,6 +101,7 @@ export interface ExplanationObject {
   severityGate: string;
 }
 
+/** Full intake response (POST /fnol/intake). */
 export interface ClaimResult {
   claimId: string;
   status: string;
@@ -96,11 +111,73 @@ export interface ClaimResult {
   explanation: ExplanationObject;
   severityGate?: string;
   eligibleForAdvisoryPrefill?: boolean;
+  requiresHumanValidation?: boolean;
   notes: string[];
+  inputFlags?: string[];
+  ccSyncStatus?: string;
 }
 
+/** Saved claim row (GET /fnol/status/{claimId}). */
+export interface ClaimRecord {
+  claimId: string;
+  policyNumber: string;
+  status: string;
+  incidentDate: string;
+  state: string;
+  estimatedDamage: number;
+  reserve: number;
+  adjusterDecision: string | null;
+  adjusterId: string | null;
+  adjusterNotes: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  channel: string | null;
+  failureReason: string | null;
+  severityGate: string | null;
+  inputFlags: string | null;
+  ccSyncStatus: string | null;
+}
+
+/**
+ * What the dashboard shows. A claim opened straight from intake has the branch details;
+ * a claim loaded from the server (queue, deep link) has the saved row and WHY panel only.
+ */
+export interface DashboardClaim {
+  claimId: string;
+  status: string;
+  explanation?: ExplanationObject | null;
+  branchA?: BranchAResult;
+  branchB?: BranchBResult;
+  notes?: string[];
+  inputFlags?: string[];
+  failureReason?: string | null;
+  ccSyncStatus?: string | null;
+  record?: ClaimRecord;
+}
+
+export interface QueueItem {
+  claimId: string;
+  status: string;
+  policyNumber: string;
+  reserve: number;
+  severityGate: string | null;
+  inputFlags: string | null;
+  failureReason: string | null;
+  createdAt: string;
+}
+
+export interface QueuePage {
+  items: QueueItem[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+export type AdjusterDecision = 'APPROVED_BY_ADJUSTER' | 'REJECTED_BY_ADJUSTER' | 'NEEDS_MORE_INFO' | 'CLOSED';
+
 export interface AdjusterReviewRequest {
-  decision: 'APPROVED_BY_ADJUSTER' | 'REJECTED_BY_ADJUSTER' | 'NEEDS_MORE_INFO' | 'CLOSED';
+  decision: AdjusterDecision;
   adjusterId: string;
   notes: string;
 }
@@ -122,4 +199,6 @@ export interface FormData {
   claimantName: string;
   claimantDob: string;
   claimantSsn: string;
+  claimantPhone: string;
+  claimantEmail: string;
 }

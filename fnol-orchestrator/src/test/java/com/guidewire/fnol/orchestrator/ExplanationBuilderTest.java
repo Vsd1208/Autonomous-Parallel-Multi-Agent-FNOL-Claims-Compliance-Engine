@@ -1,505 +1,167 @@
-
 package com.guidewire.fnol.orchestrator;
 
 import com.guidewire.fnol.common.Models.*;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@RunWith(MockitoJUnitRunner.class)
-public class ExplanationBuilderTest {
+/** P8: each of the six factors can flip an otherwise STP-eligible claim to a human. */
+class ExplanationBuilderTest {
 
+    private StpProperties stp;
     private ExplanationBuilder builder;
 
-    @Before
-    public void setup() {
-        builder = new ExplanationBuilder();
-    }
-    /**
-     * Test 1: All factors PASS → STRAIGHT_THROUGH decision
-     */
-    @Test
-    public void testAllFactorsPassResultsInStraightThrough() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
+    // Baseline: every factor passes, LOW severity.
+    private PolicyValidationResult coverage;
+    private DamageAssessment damage;
+    private ReserveResult reserve;
+    private PIIResult pii;
+    private SubrogationResult subrogation;
+    private PolicyHistoryContext history;
 
-        DamageAssessment damage = DamageAssessment.of(
-                "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
-        );
-
-        PIIResult pii = new PIIResult(
-                "Redacted text", List.of(), false, new BigDecimal("0.95")
-        );
-
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(
-                coverage, damage, reserve, pii, subrogation, history
-        );
-
-        assertEquals("STRAIGHT_THROUGH", result.decision());
-        assertEquals(
-                "All criteria met for automated straight-through processing",
-                result.summary()
-        );
-        assertEquals("APPROVE_AND_STP", result.recommendedAction());
-        assertEquals(6, result.factors().size());
-        assertTrue(
-                "All factors should PASS",
-                result.factors().stream().allMatch(f -> "PASS".equals(f.status()))
-        );
+    @BeforeEach
+    void setup() {
+        stp = new StpProperties();
+        builder = new ExplanationBuilder(stp);
+        coverage = new PolicyValidationResult("POL-001", true, true, true, true, "COLLISION",
+                new BigDecimal("50000"), new BigDecimal("1000"), List.of());
+        damage = DamageAssessment.of("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91"));
+        reserve = new ReserveResult(new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830"));
+        pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
+        subrogation = new SubrogationResult(30, "MONITOR", Map.of());
+        history = new PolicyHistoryContext(0, 0, 0, null, null, null, 0, "LOW");
     }
 
-    /**
-     * Test 2: Low confidence → HUMAN_REVIEW
-     */
-    @Test
-    public void testLowConfidenceResultsInHumanReview() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
-
-        DamageAssessment damage = DamageAssessment.of(
-                "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.72")
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
-        );
-
-        PIIResult pii = new PIIResult(
-                "Redacted text", List.of(), false, new BigDecimal("0.95")
-        );
-
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(
-                coverage, damage, reserve, pii, subrogation, history
-        );
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-
-        ExplanationFactor confidenceFactor = result.factors().stream()
-                .filter(f -> "AI Confidence".equals(f.factor()))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("AI Confidence factor not found"));
-
-        assertEquals("FAIL", confidenceFactor.status());
+    private ExplanationObject build() {
+        return builder.build(coverage, damage, reserve, pii, subrogation, history);
     }
 
-    /**
-     * Test 3: Coverage not covered → HUMAN_REVIEW
-     */
-    @Test
-    public void testUncoveredClaimResultsInHumanReview() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, false, "LIABILITY",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
-
-        DamageAssessment damage = DamageAssessment.of(
-                "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
-        );
-
-        PIIResult pii = new PIIResult(
-                "Redacted text", List.of(), false, new BigDecimal("0.95")
-        );
-
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(
-                coverage, damage, reserve, pii, subrogation, history
-        );
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-
-        ExplanationFactor coverageFactor = result.factors().stream()
-                .filter(f -> "Coverage Status".equals(f.factor()))
-                .findFirst()
-                .orElseThrow();
-
-        assertEquals("FAIL", coverageFactor.status());
+    private static ExplanationFactor factor(ExplanationObject e, String name) {
+        return e.factors().stream().filter(f -> name.equals(f.factor())).findFirst().orElseThrow();
     }
 
-    /**
-     * Test 4: PII detected → HUMAN_REVIEW
-     */
-    @Test
-    public void testPIIDetectedResultsInHumanReview() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
-
-        DamageAssessment damage = DamageAssessment.of(
-                "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
-        );
-
-        PIIResult pii = new PIIResult(
-                "Description with PII",
-                List.of("SSN", "DOB"),
-                true,
-                new BigDecimal("0.95")
-        );
-
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(
-                coverage, damage, reserve, pii, subrogation, history
-        );
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-
-        ExplanationFactor complianceFactor = result.factors().stream()
-                .filter(f -> "Compliance (PII)".equals(f.factor()))
-                .findFirst()
-                .orElseThrow();
-
-        assertEquals("FAIL", complianceFactor.status());
+    private static void assertEscalatedBy(ExplanationObject e, String failingFactor) {
+        assertThat(e.decision()).isEqualTo("ADVISORY_RECOMMENDED_ACTION");
+        assertThat(e.recommendedAction()).isEqualTo("ESCALATE_TO_HUMAN");
+        assertThat(e.factors()).filteredOn(f -> "FAIL".equals(f.status()))
+                .extracting(ExplanationFactor::factor).containsExactly(failingFactor);
     }
 
-    /**
-     * Test 5: Reserve exceeds $25,000 → HUMAN_REVIEW
-     */
     @Test
-    public void testHighReserveResultsInHumanReview() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
+    @DisplayName("Baseline: all six factors pass at LOW severity → STRAIGHT_THROUGH")
+    void allFactorsPassResultsInStraightThrough() {
+        ExplanationObject result = build();
 
-        DamageAssessment damage = DamageAssessment.of(
-                "BUMPER", "MODERATE", new BigDecimal("30000"), new BigDecimal("0.91")
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("30000"), new BigDecimal("1.15"), new BigDecimal("34500")
-        );
-
-        PIIResult pii = new PIIResult(
-                "Redacted text", List.of(), false, new BigDecimal("0.95")
-        );
-
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(
-                coverage, damage, reserve, pii, subrogation, history
-        );
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-        // Damage is $30k, so HIGH severity → always escalate
-        assertEquals("ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY", result.recommendedAction());
-        assertEquals("HIGH", result.severityGate());
-
-        ExplanationFactor reserveFactor = result.factors().stream()
-                .filter(f -> "Reserve Amount".equals(f.factor()))
-                .findFirst()
-                .orElseThrow();
-
-        assertEquals("FAIL", reserveFactor.status());
+        assertThat(result.decision()).isEqualTo("STRAIGHT_THROUGH");
+        assertThat(result.recommendedAction()).isEqualTo("APPROVE_AND_STP");
+        assertThat(result.severityGate()).isEqualTo("LOW");
+        assertThat(result.factors()).hasSize(6).allMatch(f -> "PASS".equals(f.status()));
     }
 
-    /**
-     * Test 6: HIGH frequency risk → HUMAN_REVIEW
-     */
     @Test
-    public void testHighFrequencyRiskResultsInHumanReview() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
-
-        DamageAssessment damage = DamageAssessment.of(
-                "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
-        );
-
-        PIIResult pii = new PIIResult(
-                "Redacted text", List.of(), false, new BigDecimal("0.95")
-        );
-
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                5, 2, 3, LocalDate.now().minusDays(45), "COLLISION",
-                new BigDecimal("3500"), 0, "HIGH"
-        );
-
-        ExplanationObject result = builder.build(
-                coverage, damage, reserve, pii, subrogation, history
-        );
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-
-        ExplanationFactor historyFactor = result.factors().stream()
-                .filter(f -> "Claim History".equals(f.factor()))
-                .findFirst()
-                .orElseThrow();
-
-        assertEquals("FAIL", historyFactor.status());
+    @DisplayName("Factor 1: confidence below 0.85 flips the route")
+    void lowConfidenceFlipsRoute() {
+        damage = DamageAssessment.of("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.84"));
+        assertEscalatedBy(build(), "AI Confidence");
     }
 
-    /**
-     * Test 7: High subrogation score → HUMAN_REVIEW
-     */
     @Test
-    public void testHighSubrogationScoreResultsInHumanReview() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
-
-        DamageAssessment damage = DamageAssessment.of(
-                "BUMPER", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.91")
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("4200"), new BigDecimal("1.15"), new BigDecimal("4830")
-        );
-
-        PIIResult pii = new PIIResult(
-                "Redacted text", List.of(), false, new BigDecimal("0.95")
-        );
-
-        SubrogationResult subrogation = new SubrogationResult(
-                85, "INVESTIGATE", Map.of("thirdPartyMention", 50)
-        );
-
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(
-                coverage, damage, reserve, pii, subrogation, history
-        );
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-        assertEquals("ESCALATE_TO_HUMAN", result.recommendedAction());
-        assertEquals("LOW", result.severityGate());
-
-        ExplanationFactor subrogationFactor = result.factors().stream()
-                .filter(f -> "Subrogation Risk".equals(f.factor()))
-                .findFirst()
-                .orElseThrow();
-
-        assertEquals("FAIL", subrogationFactor.status());
+    @DisplayName("Factor 2: uncovered claim flips the route")
+    void uncoveredFlipsRoute() {
+        coverage = new PolicyValidationResult("POL-001", true, true, false, false, null,
+                BigDecimal.ZERO, BigDecimal.ZERO, List.of());
+        assertEscalatedBy(build(), "Coverage Status");
     }
 
-    /**
-     * Test 8: LOW severity with all factors PASS → PREFILL_LOW_SEVERITY_CLAIM
-     */
     @Test
-    public void testLowSeverityAllPassResultsInPrefill() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
-
-        DamageAssessment damage = DamageAssessment.of(
-                "GLASS_ONLY", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("2500"), new BigDecimal("1.15"), new BigDecimal("2875")
-        );
-
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-        assertEquals("PREFILL_LOW_SEVERITY_CLAIM", result.recommendedAction());
-        assertEquals("LOW", result.severityGate());
-        assertTrue("All factors should PASS",
-                result.factors().stream().allMatch(f -> "PASS".equals(f.status())));
+    @DisplayName("Factor 3: PII detected with redaction confidence below 0.90 flips the route")
+    void lowConfidencePiiRedactionFlipsRoute() {
+        pii = new PIIResult("Redacted", List.of("SSN"), true, new BigDecimal("0.80"));
+        assertEscalatedBy(build(), "Compliance (PII)");
     }
 
-    /**
-     * Test 9: LOW severity but low confidence → ESCALATE_TO_HUMAN
-     */
     @Test
-    public void testLowSeverityLowConfidenceEscalates() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
+    @DisplayName("D11: PII detected and redacted with confidence >= 0.90 passes")
+    void redactedPiiPasses() {
+        pii = new PIIResult("***-**-**** reported", List.of("SSN", "DOB"), true, new BigDecimal("0.95"));
+        ExplanationObject result = build();
 
-        DamageAssessment damage = DamageAssessment.of(
-                "GLASS_ONLY", "MINOR", new BigDecimal("2500"), new BigDecimal("0.72")  // LOW confidence
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("2500"), new BigDecimal("1.15"), new BigDecimal("2875")
-        );
-
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-        assertEquals("ESCALATE_TO_HUMAN", result.recommendedAction());
-        assertEquals("LOW", result.severityGate());
-
-        ExplanationFactor confidenceFactor = result.factors().stream()
-                .filter(f -> "AI Confidence".equals(f.factor()))
-                .findFirst()
-                .orElseThrow();
-
-        assertEquals("FAIL", confidenceFactor.status());
+        assertThat(factor(result, "Compliance (PII)").status()).isEqualTo("PASS");
+        assertThat(factor(result, "Compliance (PII)").value()).contains("REDACTED");
+        assertThat(result.decision()).isEqualTo("STRAIGHT_THROUGH");
     }
 
-    /**
-     * Test 10: MEDIUM severity always escalates regardless of factors
-     */
     @Test
-    public void testMediumSeverityAlwaysEscalates() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
+    @DisplayName("Factor 4: reserve above $25,000 flips a MEDIUM claim when the medium ceiling allows it")
+    void highReserveFlipsRoute() {
+        stp.setMediumSeverityMax(new BigDecimal("30000"));   // lets the reserve ceiling bind
+        damage = DamageAssessment.of("SIDE_PANEL", "SEVERE", new BigDecimal("22000"), new BigDecimal("0.91"));
+        reserve = new ReserveResult(new BigDecimal("22000"), new BigDecimal("1.15"), new BigDecimal("25300"));
 
-        DamageAssessment damage = DamageAssessment.of(
-                "DOOR_PANEL", "MODERATE", new BigDecimal("12000"), new BigDecimal("0.91")  // MEDIUM severity
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("12000"), new BigDecimal("1.15"), new BigDecimal("13800")
-        );
-
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-        assertEquals("ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY", result.recommendedAction());
-        assertEquals("MEDIUM", result.severityGate());
+        ExplanationObject result = build();
+        assertThat(result.severityGate()).isEqualTo("MEDIUM");
+        assertEscalatedBy(result, "Reserve Amount");
     }
 
-    /**
-     * Test 11: HIGH severity always escalates
-     */
     @Test
-    public void testHighSeverityAlwaysEscalates() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
-
-        DamageAssessment damage = DamageAssessment.of(
-                "STRUCTURAL_DAMAGE", "SEVERE", new BigDecimal("35000"), new BigDecimal("0.91")  // HIGH severity
-        );
-
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("35000"), new BigDecimal("1.15"), new BigDecimal("40250")
-        );
-
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                0, 0, 0, null, null, null, 0, "LOW"
-        );
-
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
-
-        assertEquals("ADVISORY_RECOMMENDED_ACTION", result.decision());
-        assertEquals("ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY", result.recommendedAction());
-        assertEquals("HIGH", result.severityGate());
+    @DisplayName("Factor 5: HIGH claim frequency flips the route")
+    void highFrequencyFlipsRoute() {
+        history = new PolicyHistoryContext(2, 1, 2, LocalDate.now().minusDays(45), "CLOSED",
+                new BigDecimal("3500"), 0, "HIGH");
+        assertEscalatedBy(build(), "Claim History");
     }
 
-    /**
-     * Test 12: LOW severity + HIGH frequency risk → block prefill
-     */
     @Test
-    public void testHighFrequencyRiskBlocksPrefill() {
-        PolicyValidationResult coverage = new PolicyValidationResult(
-                "POL-001", true, true, true, true, "COLLISION",
-                new BigDecimal("50000"), new BigDecimal("1000"), List.of()
-        );
+    @DisplayName("Factor 6: subrogation score of 70 flips the route")
+    void subrogationAtThresholdFlipsRoute() {
+        subrogation = new SubrogationResult(70, "INVESTIGATE", Map.of());
+        assertEscalatedBy(build(), "Subrogation Risk");
+    }
 
-        DamageAssessment damage = DamageAssessment.of(
-                "GLASS_ONLY", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")
-        );
+    @Test
+    @DisplayName("D13: MEDIUM severity with all factors passing is STRAIGHT_THROUGH")
+    void mediumSeverityAllPassIsStraightThrough() {
+        damage = DamageAssessment.of("SIDE_PANEL", "MODERATE", new BigDecimal("12000"), new BigDecimal("0.91"));
+        reserve = new ReserveResult(new BigDecimal("12000"), new BigDecimal("1.15"), new BigDecimal("13800"));
 
-        ReserveResult reserve = new ReserveResult(
-                new BigDecimal("2500"), new BigDecimal("1.15"), new BigDecimal("2875")
-        );
+        ExplanationObject result = build();
+        assertThat(result.severityGate()).isEqualTo("MEDIUM");
+        assertThat(result.decision()).isEqualTo("STRAIGHT_THROUGH");
+    }
 
-        PIIResult pii = new PIIResult("Redacted text", List.of(), false, new BigDecimal("0.95"));
-        SubrogationResult subrogation = new SubrogationResult(45, "ACCEPT", Map.of());
-        PolicyHistoryContext history = new PolicyHistoryContext(
-                5, 2, 3, LocalDate.now().minusDays(45), "COLLISION",
-                new BigDecimal("3500"), 0, "HIGH"  // HIGH frequency risk
-        );
+    @Test
+    @DisplayName("HIGH severity always goes to a human, even with all factors passing")
+    void highSeverityAlwaysEscalates() {
+        damage = DamageAssessment.of("MULTIPLE", "SEVERE", new BigDecimal("21000"), new BigDecimal("0.95"));
+        reserve = new ReserveResult(new BigDecimal("21000"), new BigDecimal("1.15"), new BigDecimal("24150"));
 
-        ExplanationObject result = builder.build(coverage, damage, reserve, pii, subrogation, history);
+        ExplanationObject result = build();
+        assertThat(result.severityGate()).isEqualTo("HIGH");
+        assertThat(result.factors()).allMatch(f -> "PASS".equals(f.status()));
+        assertThat(result.decision()).isEqualTo("ADVISORY_RECOMMENDED_ACTION");
+        assertThat(result.recommendedAction()).isEqualTo("ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY");
+    }
 
-        assertEquals("ESCALATE_TO_HUMAN", result.recommendedAction());
-        assertEquals("LOW", result.severityGate());
+    @Test
+    @DisplayName("Severity boundaries: 5000 LOW, 5001 MEDIUM, 20000 MEDIUM, 20001 HIGH")
+    void severityBoundaries() {
+        assertThat(builder.calculateClaimSeverity(DamageAssessment.of("X", "M", new BigDecimal("5000"), BigDecimal.ONE))).isEqualTo("LOW");
+        assertThat(builder.calculateClaimSeverity(DamageAssessment.of("X", "M", new BigDecimal("5001"), BigDecimal.ONE))).isEqualTo("MEDIUM");
+        assertThat(builder.calculateClaimSeverity(DamageAssessment.of("X", "M", new BigDecimal("20000"), BigDecimal.ONE))).isEqualTo("MEDIUM");
+        assertThat(builder.calculateClaimSeverity(DamageAssessment.of("X", "M", new BigDecimal("20001"), BigDecimal.ONE))).isEqualTo("HIGH");
+    }
 
-        ExplanationFactor historyFactor = result.factors().stream()
-                .filter(f -> "Claim History".equals(f.factor()))
-                .findFirst()
-                .orElseThrow();
-
-        assertEquals("FAIL", historyFactor.status());
+    @Test
+    @DisplayName("Thresholds come from fnol.stp properties")
+    void thresholdsAreConfigurable() {
+        stp.setConfidence(new BigDecimal("0.95"));
+        assertEscalatedBy(build(), "AI Confidence");
     }
 }
