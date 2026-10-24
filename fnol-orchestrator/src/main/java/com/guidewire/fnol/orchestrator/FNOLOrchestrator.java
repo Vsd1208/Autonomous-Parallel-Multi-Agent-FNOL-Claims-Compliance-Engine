@@ -30,11 +30,13 @@ import java.util.concurrent.*;
  *       awaited against one overall deadline; on timeout the branch threads are interrupted.
  *     <ul>
  *       <li>Branch A — Operational AI: vision damage, coverage check (hard stop), reserve.</li>
- *       <li>Branch B — Legal AI: PII redaction (hard stop on guardrail failure), statutory deadlines.</li>
+ *       <li>Branch B — Legal AI: PII redaction (hard stop on guardrail failure), statutory deadlines,
+ *           third-party liability assessment with compliance notes.</li>
  *     </ul></li>
- *   <li><b>Reconciliation Safety Gate</b> ({@link #reconcile}): subrogation scored with Branch A's
- *       real severity, output guardrails, six-factor WHY panel, ClaimCenter pre-filing, one audit
- *       record per agent plus the gate decision, and routing.</li>
+ *   <li><b>Reconciliation Safety Gate</b> ({@link #reconcile}): subrogation finalised with Branch A's
+ *       real severity, output guardrails, cross-branch consistency checks, six-factor WHY panel,
+ *       routing, a ClaimCenter claim pre-populated as a draft (OPEN only for unreviewed STP), and one
+ *       audit record per agent plus the gate decision.</li>
  * </ol>
  *
  * <h2>Governance</h2>
@@ -64,8 +66,9 @@ public class FNOLOrchestrator {
     private final PiiRedactionAgent pii;
     private final StatutoryDeadlineAgent deadline;
 
-    // ── Reconciliation gate ──
+    // ── Branch B liability assessment, finalised at the reconciliation gate ──
     private final SubrogationScorerAgent subro;
+    private final GateConsistencyChecker consistency;
 
     // ── Supporting components ──
     private final AuditTrailAgent audit;
@@ -98,6 +101,7 @@ public class FNOLOrchestrator {
             IntakeReviewService intakeReview,
             ExplanationBuilder explanationBuilder,
             ClaimTypeValidator claimTypeValidator,
+            GateConsistencyChecker consistency,
             OrchestratorProperties properties,
             StpProperties stp
     ) {
@@ -118,6 +122,7 @@ public class FNOLOrchestrator {
         this.intakeReview = intakeReview;
         this.explanationBuilder = explanationBuilder;
         this.claimTypeValidator = claimTypeValidator;
+        this.consistency = consistency;
         this.stp = stp;
         this.timeoutSeconds = properties.getTimeoutSeconds();
         // Bounded pool + bounded queue shared by all requests. AbortPolicy makes a full queue
@@ -221,7 +226,7 @@ public class FNOLOrchestrator {
         log.info("[FNOL] Dual-branch completed in {}ms — policy={}", elapsed, payload.policyNumber());
 
         // ── Stage 5: Reconciliation Safety Gate ──────────────────────────────────────
-        return reconcile(payload, branchA, branchB, policyContext, inputFlags, elapsed, highRiskEscalation);
+        return reconcile(payload, policyRecord, branchA, branchB, policyContext, inputFlags, elapsed, highRiskEscalation);
     }
 
     private Policy lookUpPolicy(String policyNumber) {
@@ -274,8 +279,9 @@ public class FNOLOrchestrator {
 
     // ─────────────────────────────────────────────────────────────────────────────────
     //  BRANCH B — Legal AI
-    //  Redacts PII and computes statutory deadlines, fully independent of Branch A.
-    //  Subrogation needs Branch A's damage severity, so it is scored at the gate.
+    //  Redacts PII, computes statutory deadlines and assesses third-party liability,
+    //  fully independent of Branch A. The subrogation score is finalised at the gate,
+    //  once Branch A's damage severity is known.
     // ─────────────────────────────────────────────────────────────────────────────────
     private BranchBResult runLegalAI(FNOLPayload payload) {
         log.debug("[Branch B — Legal AI] Starting — policy={}", payload.policyNumber());
@@ -287,19 +293,24 @@ public class FNOLOrchestrator {
 
         // Step B2: State-specific statutory deadlines (synthetic prototype rules)
         DeadlineResult deadlineResult = deadline.execute(payload);
-        log.debug("[Branch B — Legal AI] Completed — state={}, acknowledgeBy={}, urgency={}",
+        log.debug("[Branch B] Deadlines — state={}, acknowledgeBy={}, urgency={}",
                 deadlineResult.state(), deadlineResult.acknowledgeBy(), deadlineResult.urgencyFlag());
 
-        return new BranchBResult(piiResult, deadlineResult, null, List.of());
+        // Step B3: Subrogation — third-party liability potential and compliance notes
+        SubrogationResult liability = subro.assessLiability(payload);
+        log.debug("[Branch B — Legal AI] Completed — liability points={}", liability.score());
+
+        return new BranchBResult(piiResult, deadlineResult, liability, List.of());
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────
     //  RECONCILIATION SAFETY GATE
-    //  Merges Branch A + Branch B results. Applies guardrails. Builds the WHY panel.
-    //  Pre-files the claim in ClaimCenter and routes it.
+    //  Merges Branch A + Branch B results. Applies guardrails and consistency checks.
+    //  Builds the WHY panel, routes the claim and pre-populates it in ClaimCenter.
     // ─────────────────────────────────────────────────────────────────────────────────
     private FNOLResponse reconcile(
             FNOLPayload payload,
+            Policy policyRecord,
             BranchAResult branchA,
             BranchBResult branchB,
             PolicyHistoryContext policyContext,
@@ -309,11 +320,14 @@ public class FNOLOrchestrator {
     ) {
         log.info("[FNOL] Entering Reconciliation Safety Gate — policy={}", payload.policyNumber());
 
-        // Gate Step 1: Subrogation scored with Branch A's real damage severity
-        SubrogationResult subrogation = subro.execute(payload, branchA.damageAssessment());
+        // Gate Step 1: Finalise Branch B's subrogation assessment with Branch A's damage severity
+        SubrogationResult subrogation = subro.finalizeScore(branchB.subrogation(), branchA.damageAssessment());
 
-        // Gate Step 2: Output guardrails (value range + cross-branch checks)
+        // Gate Step 2: Output guardrails (value ranges) and cross-branch consistency checks
         output.validate(branchA.reserve(), subrogation);
+        List<String> gateFlags = consistency.check(policyRecord, branchA);
+        List<String> reviewFlags = new ArrayList<>(inputFlags);
+        reviewFlags.addAll(gateFlags);
 
         // Gate Step 3: Build structured ExplanationObject — the "WHY" panel
         ExplanationObject explanation = explanationBuilder.build(
@@ -324,12 +338,13 @@ public class FNOLOrchestrator {
                 subrogation,
                 policyContext
         );
-        if ("STRAIGHT_THROUGH".equals(explanation.decision()) && !inputFlags.isEmpty()) {
-            // All six factors passed, but Human Review Point 1 raised flags: the WHY panel must say so.
+        if ("STRAIGHT_THROUGH".equals(explanation.decision()) && !reviewFlags.isEmpty()) {
+            // All six factors passed, but intake review or the consistency checks raised flags:
+            // the WHY panel must say so.
             explanation = new ExplanationObject(
                     "ADVISORY_RECOMMENDED_ACTION",
-                    "All six factors passed, but intake review flagged " + String.join(", ", inputFlags)
-                            + "; escalate to human claim handler for review",
+                    "All six factors passed, but review flags were raised (" + String.join(", ", reviewFlags)
+                            + "); escalate to human claim handler for review",
                     explanation.factors(),
                     "ESCALATE_TO_HUMAN",
                     explanation.severityGate());
@@ -340,25 +355,28 @@ public class FNOLOrchestrator {
                 policyContext
         );
 
-        // Gate Step 4: Pre-file the claim in Guidewire ClaimCenter
+        // Gate Step 4: Route — STP only when every factor passes and no review flag was raised
+        boolean isStp = "STRAIGHT_THROUGH".equals(explanation.decision()) && reviewFlags.isEmpty();
+        boolean requiresHumanValidation = !isStp;
+        // Human Review Point 2: with fnol.stp.require-advisory-review (default) an STP-eligible claim
+        // waits for an adjuster to confirm the advisory before it counts as filed.
+        String status = !isStp ? "HUMAN_REVIEW"
+                : stp.isRequireAdvisoryReview() ? "PENDING_ADVISORY_REVIEW" : "STRAIGHT_THROUGH_PROCESSING";
+
+        // Gate Step 5: Pre-populate the claim in Guidewire ClaimCenter. It stays a draft until a human
+        // decides; only an STP claim with no advisory review goes straight to OPEN (standard process).
+        String initialCcStatus = "STRAIGHT_THROUGH_PROCESSING".equals(status) ? "OPEN" : "DRAFT_PENDING_REVIEW";
         ClaimCreateResponse created = cc.createClaim(new ClaimCreateRequest(
                 payload.policyNumber(),
                 payload.incidentDate(),
                 payload.state(),
                 branchA.damageAssessment().estimatedDamage(),
-                branchA.reserve().recommendedReserve()
+                branchA.reserve().recommendedReserve(),
+                initialCcStatus
         ));
         String claimId = created.claimId();
-        log.info("[FNOL] Claim filed to ClaimCenter — claimId={}", claimId);
+        log.info("[FNOL] Claim pre-populated in ClaimCenter — claimId={}, ccStatus={}", claimId, initialCcStatus);
         String ccSyncStatus = attachAdvisoryAndEvidence(claimId, explanation, payload);
-
-        // Gate Step 5: Route — STP only when every factor passes and no intake flag was raised
-        boolean isStp = "STRAIGHT_THROUGH".equals(explanation.decision()) && inputFlags.isEmpty();
-        boolean requiresHumanValidation = !isStp;
-        // Human Review Point 2: with fnol.stp.require-advisory-review (default) an STP-eligible claim is
-        // pre-filed in ClaimCenter but does not count as filed until an adjuster confirms the advisory.
-        String status = !isStp ? "HUMAN_REVIEW"
-                : stp.isRequireAdvisoryReview() ? "PENDING_ADVISORY_REVIEW" : "STRAIGHT_THROUGH_PROCESSING";
 
         // Gate Step 6: Audit trail — one SHA-256 hashed record per agent plus the gate decision.
         // Inputs are hashed from the sanitized intake only, never the raw payload (SSN, DOB, name).
@@ -372,7 +390,7 @@ public class FNOLOrchestrator {
                 audit.record(claimId, "SubrogationScorerAgent", intake,                     subrogation,                "SUCCESS"),
                 audit.record(claimId, "ReconciliationGate",     explanation,
                         "status=" + status + ";requiresHumanValidation=" + requiresHumanValidation
-                                + ";inputFlags=" + inputFlags, status)
+                                + ";inputFlags=" + inputFlags + ";gateFlags=" + gateFlags, status)
         );
 
         BranchBResult branchBWithAudit = new BranchBResult(
@@ -381,14 +399,14 @@ public class FNOLOrchestrator {
 
         String adjusterAdvisory = switch (status) {
             case "STRAIGHT_THROUGH_PROCESSING" -> "Claim meets all STP criteria. Auto-filed. No adjuster action required.";
-            case "PENDING_ADVISORY_REVIEW" -> "Claim meets all STP criteria and is pre-filed in ClaimCenter. "
+            case "PENDING_ADVISORY_REVIEW" -> "Claim meets all STP criteria and is pre-populated in ClaimCenter as a draft. "
                     + "An adjuster confirmation is required before it counts as filed.";
             default -> "Claim requires human review: " + explanation.summary()
                     + " | Recommended action: " + explanation.recommendedAction();
         };
 
-        log.info("[FNOL] Gate decision={} status={} inputFlags={} — policy={}, claimId={}",
-                explanation.decision(), status, inputFlags, payload.policyNumber(), claimId);
+        log.info("[FNOL] Gate decision={} status={} inputFlags={} gateFlags={} — policy={}, claimId={}",
+                explanation.decision(), status, inputFlags, gateFlags, payload.policyNumber(), claimId);
 
         List<String> notes = new ArrayList<>();
         if (highRiskEscalation) {
@@ -402,6 +420,19 @@ public class FNOLOrchestrator {
         if (inputFlags.contains(IntakeReviewService.INCIDENT_OUTSIDE_POLICY_PERIOD)) {
             notes.add("INCIDENT OUTSIDE POLICY PERIOD: the incident date is not within the policy term. "
                     + "Confirm coverage dates before any decision.");
+        }
+        for (String flag : gateFlags) {
+            notes.add("CONSISTENCY CHECK " + flag + ": " + switch (flag) {
+                case GateConsistencyChecker.SEVERITY_ESTIMATE_MISMATCH ->
+                        "the damage severity label does not match the estimated amount; verify the estimate.";
+                case GateConsistencyChecker.RESERVE_EXCEEDS_COVERAGE_LIMIT ->
+                        "the recommended reserve is above the coverage limit; confirm exposure before reserving.";
+                case GateConsistencyChecker.DAMAGE_TYPE_LINE_MISMATCH ->
+                        "the damage type does not fit the policy's line of business; confirm the right policy and photos.";
+                case GateConsistencyChecker.CONFIDENCE_PHOTO_QUALITY_MISMATCH ->
+                        "high AI confidence was reported for a poor-quality photo; do not rely on the estimate alone.";
+                default -> "review before any decision.";
+            });
         }
         if (!"OK".equals(branchB.deadline().urgencyFlag())) {
             notes.add("DEADLINE " + branchB.deadline().urgencyFlag() + ": acknowledge by "
@@ -429,7 +460,8 @@ public class FNOLOrchestrator {
                 requiresHumanValidation,
                 Collections.unmodifiableList(notes),
                 inputFlags,
-                ccSyncStatus
+                ccSyncStatus,
+                gateFlags
         );
     }
 

@@ -49,6 +49,7 @@ final class OrchestratorFixture {
                 new IntakeReviewService(),
                 new ExplanationBuilder(stp),
                 new ClaimTypeValidator(stp),
+                new GateConsistencyChecker(stp),
                 properties,
                 stp);
     }
@@ -98,6 +99,7 @@ final class OrchestratorFixture {
 
         @Override
         public ClaimCreateResponse createClaim(ClaimCreateRequest request) {
+            if (createFails) throw new IllegalStateException("ClaimCenter rejected the claim");
             created.add(request);
             return new ClaimCreateResponse("CLM-2026-%06d".formatted(sequence.getAndIncrement()), "OPEN");
         }
@@ -111,6 +113,7 @@ final class OrchestratorFixture {
         final List<String> updates = Collections.synchronizedList(new ArrayList<>());
         final Map<String, List<ClaimAttachment>> attachments = new ConcurrentHashMap<>();
         volatile boolean attachmentsFail;
+        volatile boolean createFails;
 
         @Override
         public void updateClaim(String claimId, ClaimUpdateRequest request) {

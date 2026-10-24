@@ -53,13 +53,15 @@ class ClaimCenterSyncAndQueueTest {
     }
 
     @Test
-    @DisplayName("A review decision is pushed to ClaimCenter with the notes, and the claim is SYNCED")
+    @DisplayName("A review decision is pushed to ClaimCenter as a mapped status plus a tracked action, and the claim is SYNCED")
     void reviewCallsUpdateClaim() throws Exception {
         String claimId = saveClaim("CLM-Q-", "HUMAN_REVIEW", Instant.now());
 
         review(claimId).andExpect(status().isOk());
 
-        verify(claimCenterClient).updateClaim(eq(claimId), eq(new ClaimUpdateRequest("APPROVED_BY_ADJUSTER", "Photos match.")));
+        // Approval moves the pre-populated draft into the standard claim process (OPEN) and is tracked as an action.
+        verify(claimCenterClient).updateClaim(eq(claimId),
+                eq(new ClaimUpdateRequest("OPEN", "Photos match.", "APPROVED_BY_ADJUSTER", "ADJ-001", null)));
         assertThat(claims.findById(claimId).orElseThrow().ccSyncStatus).isEqualTo("SYNCED");
     }
 

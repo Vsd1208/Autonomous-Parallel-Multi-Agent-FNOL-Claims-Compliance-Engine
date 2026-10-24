@@ -141,6 +141,32 @@ class MockGuidewireApplicationTests {
     }
 
     @Test
+    @DisplayName("Mock ClaimCenter creates a draft when asked, tracks review actions and applies an adjusted reserve")
+    void claimCenter_draftReviewActionsAndReserve() {
+        var createRequest = Map.of(
+                "policyNumber", "POL-AUTO-112233",
+                "incidentDate", "2026-08-16",
+                "state", "CA",
+                "estimatedDamage", new BigDecimal("4200"),
+                "reserve", new BigDecimal("4830"),
+                "initialStatus", "DRAFT_PENDING_REVIEW");
+        ClaimCreateResponse created = rest.postForObject("/cc/claims", createRequest, ClaimCreateResponse.class);
+        assertThat(created.status()).isEqualTo("DRAFT_PENDING_REVIEW");
+
+        rest.put("/cc/claims/" + created.claimId(), new ClaimUpdateRequest("UNDER_INVESTIGATION", "Check photos.",
+                "INVESTIGATION_REQUIRED", "ADJ-009", null));
+        rest.put("/cc/claims/" + created.claimId(), new ClaimUpdateRequest("OPEN", "Cleared.",
+                "APPROVED_BY_ADJUSTER", "ADJ-009", new BigDecimal("6100")));
+
+        Claim claim = rest.getForObject("/cc/claims/" + created.claimId(), Claim.class);
+        assertThat(claim.status()).isEqualTo("OPEN");
+        assertThat(claim.reserve()).isEqualByComparingTo("6100");
+        assertThat(claim.reviewActions()).extracting(a -> a.action())
+                .containsExactly("INVESTIGATION_REQUIRED", "APPROVED_BY_ADJUSTER");
+        assertThat(claim.reviewActions().get(0).adjusterId()).isEqualTo("ADJ-009");
+    }
+
+    @Test
     @DisplayName("Mock ClaimCenter refuses attachments for an unknown claim")
     void claimCenter_attachmentForUnknownClaimIs404() {
         ResponseEntity<String> response = rest.postForEntity("/cc/claims/CLM-UNKNOWN-1/attachments",

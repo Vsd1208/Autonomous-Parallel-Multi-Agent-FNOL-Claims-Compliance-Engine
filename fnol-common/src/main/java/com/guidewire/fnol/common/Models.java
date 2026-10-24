@@ -66,18 +66,39 @@ public final class Models {
             BigDecimal estimatedDamage,
             BigDecimal reserve,
             String notes,
-            List<ClaimAttachment> attachments
+            List<ClaimAttachment> attachments,
+            List<ClaimReviewAction> reviewActions
     ) {
         public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
                      BigDecimal estimatedDamage, BigDecimal reserve) {
-            this(claimId, status, policyNumber, incidentDate, state, estimatedDamage, reserve, null, List.of());
+            this(claimId, status, policyNumber, incidentDate, state, estimatedDamage, reserve, null, List.of(), List.of());
         }
     }
 
-    /** ClaimCenter update after an adjuster decision (PUT /cc/claims/{id}). */
+    /**
+     * ClaimCenter update after an adjuster decision (PUT /cc/claims/{id}). Each update is also
+     * tracked as a review action on the claim.
+     */
     public record ClaimUpdateRequest(
+            String status,            // ClaimCenter status, e.g. OPEN, DENIED, PENDING_INFORMATION
+            String notes,
+            String action,            // the adjuster decision that caused the update
+            String adjusterId,
+            BigDecimal adjustedReserve // set when the adjuster changed the AI-recommended reserve
+    ) {
+        public ClaimUpdateRequest(String status, String notes) {
+            this(status, notes, null, null, null);
+        }
+    }
+
+    /** One tracked review action on a ClaimCenter claim. */
+    public record ClaimReviewAction(
+            Instant at,
+            String action,
             String status,
-            String notes
+            String adjusterId,
+            String notes,
+            BigDecimal adjustedReserve
     ) {}
 
     /** A document attached to a ClaimCenter claim (POST /cc/claims/{id}/attachments). */
@@ -110,8 +131,14 @@ public final class Models {
     public record ReserveResult(
             BigDecimal estimatedDamage,
             BigDecimal factor,
-            BigDecimal recommendedReserve
-    ) {}
+            BigDecimal recommendedReserve,
+            BigDecimal confidence,      // 0-1: vision confidence weighted by photo quality
+            String confidenceBasis
+    ) {
+        public ReserveResult(BigDecimal estimatedDamage, BigDecimal factor, BigDecimal recommendedReserve) {
+            this(estimatedDamage, factor, recommendedReserve, null, null);
+        }
+    }
 
     public record PIIResult(
             String redactedDescription,
@@ -132,9 +159,14 @@ public final class Models {
 
     public record SubrogationResult(
             int score,
-            String recommendedAction,
-            Map<String, Integer> factors
-    ) {}
+            String recommendedAction,          // INVESTIGATE | MONITOR; PENDING_SEVERITY in Branch B
+            Map<String, Integer> factors,
+            List<String> complianceNotes       // liability and recovery notes for the adjuster (prototype guidance)
+    ) {
+        public SubrogationResult(int score, String recommendedAction, Map<String, Integer> factors) {
+            this(score, recommendedAction, factors, List.of());
+        }
+    }
 
     public record PolicyValidationResult(
             String policyNumber,
@@ -183,7 +215,8 @@ public final class Models {
             Boolean requiresHumanValidation,   // true when any factor fails, HIGH risk, or any input flag
             List<String> notes,
             List<String> inputFlags,           // Human Review Point 1 flags, e.g. MISSING_EVIDENCE
-            String ccSyncStatus                // SYNCED | FAILED: were the advisory and evidence attached in ClaimCenter
+            String ccSyncStatus,               // SYNCED | FAILED: were the advisory and evidence attached in ClaimCenter
+            List<String> gateFlags             // reconciliation-gate consistency flags, e.g. RESERVE_EXCEEDS_COVERAGE_LIMIT
     ) {}
 
     public record ApiError(
@@ -214,11 +247,21 @@ public final class Models {
         }
     }
 
+    /**
+     * Human Review Point 3. {@code adjustedReserve} lets the adjuster modify the AI finding; it
+     * requires an {@code overrideReason}.
+     */
     public record AdjusterReviewRequest(
             @NotBlank String decision,
             @NotBlank String adjusterId,
-            String notes
-    ) {}
+            String notes,
+            @PositiveOrZero BigDecimal adjustedReserve,
+            @Size(max = 500) String overrideReason
+    ) {
+        public AdjusterReviewRequest(String decision, String adjusterId, String notes) {
+            this(decision, adjusterId, notes, null, null);
+        }
+    }
 
     public record AdjusterReviewResponse(
             String claimId,
@@ -226,7 +269,9 @@ public final class Models {
             String adjusterDecision,
             String adjusterId,
             String adjusterNotes,
-            Instant reviewedAt
+            Instant reviewedAt,
+            BigDecimal adjustedReserve,
+            String overrideReason
     ) {}
 
     public record ClaimCreateRequest(
@@ -234,8 +279,14 @@ public final class Models {
             LocalDate incidentDate,
             String state,
             BigDecimal estimatedDamage,
-            BigDecimal reserve
-    ) {}
+            BigDecimal reserve,
+            String initialStatus      // DRAFT_PENDING_REVIEW until a human decides; OPEN for unreviewed STP
+    ) {
+        public ClaimCreateRequest(String policyNumber, LocalDate incidentDate, String state,
+                                  BigDecimal estimatedDamage, BigDecimal reserve) {
+            this(policyNumber, incidentDate, state, estimatedDamage, reserve, null);
+        }
+    }
 
     public record ClaimCreateResponse(
             String claimId,

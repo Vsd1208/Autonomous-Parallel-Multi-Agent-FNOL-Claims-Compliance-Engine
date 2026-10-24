@@ -68,6 +68,7 @@ public class AuditPdfGenerator {
             }
             addRow(meta, "Severity Gate",    nvl(claim.severityGate, "N/A"));
             addRow(meta, "Intake Flags",     nvl(claim.inputFlags, "None"));
+            addRow(meta, "Gate Flags",       nvl(claim.gateFlags, "None"));
             addRow(meta, "ClaimCenter Sync", nvl(claim.ccSyncStatus, "N/A"));
             doc.add(meta);
             doc.add(Chunk.NEWLINE);
@@ -120,6 +121,9 @@ public class AuditPdfGenerator {
             addRow(adj, "Decision",       nvl(claim.adjusterDecision, "PENDING"));
             addRow(adj, "Adjuster ID",    nvl(claim.adjusterId,       "—"));
             addRow(adj, "Notes",          nvl(claim.adjusterNotes,    "—"));
+            addRow(adj, "Adjusted Reserve", claim.adjusterReserve != null
+                    ? "$" + claim.adjusterReserve + " (AI recommended $" + claim.reserve + ")" : "Not changed");
+            addRow(adj, "Override Reason", nvl(claim.overrideReason, "—"));
             addRow(adj, "Reviewed At",    claim.reviewedAt != null ? String.valueOf(claim.reviewedAt) : "Not yet reviewed");
             doc.add(adj);
             doc.add(Chunk.NEWLINE);

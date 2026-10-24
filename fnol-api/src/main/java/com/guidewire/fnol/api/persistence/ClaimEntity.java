@@ -51,6 +51,17 @@ public class ClaimEntity {
   @Column(length = 16)
   public String ccSyncStatus;
 
+  /** Comma-separated reconciliation-gate consistency flags, plus DUPLICATE_SUBMISSION. */
+  @Column(length = 500)
+  public String gateFlags;
+
+  /** Reserve set by the adjuster when overriding the AI recommendation (reserve keeps the AI value). */
+  public BigDecimal adjusterReserve;
+
+  /** Why the adjuster changed the AI finding. */
+  @Column(length = 500)
+  public String overrideReason;
+
   private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
   public static ClaimEntity from(FNOLResponse r, FNOLPayload p) {
@@ -66,6 +77,7 @@ public class ClaimEntity {
     e.severityGate   = r.severityGate();
     e.inputFlags     = r.inputFlags() == null || r.inputFlags().isEmpty() ? null : String.join(",", r.inputFlags());
     e.ccSyncStatus   = r.ccSyncStatus();
+    e.gateFlags      = r.gateFlags() == null || r.gateFlags().isEmpty() ? null : String.join(",", r.gateFlags());
     e.createdAt      = Instant.now();
     e.updatedAt      = e.createdAt;
     try {

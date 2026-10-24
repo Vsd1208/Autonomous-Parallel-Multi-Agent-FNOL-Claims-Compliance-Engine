@@ -17,7 +17,14 @@ function recentDate(): string {
 
 type Scenario = { name: string; evidenceUri: string; data: Omit<FormData, 'incidentDate'> };
 
-const insured = { claimantDob: '01/02/1980', claimantSsn: '123-45-6789', claimantPhone: '', claimantEmail: '' };
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const insured = {
+  claimantDob: '01/02/1980',
+  claimantSsn: '123-45-6789',
+  claimantPhone: '',
+  claimantEmail: '',
+  channel: 'WEB' as const,
+};
 
 // Mirrors demo-scenarios/*.json; mock:// photo keywords drive MockVisionProvider (GEMINI_VISION_ENABLED=false).
 const demoScenarios: Scenario[] = [
@@ -69,13 +76,33 @@ const emptyForm: FormData = {
   claimantSsn: '',
   claimantPhone: '',
   claimantEmail: '',
+  channel: 'WEB',
 };
+
+/** Reads an uploaded damage photo as a data: URI, which the API sends to the vision model. */
+function readPhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+      reject(new Error('Photo must be a JPEG, PNG, WebP or GIF image'));
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      reject(new Error('Photo must be 5 MB or smaller'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read the photo'));
+    reader.readAsDataURL(file);
+  });
+}
 
 function IntakeForm() {
   const navigate = useNavigate();
   const lastClaimId = claimStore.lastClaimId();
   const [form, setForm] = useState<FormData>(emptyForm);
   const [evidenceUri, setEvidenceUri] = useState('mock://photo/normal-front-bumper.jpg');
+  const [photoName, setPhotoName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [escalatedClaimId, setEscalatedClaimId] = useState('');
@@ -85,9 +112,22 @@ function IntakeForm() {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setEvidenceUri(await readPhoto(file));
+      setPhotoName(file.name);
+      setError('');
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
   const handleQuickLoad = (scenario: Scenario) => {
     setForm({ ...scenario.data, incidentDate: recentDate() });
     setEvidenceUri(scenario.evidenceUri);
+    setPhotoName('');
     setError('');
     setEscalatedClaimId('');
     setResult(null);
@@ -104,7 +144,6 @@ function IntakeForm() {
         claimantPhone: form.claimantPhone || undefined,
         claimantEmail: form.claimantEmail || undefined,
         evidenceUris: evidenceUri.trim() ? [evidenceUri.trim()] : [],
-        channel: 'WEB',
       });
       claimStore.save(response);
       setResult(response);
@@ -173,6 +212,15 @@ function IntakeForm() {
                 </select>
               </div>
               <div className="form-field">
+                <label>Intake Channel</label>
+                <select name="channel" value={form.channel} onChange={handleInputChange} required>
+                  <option value="WEB">Web portal</option>
+                  <option value="MOBILE">Mobile app</option>
+                  <option value="PHONE">Phone (entered by agent)</option>
+                  <option value="API">API / partner</option>
+                </select>
+              </div>
+              <div className="form-field">
                 <label>Claimant Name</label>
                 <input type="text" name="claimantName" value={form.claimantName} onChange={handleInputChange}
                   placeholder="Avery Johnson" required />
@@ -200,9 +248,16 @@ function IntakeForm() {
             </div>
 
             <div className="form-field full-width">
-              <label>Evidence Photo URI</label>
-              <input type="text" value={evidenceUri} onChange={(e) => setEvidenceUri(e.target.value)}
-                placeholder="mock://photo/normal.jpg, data:image/jpeg;base64,… or an allow-listed https URL" />
+              <label>Damage Photo</label>
+              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handlePhoto} />
+              {photoName && <p className="muted">Uploaded {photoName} (sent inline to the vision model)</p>}
+            </div>
+
+            <div className="form-field full-width">
+              <label>…or Evidence Photo URI</label>
+              <input type="text" value={photoName ? '' : evidenceUri}
+                onChange={(e) => { setEvidenceUri(e.target.value); setPhotoName(''); }}
+                placeholder="mock://photo/normal.jpg (demo) or an allow-listed https URL" />
             </div>
 
             <div className="form-field full-width">

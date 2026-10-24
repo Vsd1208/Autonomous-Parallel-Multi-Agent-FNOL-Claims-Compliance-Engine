@@ -2,7 +2,7 @@
 
 ## Database Engine
 - **Target**: PostgreSQL 16 (docker-compose image `postgres:16-alpine`)
-- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V6; Hibernate runs with `ddl-auto: validate`
+- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V7; Hibernate runs with `ddl-auto: validate`
 - **ORM**: Spring Data JPA / Hibernate 6
 - **Tests**: H2 in PostgreSQL mode with `ddl-auto: create-drop` (Flyway disabled); the migrations are exercised by `docker compose up`
 
@@ -16,6 +16,7 @@
 | V4 | `V4__add_failure_reason.sql` | `failure_reason` for failed intakes saved for human attention |
 | V5 | `V5__add_audit_chain.sql` | `audit_trail.chain_hash`, `seq`, `actor`; index `(claim_id, seq)` |
 | V6 | `V6__add_queue_and_cc_sync_fields.sql` | `severity_gate`, `input_flags`, `cc_sync_status`; indexes `(status, created_at)`, `(cc_sync_status)` |
+| V7 | `V7__add_gate_flags_and_adjuster_override.sql` | `gate_flags`, `adjuster_reserve`, `override_reason` |
 
 ## `claims`
 
@@ -23,7 +24,7 @@
 |---|---|---|---|
 | `claim_id` | `VARCHAR(32)` PK | no | `CLM-2026-NNNNNN` (from ClaimCenter) or `REJ-xxxxxxxx` (failed intake, no ClaimCenter claim) |
 | `policy_number` | `VARCHAR(32)` | no | Policy identifier |
-| `status` | `VARCHAR(32)` | no | `PENDING_ADVISORY_REVIEW`, `STRAIGHT_THROUGH_PROCESSING`, `HUMAN_REVIEW`, `BLOCKED_COMPLIANCE`, `NEEDS_MORE_INFO`, `APPROVED_BY_ADJUSTER`, `REJECTED_BY_ADJUSTER`, `CLOSED` |
+| `status` | `VARCHAR(32)` | no | `PENDING_ADVISORY_REVIEW`, `STRAIGHT_THROUGH_PROCESSING`, `HUMAN_REVIEW`, `BLOCKED_COMPLIANCE`, `NEEDS_MORE_INFO`, `INVESTIGATION_REQUIRED`, `APPROVED_BY_ADJUSTER`, `REJECTED_BY_ADJUSTER`, `CLOSED` |
 | `incident_date` | `DATE` | no | Date of loss |
 | `state` | `VARCHAR(255)` | no | US state code (`CA`, `NY`, `TX`, `FL`, `IL`) |
 | `estimated_damage` | `NUMERIC(14,2)` | no, `>= 0` | Vision estimate in USD (0 for REJ- claims) |
@@ -40,12 +41,15 @@
 | `severity_gate` | `VARCHAR(16)` | yes | `LOW`, `MEDIUM`, `HIGH` (V6) |
 | `input_flags` | `VARCHAR(500)` | yes | Comma-separated Human Review Point 1 flags (V6) |
 | `cc_sync_status` | `VARCHAR(16)` | yes | `SYNCED`, `FAILED` (pick up for retry), `NOT_FILED` (REJ-) (V6) |
+| `gate_flags` | `VARCHAR(500)` | yes | Comma-separated gate consistency flags and `DUPLICATE_SUBMISSION` (V7) |
+| `adjuster_reserve` | `NUMERIC(14,2)` | yes, `>= 0` | Reserve set by the adjuster when modifying the AI finding; `reserve` keeps the AI value (V7) |
+| `override_reason` | `VARCHAR(500)` | yes | Why the adjuster changed the AI finding (V7) |
 
 Indexes: `idx_claims_policy_number`, `idx_claims_status_created`, `idx_claims_cc_sync_status`.
 
 Duplicate check (`ClaimRepository.existsByPolicyNumberAndIncidentDateAndState`): a row with the same policy, incident date and state, **excluding** REJ- rows in `BLOCKED_COMPLIANCE` or `HUMAN_REVIEW`, so a corrected resubmission of a failed intake is accepted.
 
-Reviews are applied with one conditional `UPDATE … WHERE status IN ('HUMAN_REVIEW','PENDING_ADVISORY_REVIEW','NEEDS_MORE_INFO')`, so two concurrent reviews cannot both record a final decision.
+Reviews are applied with one conditional `UPDATE … WHERE status IN ('HUMAN_REVIEW','PENDING_ADVISORY_REVIEW','NEEDS_MORE_INFO','INVESTIGATION_REQUIRED')`, so two concurrent reviews cannot both record a final decision.
 
 ## `audit_trail`
 
@@ -53,7 +57,7 @@ Reviews are applied with one conditional `UPDATE … WHERE status IN ('HUMAN_REV
 |---|---|---|---|
 | `event_id` | `VARCHAR(64)` PK | no | UUID |
 | `claim_id` | `VARCHAR(32)` | no | |
-| `agent_name` | `VARCHAR(128)` | no | `VisionDamageAgent`, `PolicyValidatorAgent`, `ReserveCalculatorAgent`, `PiiRedactionAgent`, `StatutoryDeadlineAgent`, `SubrogationScorerAgent`, `ReconciliationGate`, `Intake` (failed intake), `AdjusterReview` |
+| `agent_name` | `VARCHAR(128)` | no | `VisionDamageAgent`, `PolicyValidatorAgent`, `ReserveCalculatorAgent`, `PiiRedactionAgent`, `StatutoryDeadlineAgent`, `SubrogationScorerAgent`, `ReconciliationGate`, `Intake` (failed intake), `DuplicateCheck` (duplicate submission), `AdjusterReview` |
 | `timestamp` | `TIMESTAMPTZ` | no | |
 | `input_hash` | `VARCHAR(64)` | no | SHA-256 (hex) of the sanitized input |
 | `output_hash` | `VARCHAR(64)` | no | SHA-256 (hex) of the output |

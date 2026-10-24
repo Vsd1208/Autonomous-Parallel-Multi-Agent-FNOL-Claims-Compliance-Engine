@@ -79,3 +79,19 @@
 - **Context**: Per-event hashes alone cannot detect a deleted or edited row, and hashing `String.valueOf(payload)` put the raw SSN into the hash input.
 - **Decision**: Each event stores `chain_hash = SHA-256(previous chain_hash + input_hash + output_hash)` and a per-claim `seq`; `GET /fnol/{claimId}/audit` recomputes the chain and returns `chainValid`. Hash inputs are a `SanitizedIntake` (policy number, state, incident date, redacted description) — never the raw payload. Adjuster endpoints (review, audit, audit PDF, explanation, queue) require header `X-Adjuster-Token` equal to `fnol.security.adjuster-token`; with no token configured they reject every request. CORS is limited to `fnol.cors.allowed-origins`.
 - **Consequences**: Tampering with any stored hash, or removing or reordering events, is detected. The chain cannot detect a rewrite of the newest event together with its own chain hash, so the PDF prints the chain head for out-of-band anchoring. The shared token is a prototype control — it is embedded in the console bundle — and production needs per-adjuster authentication (e.g. OIDC) so `adjusterId` comes from the identity rather than the request body.
+
+---
+
+## ADR-011: Alignment with the Architecture Diagram
+- **Status**: Accepted
+- **Context**: A line-by-line check against the architecture diagram found promises the code did not keep: no reserve confidence score, subrogation outside Branch B and without compliance notes, no consistency validation at the gate, unexpected errors and duplicates not escalated to a human, no way for the adjuster to modify findings or require investigation, and ClaimCenter claims created as `OPEN` before any human review.
+- **Decision**:
+  - `ReserveResult.confidence` = vision confidence × photo-quality weight (CLEAR 1.00, PARTIAL 0.85, BLURRY 0.70, UNUSABLE 0.50, unknown 0.80).
+  - Subrogation runs in Branch B as a liability assessment with compliance notes (`SubrogationScorer.assessLiability`); the gate adds Branch A's severity (`applySeverity`). Branch B stays independent of Branch A.
+  - `GateConsistencyChecker` flags `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH` and `CONFIDENCE_PHOTO_QUALITY_MISMATCH`. Gate flags block STP like intake flags.
+  - ClaimCenter claims are pre-populated as `DRAFT_PENDING_REVIEW` and move to `OPEN` (approved), `DENIED`, `PENDING_INFORMATION`, `UNDER_INVESTIGATION` or `CLOSED` when an adjuster decides; every decision is tracked as a review action. Only STP with advisory review switched off is created `OPEN`.
+  - Adjusters can set `adjustedReserve` (with a required `overrideReason`) and choose `INVESTIGATION_REQUIRED`.
+  - Every processing failure except invalid input (400) is saved as a `REJ-` claim for human review.
+  - A duplicate submission is refused (409) and flags and audits the original claim (`DUPLICATE_SUBMISSION`); an original filed straight through goes back to `HUMAN_REVIEW`.
+- **Deliberate differences from the diagram**: the branches run as `FutureTask`s on a bounded executor rather than `CompletableFuture`, because `CompletableFuture.cancel` cannot interrupt a stuck branch (ADR-007). The adjuster console is React, standing in for Guidewire Jutro, which is proprietary. Human Review Point 1 is automated flagging that routes the claim to an adjuster rather than a separate manual step before processing.
+- **Consequences**: Each of the 23 diagram components maps to code and tests (`docs/diagram-traceability.md`).

@@ -4,7 +4,7 @@ import { apiClient } from '../services/apiClient';
 import { QueuePage } from '../types';
 
 const STATUS_FILTERS: Record<string, string[]> = {
-  'Needs decision': ['HUMAN_REVIEW', 'NEEDS_MORE_INFO'],
+  'Needs decision': ['HUMAN_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED'],
   'Advisory confirmation': ['PENDING_ADVISORY_REVIEW'],
   'Blocked (compliance)': ['BLOCKED_COMPLIANCE'],
 };
@@ -80,7 +80,10 @@ export default function ClaimQueue() {
                   <td>{item.policyNumber}</td>
                   <td>${Number(item.reserve).toFixed(2)}</td>
                   <td>{item.severityGate ?? '—'}</td>
-                  <td>{item.failureReason ?? item.inputFlags?.replace(/,/g, ', ') ?? '—'}</td>
+                  <td>
+                    {item.failureReason ??
+                      ([item.inputFlags, item.gateFlags].filter(Boolean).join(',').replace(/,/g, ', ') || '—')}
+                  </td>
                   <td>{new Date(item.createdAt).toLocaleString()}</td>
                 </tr>
               ))}

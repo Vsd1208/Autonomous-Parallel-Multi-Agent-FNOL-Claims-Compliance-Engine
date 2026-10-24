@@ -38,16 +38,31 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, String> {
     @Query("""
             update ClaimEntity c
                set c.status = :decision, c.adjusterDecision = :decision, c.adjusterId = :adjusterId,
-                   c.adjusterNotes = :notes, c.reviewedAt = :reviewedAt, c.updatedAt = :reviewedAt
+                   c.adjusterNotes = :notes, c.reviewedAt = :reviewedAt, c.updatedAt = :reviewedAt,
+                   c.adjusterReserve = coalesce(:adjustedReserve, c.adjusterReserve),
+                   c.overrideReason = coalesce(:overrideReason, c.overrideReason)
              where c.claimId = :claimId and c.status in :reviewable
             """)
     int applyReview(@Param("claimId") String claimId,
                     @Param("decision") String decision,
                     @Param("adjusterId") String adjusterId,
                     @Param("notes") String notes,
+                    @Param("adjustedReserve") java.math.BigDecimal adjustedReserve,
+                    @Param("overrideReason") String overrideReason,
                     @Param("reviewedAt") Instant reviewedAt,
                     @Param("reviewable") Collection<String> reviewable);
 
     /** Adjuster queue: claims in the given statuses, oldest first. */
     Page<ClaimEntity> findByStatusInOrderByCreatedAtAsc(Collection<String> statuses, Pageable pageable);
+
+    /** The claim(s) a duplicate submission collides with, oldest first (same exclusion as the duplicate check). */
+    @Query("""
+            select c from ClaimEntity c
+            where c.policyNumber = :policyNumber and c.incidentDate = :incidentDate and c.state = :state
+              and not (c.status in ('BLOCKED_COMPLIANCE', 'HUMAN_REVIEW') and c.claimId like 'REJ-%')
+            order by c.createdAt asc
+            """)
+    java.util.List<ClaimEntity> findDuplicatesOf(@Param("policyNumber") String policyNumber,
+                                                 @Param("incidentDate") LocalDate incidentDate,
+                                                 @Param("state") String state);
 }

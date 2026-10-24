@@ -5,6 +5,7 @@ import {
   ClaimRecord,
   ClaimResult,
   ExplanationObject,
+  FormData,
   QueuePage,
 } from '../types';
 
@@ -49,7 +50,7 @@ export const apiClient = {
     claimantPhone?: string;
     claimantEmail?: string;
     evidenceUris: string[];
-    channel: 'WEB' | 'MOBILE' | 'PHONE' | 'API';
+    channel: FormData['channel'];
   }) => request<ClaimResult>('/api/v1/fnol/intake', { method: 'POST', body: JSON.stringify(payload) }),
 
   getClaimStatus: (claimId: string) =>

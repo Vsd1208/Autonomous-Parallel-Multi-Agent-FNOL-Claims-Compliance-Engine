@@ -21,6 +21,7 @@ CORS allows only the origins in `fnol.cors.allowed-origins` (env `FNOL_CORS_ALLO
 | `BLOCKED_COMPLIANCE` | REJ- claim: the PII guardrail blocked the intake (e.g. a medical record number). Not reviewable. |
 | `APPROVED_BY_ADJUSTER`, `REJECTED_BY_ADJUSTER`, `CLOSED` | Final adjuster decisions. Not reviewable again. |
 | `NEEDS_MORE_INFO` | Adjuster asked for more information; reviewable again. |
+| `INVESTIGATION_REQUIRED` | Adjuster required additional investigation; reviewable again. |
 
 Claim IDs: `CLM-2026-NNNNNN` are issued by ClaimCenter; `REJ-xxxxxxxx` are failed intakes saved for human attention (no ClaimCenter claim).
 
@@ -43,12 +44,12 @@ All errors use this body (`claimId` is present only when a failed intake was sav
 |---|---|---|---|
 | 400 | `VALIDATION_ERROR` | Bean validation or input guardrail (policy format `POL-TYPE-123456`, state CA/NY/TX/FL/IL, date not in future, description present); invalid review decision; bad queue paging | — |
 | 401 | `UNAUTHORIZED` | Adjuster endpoint without a valid `X-Adjuster-Token` | — |
-| 409 | `DUPLICATE_FNOL` | Same policy + incident date + state already in flight or stored (REJ- rows are ignored) | — |
+| 409 | `DUPLICATE_FNOL` | Same policy + incident date + state already in flight or stored (REJ- rows are ignored). `claimId` = the original claim, which gets a `DUPLICATE_SUBMISSION` gate flag and a `DuplicateCheck` audit event; an original in `STRAIGHT_THROUGH_PROCESSING` goes back to `HUMAN_REVIEW` | — |
 | 409 | `CLAIM_ID_CONFLICT` | ClaimCenter returned a claim ID already in the database; the stored claim is not overwritten | — |
-| 409 | `INVALID_STATE` | Review of a claim that is not `HUMAN_REVIEW`, `PENDING_ADVISORY_REVIEW` or `NEEDS_MORE_INFO` | — |
+| 409 | `INVALID_STATE` | Review of a claim that is not `HUMAN_REVIEW`, `PENDING_ADVISORY_REVIEW`, `NEEDS_MORE_INFO` or `INVESTIGATION_REQUIRED` | — |
 | 422 | `COMPLIANCE_BLOCK` | PII guardrail: redaction confidence < 0.90, raw SSN left, or MRN detected | `REJ-…` `BLOCKED_COMPLIANCE` |
 | 502 | `EXTERNAL_OR_PROCESSING_ERROR` | Policy not found, inactive or without a qualifying coverage (`CoverageNotEligibleException`) | `REJ-…` `HUMAN_REVIEW` |
-| 502 | `EXTERNAL_OR_PROCESSING_ERROR` | Any other unexpected error | — |
+| 502 | `EXTERNAL_OR_PROCESSING_ERROR` | Any other processing error during intake (e.g. ClaimCenter rejects the claim) | `REJ-…` `HUMAN_REVIEW` |
 | 504 | `PROCESSING_TIMEOUT` | Orchestrator deadline exceeded, executor full, or a Guidewire call timed out / was unreachable | `REJ-…` `HUMAN_REVIEW` |
 
 ---
@@ -95,7 +96,8 @@ Response `200` (abridged):
                   "reasoning": ["PolicyCenter policy found: line of business AUTO", "...",
                                 "Coverage rule: AUTO requires COLLISION or COMPREHENSIVE (SYNTHETIC_PROTOTYPE_RULE)",
                                 "Matched coverage COLLISION (limit 50000, deductible 1000)"] },
-    "reserve": { "estimatedDamage": 4200, "factor": 1.15, "recommendedReserve": 4830 }
+    "reserve": { "estimatedDamage": 4200, "factor": 1.15, "recommendedReserve": 4830,
+                 "confidence": 0.91, "confidenceBasis": "vision confidence 0.91 × photo quality CLEAR weight 1.00" }
   },
   "branchB": {
     "pii": { "redactedDescription": "...", "detectedTypes": [], "piiDetected": false, "redactionConfidence": 0.95 },
@@ -103,7 +105,9 @@ Response `200` (abridged):
                   "disclaimer": "PROTOTYPE PLACEHOLDER: ...", "acknowledgeBy": "2026-10-27",
                   "decisionBy": "2026-12-06", "urgencyFlag": "OK" },
     "subrogation": { "score": 30, "recommendedAction": "MONITOR",
-                     "factors": { "thirdPartyMention": 10, "policeReportSignal": 5, "damageSeverity": 15 } },
+                     "factors": { "thirdPartyMention": 10, "policeReportSignal": 5, "damageSeverity": 15 },
+                     "complianceNotes": ["No third party identified in the description: subrogation recovery is unlikely.",
+                                         "Score 30 < 70: monitor; no subrogation referral recommended."] },
     "audit": [ { "eventId": "…", "claimId": "CLM-2026-000001", "agentName": "VisionDamageAgent",
                  "timestamp": "…", "inputHash": "…", "outputHash": "…", "status": "SUCCESS" } ]
   },
@@ -121,7 +125,8 @@ Response `200` (abridged):
   "requiresHumanValidation": false,
   "notes": ["Claim meets all STP criteria and is pre-filed in ClaimCenter. An adjuster confirmation is required before it counts as filed.", "..."],
   "inputFlags": [],
-  "ccSyncStatus": "SYNCED"
+  "ccSyncStatus": "SYNCED",
+  "gateFlags": []
 }
 ```
 
@@ -129,6 +134,9 @@ Response `200` (abridged):
 - `explanation.decision`: `STRAIGHT_THROUGH` or `ADVISORY_RECOMMENDED_ACTION`. `recommendedAction`: `APPROVE_AND_STP`, `ESCALATE_TO_HUMAN`, `ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY`.
 - `inputFlags` (Human Review Point 1): `MISSING_EVIDENCE`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`. Any flag routes to `HUMAN_REVIEW`.
 - `ccSyncStatus`: `SYNCED` if the WHY panel and evidence list were attached in ClaimCenter, `FAILED` otherwise (intake still succeeds).
+- `gateFlags` (reconciliation-gate consistency checks): `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`. Any flag routes to `HUMAN_REVIEW`.
+- `branchB.subrogation` is assessed in Branch B (third-party liability and `complianceNotes`) and finalised at the gate with Branch A's severity.
+- The ClaimCenter claim is created as `DRAFT_PENDING_REVIEW` (or `OPEN` for STP with advisory review off).
 
 ## `GET /api/v1/fnol/status/{claimId}`
 The saved claim row, or `404`:
@@ -140,7 +148,8 @@ The saved claim row, or `404`:
   "adjusterDecision": "APPROVED_BY_ADJUSTER", "adjusterId": "ADJ-001", "adjusterNotes": "Photos match.",
   "reviewedAt": "…", "createdAt": "…", "updatedAt": "…",
   "explanationJson": "{…}", "channel": "WEB", "failureReason": null,
-  "severityGate": "LOW", "inputFlags": null, "ccSyncStatus": "SYNCED"
+  "severityGate": "LOW", "inputFlags": null, "ccSyncStatus": "SYNCED",
+  "gateFlags": null, "adjusterReserve": null, "overrideReason": null
 }
 ```
 
@@ -170,16 +179,18 @@ The claim's audit events in chain order and whether the chain recomputes. `404` 
 ## `POST /api/v1/fnol/{claimId}/review` (token)
 
 ```json
-{ "decision": "APPROVED_BY_ADJUSTER", "adjusterId": "ADJ-001", "notes": "Photos match." }
+{ "decision": "APPROVED_BY_ADJUSTER", "adjusterId": "ADJ-001", "notes": "Photos match.",
+  "adjustedReserve": 6100, "overrideReason": "Body shop estimate is higher than the photo estimate" }
 ```
 
-`decision` ∈ `APPROVED_BY_ADJUSTER`, `REJECTED_BY_ADJUSTER`, `NEEDS_MORE_INFO`, `CLOSED`. Allowed only while the claim is `HUMAN_REVIEW`, `PENDING_ADVISORY_REVIEW` or `NEEDS_MORE_INFO` (else `409 INVALID_STATE`). Writes an `AdjusterReview` audit event (actor = adjusterId; notes stored only as a hash) and calls ClaimCenter `PUT /cc/claims/{id}`; a ClaimCenter failure does not fail the review and sets `ccSyncStatus=FAILED` (REJ- claims: `NOT_FILED`).
+`decision` ∈ `APPROVED_BY_ADJUSTER`, `REJECTED_BY_ADJUSTER`, `NEEDS_MORE_INFO`, `INVESTIGATION_REQUIRED`, `CLOSED`. `adjustedReserve` (optional, ≥ 0) modifies the AI finding and requires `overrideReason` (else `400`); the AI `reserve` is kept and the override is stored as `adjusterReserve`. Allowed only while the claim is `HUMAN_REVIEW`, `PENDING_ADVISORY_REVIEW`, `NEEDS_MORE_INFO` or `INVESTIGATION_REQUIRED` (else `409 INVALID_STATE`). Writes an `AdjusterReview` audit event (actor = adjusterId; notes and override reason stored only as hashes) and calls ClaimCenter `PUT /cc/claims/{id}` with the mapped status — `APPROVED_BY_ADJUSTER`→`OPEN`, `REJECTED_BY_ADJUSTER`→`DENIED`, `NEEDS_MORE_INFO`→`PENDING_INFORMATION`, `INVESTIGATION_REQUIRED`→`UNDER_INVESTIGATION`, `CLOSED`→`CLOSED` — plus the action, adjuster and adjusted reserve, which ClaimCenter tracks as a review action. A ClaimCenter failure does not fail the review and sets `ccSyncStatus=FAILED` (REJ- claims: `NOT_FILED`).
 
 Response `200`:
 
 ```json
 { "claimId": "CLM-2026-000001", "status": "APPROVED_BY_ADJUSTER", "adjusterDecision": "APPROVED_BY_ADJUSTER",
-  "adjusterId": "ADJ-001", "adjusterNotes": "Photos match.", "reviewedAt": "…" }
+  "adjusterId": "ADJ-001", "adjusterNotes": "Photos match.", "reviewedAt": "…",
+  "adjustedReserve": 6100, "overrideReason": "Body shop estimate is higher than the photo estimate" }
 ```
 
 ## `GET /api/v1/fnol/queue?status=HUMAN_REVIEW&page=0&size=20` (token)
@@ -188,7 +199,7 @@ Claims in the given statuses (comma-separated, default `HUMAN_REVIEW`), oldest f
 ```json
 {
   "items": [ { "claimId": "REJ-3433000d", "status": "BLOCKED_COMPLIANCE", "policyNumber": "POL-AUTO-112233",
-               "reserve": 0, "severityGate": null, "inputFlags": null,
+               "reserve": 0, "severityGate": null, "inputFlags": null, "gateFlags": null,
                "failureReason": "Medical Record Number (MRN) detected. Compliance violation.", "createdAt": "…" } ],
   "page": 0, "size": 20, "totalElements": 1, "totalPages": 1
 }
@@ -203,7 +214,7 @@ Claims in the given statuses (comma-separated, default `HUMAN_REVIEW`), oldest f
 | GET | `/pc/policies/{policyNumber}` | Seeded: `POL-AUTO-112233` (CA, Avery Johnson), `POL-AUTO-223344` (NY, Morgan Lee), `POL-AUTO-445566` (CA, Jordan Rivera, two claims in the last 150 days), `POL-HOME-334455` (TX, Riley Smith). Terms run from 6 months ago for one year. 404 otherwise. |
 | GET | `/pc/policies/{policyNumber}/coverages` | Delayed 12 s when `MOCK_PC_TIMEOUT=true` |
 | GET | `/pc/policies/{policyNumber}/history` | Prior claims |
-| POST | `/cc/claims` | Creates `CLM-2026-NNNNNN` from `MOCK_CC_START_SEQUENCE` (default 1); delayed 11 s when `MOCK_GW_TIMEOUT=true` |
-| GET | `/cc/claims/{claimId}` | Claim with `notes` and `attachments` |
-| PUT | `/cc/claims/{claimId}` | `{ "status", "notes" }` |
+| POST | `/cc/claims` | Creates `CLM-2026-NNNNNN` from `MOCK_CC_START_SEQUENCE` (default 1) with `initialStatus` (default `OPEN`); delayed 11 s when `MOCK_GW_TIMEOUT=true` |
+| GET | `/cc/claims/{claimId}` | Claim with `notes`, `attachments` and `reviewActions` |
+| PUT | `/cc/claims/{claimId}` | `{ "status", "notes", "action", "adjusterId", "adjustedReserve" }`; applies the status and reserve and appends a review action |
 | POST | `/cc/claims/{claimId}/attachments` | `{ "name", "contentType", "body" }` → `201` |

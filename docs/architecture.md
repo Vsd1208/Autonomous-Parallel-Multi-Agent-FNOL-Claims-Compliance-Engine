@@ -22,31 +22,38 @@ The **Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine** is a dec
      BRANCH A  Operational                     BRANCH B  Legal
      VisionDamageAgent (Gemini | mock)         PiiRedactionAgent -> PIIGuardrail ...... 422 BLOCK
        └ EvidenceImageLoader (SSRF guard)      StatutoryDeadlineAgent (ack / decide / urgency)
-     PolicyValidatorAgent + CoverageRuleProvider
-       └ ValidationGuardrail ........................................... 502 NOT ELIGIBLE
-     ReserveCalculatorAgent
+     PolicyValidatorAgent + CoverageRuleProvider   SubrogationScorerAgent.assessLiability
+       └ ValidationGuardrail ............ 502       (liability + compliance notes)
+     ReserveCalculatorAgent (reserve + confidence)
           |                                         |
           +-------------------+---------------------+
                               v
     5. Reconciliation Safety Gate
-       SubrogationScorerAgent (Branch A severity) -> OutputGuardrail
+       Subrogation finalised with Branch A severity -> OutputGuardrail
+       GateConsistencyChecker -> gateFlags (severity/estimate, reserve vs limit, damage vs line, confidence vs photo)
        ExplanationBuilder: 6 factors + severity (fnol.stp.*)  -> WHY panel
-       ClaimCenter createClaim + attach WHY panel and evidence list (best effort)
-       Route: STP-eligible -> PENDING_ADVISORY_REVIEW (default) | STRAIGHT_THROUGH_PROCESSING
-              otherwise    -> HUMAN_REVIEW
+       Route: STP-eligible and no flags -> PENDING_ADVISORY_REVIEW (default) | STRAIGHT_THROUGH_PROCESSING
+              otherwise                 -> HUMAN_REVIEW
+       ClaimCenter createClaim as DRAFT_PENDING_REVIEW (OPEN only for unreviewed STP)
+                   + attach WHY panel and evidence list (best effort)
        AuditTrailAgent: 7 hashed records (sanitized inputs only)
                               |
                               v
   FNOLController: CLAIM_ID_CONFLICT check -> save claim -> AuditService.append (hash chain)
 
-  Failure lane: 422 / 502 NOT ELIGIBLE / 504 (deadline, full executor, Guidewire timeout)
+  Failure lane: 422 / 502 (not eligible or any processing error) / 504 (deadline, full executor, Guidewire timeout)
      -> FailedIntakeRecorder: REJ-xxxxxxxx claim (BLOCKED_COMPLIANCE | HUMAN_REVIEW),
         failure_reason, "Intake" audit event; HTTP error returned with claimId
 
+  Duplicate lane: 409 DUPLICATE_FNOL -> original claim flagged DUPLICATE_SUBMISSION + DuplicateCheck audit
+     (an unreviewed STP original goes back to HUMAN_REVIEW for verification)
+
   Adjuster (Human Review Points 2 and 3)
      GET /fnol/queue  ->  console claim page  ->  POST /fnol/{id}/review
+        decision (approve / reject / more info / investigation / close), optional adjusted reserve + reason
         state check (409 INVALID_STATE) -> conditional update -> AdjusterReview audit event
-        -> ClaimCenter PUT /cc/claims/{id} (failure => cc_sync_status=FAILED, review still succeeds)
+        -> ClaimCenter PUT /cc/claims/{id}: OPEN | DENIED | PENDING_INFORMATION | UNDER_INVESTIGATION | CLOSED,
+           tracked as a review action (failure => cc_sync_status=FAILED, review still succeeds)
      GET /fnol/{id}/audit (chainValid)  ·  GET /fnol/{id}/audit/pdf  ·  GET /fnol/{id}/explanation
 ```
 
@@ -59,8 +66,8 @@ The **Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine** is a dec
 | `fnol-enrichment` | `PolicyCenterClient`, `ClaimCenterClient`, their HTTP mock clients, `ClaimHistoryEnricher`, the primary Guidewire `RestTemplate` (2 s / 3 s) |
 | `fnol-agents` | Agents, vision providers, `EvidenceImageLoader`, deadline / coverage / subrogation providers, Gemini `RestTemplate` |
 | `fnol-guardrails` | Input, output, PII and validation guardrails |
-| `fnol-orchestrator` | `FNOLOrchestrator`, `IntakeReviewService`, `ExplanationBuilder`, `ClaimTypeValidator`, `OrchestratorProperties`, `StpProperties` |
-| `fnol-api` | REST controller, error mapping, adjuster-token and CORS filters, `AuditService` (hash chain), `FailedIntakeRecorder`, `IdempotencyStore`, JPA entities, Flyway V1–V6, PDF report |
+| `fnol-orchestrator` | `FNOLOrchestrator`, `IntakeReviewService`, `GateConsistencyChecker`, `ExplanationBuilder`, `ClaimTypeValidator`, `OrchestratorProperties`, `StpProperties` |
+| `fnol-api` | REST controller, error mapping, adjuster-token and CORS filters, `AuditService` (hash chain), `FailedIntakeRecorder`, `DuplicateSubmissionRecorder`, `IdempotencyStore`, JPA entities, Flyway V1–V7, PDF report |
 | `frontend` | React + Vite console: intake, claim dashboard, adjuster queue, audit trail |
 
 ## Human-in-the-loop

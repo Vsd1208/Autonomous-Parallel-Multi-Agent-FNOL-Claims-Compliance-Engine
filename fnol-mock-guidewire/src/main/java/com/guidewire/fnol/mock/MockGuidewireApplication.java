@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,6 +58,7 @@ class ClaimCenterController {
     private final AtomicInteger sequence;
     private final Map<String, Claim> claims = new ConcurrentHashMap<>();
     private final Map<String, List<ClaimAttachment>> attachments = new ConcurrentHashMap<>();
+    private final Map<String, List<ClaimReviewAction>> reviewActions = new ConcurrentHashMap<>();
 
     /**
      * The counter is in memory, so a restart would reissue IDs that the FNOL database already holds.
@@ -72,9 +74,11 @@ class ClaimCenterController {
             Thread.sleep(11000);
         }
         String id = "CLM-2026-%06d".formatted(sequence.getAndIncrement());
-        claims.put(id, new Claim(id, "OPEN", request.policyNumber(), request.incidentDate(), request.state(),
+        // The FNOL engine pre-populates a draft until a human decides; OPEN enters the standard claim process.
+        String status = request.initialStatus() != null ? request.initialStatus() : "OPEN";
+        claims.put(id, new Claim(id, status, request.policyNumber(), request.incidentDate(), request.state(),
                 request.estimatedDamage(), request.reserve()));
-        return new ClaimCreateResponse(id, "OPEN");
+        return new ClaimCreateResponse(id, status);
     }
 
     @GetMapping("/cc/claims/{claimId}")
@@ -82,18 +86,24 @@ class ClaimCenterController {
         Claim c = Optional.ofNullable(claims.get(claimId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Synthetic claim not found"));
         return new Claim(c.claimId(), c.status(), c.policyNumber(), c.incidentDate(), c.state(),
-                c.estimatedDamage(), c.reserve(), c.notes(), List.copyOf(attachmentsOf(claimId)));
+                c.estimatedDamage(), c.reserve(), c.notes(), List.copyOf(attachmentsOf(claimId)),
+                List.copyOf(reviewActions.getOrDefault(claimId, List.of())));
     }
 
+    /** Applies a status/notes/reserve change and tracks it as a review action. */
     @PutMapping("/cc/claims/{claimId}")
     Claim update(@PathVariable("claimId") String claimId, @RequestBody ClaimUpdateRequest request) {
         Claim updated = claims.computeIfPresent(claimId, (id, c) -> new Claim(id,
                 request.status() != null ? request.status() : c.status(),
-                c.policyNumber(), c.incidentDate(), c.state(), c.estimatedDamage(), c.reserve(),
-                request.notes(), List.of()));
+                c.policyNumber(), c.incidentDate(), c.state(), c.estimatedDamage(),
+                request.adjustedReserve() != null ? request.adjustedReserve() : c.reserve(),
+                request.notes(), List.of(), List.of()));
         if (updated == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Synthetic claim not found");
         }
+        reviewActions.computeIfAbsent(claimId, id -> Collections.synchronizedList(new ArrayList<>()))
+                .add(new ClaimReviewAction(Instant.now(), request.action(), updated.status(), request.adjusterId(),
+                        request.notes(), request.adjustedReserve()));
         return get(claimId);
     }
 

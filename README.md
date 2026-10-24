@@ -8,7 +8,8 @@ An end-to-end First Notice of Loss (FNOL) claims intelligence platform for fast,
 
 - AI analyzes, recommends and explains; it never pays.
 - Any failed factor, HIGH severity or intake flag routes the claim to `HUMAN_REVIEW`.
-- Blocked, uncovered and timed-out intakes are saved as `REJ-…` claims and queued for a human instead of being dropped.
+- Every failed intake (blocked, uncovered, timed out or any processing error) is saved as a `REJ-…` claim and queued for a human instead of being dropped. Duplicate submissions flag the original claim for verification.
+- ClaimCenter claims stay drafts (`DRAFT_PENDING_REVIEW`) until a human decides.
 - Every agent step, failure and adjuster decision is recorded in a SHA-256 hash-chained audit trail. Raw PII is never stored or hashed.
 - Statutory deadlines, coverage rules and subrogation weights are **synthetic prototype values**; Compliance must confirm real rules before production use.
 
@@ -18,10 +19,10 @@ An end-to-end First Notice of Loss (FNOL) claims intelligence platform for fast,
 1. FNOL intake               claim, policy, claimant, evidence URIs, channel
 2. Input validation (HRP1)   format guardrail + intake review flags
 3. Context enrichment        policy, claim history, frequency risk
-4. Dual-branch analysis      Branch A: damage, coverage, reserve | Branch B: PII, deadlines
-5. Reconciliation gate       subrogation, guardrails, six-factor WHY panel, ClaimCenter pre-filing, audit
+4. Dual-branch analysis      Branch A: damage, coverage, reserve + confidence | Branch B: PII, deadlines, liability
+5. Reconciliation gate       subrogation, guardrails, consistency checks, WHY panel, ClaimCenter draft, audit
 6. Routing                   PENDING_ADVISORY_REVIEW | STRAIGHT_THROUGH_PROCESSING | HUMAN_REVIEW
-7. Human review (HRP2/HRP3)  adjuster queue, decision, ClaimCenter update, audit
+7. Human review (HRP2/HRP3)  adjuster queue, modify findings, decision, ClaimCenter update + tracked action, audit
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs/diagram-traceability.md](docs/diagram-traceability.md) for how each of the 23 diagram components maps to code, endpoints and tests.
@@ -36,18 +37,19 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs
 | Parallel branches on a bounded executor, one deadline, interrupting cancel | Done |
 | Vision: Gemini provider with SSRF-safe evidence loading; deterministic mock provider | Done |
 | Coverage by line of business (AUTO, HOME) | Done (synthetic rules) |
-| Reserve (damage × 1.15, BigDecimal) | Done |
+| Reserve (damage × 1.15, BigDecimal) with confidence score | Done |
 | PII redaction (SSN, DOB, MRN, name, phone, email) + PII guardrail | Done |
 | Statutory deadlines: acknowledge-by, decide-by, urgency flag | Done (synthetic rules) |
-| Subrogation scored at the gate with Branch A's real severity | Done |
+| Subrogation: Branch B liability assessment with compliance notes, finalised with Branch A's severity | Done |
+| Gate consistency checks (severity vs estimate, reserve vs limit, damage vs line, confidence vs photo) | Done |
 | Six-factor WHY panel, configurable STP thresholds (`fnol.stp.*`) | Done |
 | Advisory review before STP counts as filed (Human Review Point 2) | Done, on by default |
-| Adjuster review with state checks, token, audit event (Human Review Point 3) | Done |
-| Failed intakes persisted and escalated (`REJ-…`) | Done |
+| Adjuster review with state checks, token, audit event, modify reserve, require investigation (Human Review Point 3) | Done |
+| Failed intakes persisted and escalated (`REJ-…`); duplicates flagged for verification | Done |
 | Hash-chained audit trail + `chainValid` + PDF report | Done |
-| ClaimCenter create, update, attachments; sync status for retry | Done (retry job not built) |
+| ClaimCenter draft → decision status, attachments, tracked review actions; sync status for retry | Done (retry job not built) |
 | Adjuster queue (API + console page) | Done |
-| Console wired to live data (no sample data) | Done |
+| Console wired to live data; channel selector and photo upload | Done |
 | Reproducible demo (`.env.demo`, `run-all.sh`, 7 scenarios) | Done |
 | Authentication | Shared adjuster token only (prototype) |
 
@@ -60,7 +62,7 @@ fnol-enrichment/      PolicyCenter/ClaimCenter clients, ClaimHistoryEnricher
 fnol-agents/          Agents, vision providers, EvidenceImageLoader, rule providers
 fnol-guardrails/      Input, output, PII and coverage guardrails
 fnol-orchestrator/    FNOLOrchestrator, IntakeReviewService, ExplanationBuilder, STP settings
-fnol-api/             REST API, security filters, audit chain, persistence, Flyway V1–V6, PDF
+fnol-api/             REST API, security filters, audit chain, persistence, Flyway V1–V7, PDF
 frontend/             React + Vite console: intake, claim dashboard, queue, audit trail
 demo-scenarios/       Seven scenario payloads, run-all.sh, duplicate script
 postman/              Request collection
@@ -80,7 +82,7 @@ Severity from estimated damage: **LOW** ≤ $5,000, **MEDIUM** ≤ $20,000, **HI
 | Claim History | Claim frequency risk LOW or MEDIUM |
 | Subrogation Risk | Score < 70 |
 
-A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass and no intake flag is raised (`MISSING_EVIDENCE`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
+A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
 
 ## API
 
@@ -94,7 +96,7 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 | GET 🔒 | `/api/v1/fnol/{claimId}/explanation` | Saved WHY panel |
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit` | Audit events in chain order + `chainValid` |
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit/pdf` | PDF audit report |
-| POST 🔒 | `/api/v1/fnol/{claimId}/review` | Record an adjuster decision |
+| POST 🔒 | `/api/v1/fnol/{claimId}/review` | Record an adjuster decision (approve, reject, more info, investigation, close), optionally adjusting the reserve |
 | GET 🔒 | `/api/v1/fnol/queue?status=HUMAN_REVIEW&page=0&size=20` | Adjuster queue, oldest first |
 
 Errors: 400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`, 409 `DUPLICATE_FNOL` / `CLAIM_ID_CONFLICT` / `INVALID_STATE`, 422 `COMPLIANCE_BLOCK`, 502 `EXTERNAL_OR_PROCESSING_ERROR`, 504 `PROCESSING_TIMEOUT`. Failed intakes return the saved `REJ-…` ID in `claimId`.
@@ -127,7 +129,7 @@ Copy `.env.example` to `.env`, set `GEMINI_API_KEY`, `FNOL_ADJUSTER_TOKEN` and, 
 ### Tests and builds
 
 ```bash
-mvn -q test                                   # backend: 173 tests
+mvn -q test                                   # backend: 192 tests
 cd frontend && npm install && npm run build    # console
 ```
 
@@ -173,5 +175,6 @@ Run with mock vision (`.env.demo`). `run-all.sh` substitutes a fresh incident da
 - Guidewire is mocked; `PolicyCenterClient` and `ClaimCenterClient` are the swap point for real clients ([docs/guidewire-integration.md](docs/guidewire-integration.md)).
 - The adjuster token is a shared secret embedded in the console bundle — a prototype control, not authentication. `adjusterId` is taken from the request body.
 - Claims with `cc_sync_status=FAILED` are marked for retry, but no retry job exists yet.
-- Photos are referenced by URI or inline data URI; there is no file upload.
+- Photos are uploaded in the console as inline data URIs (≤ 5 MB) or referenced by allow-listed URL; there is no separate document store.
+- The branches use `FutureTask`s on a bounded executor rather than `CompletableFuture` (so a stuck branch can be interrupted), and the console is React rather than Guidewire Jutro — see ADR-011.
 - The idempotency guard's in-memory layer is per JVM; run one API instance or move it to the database.

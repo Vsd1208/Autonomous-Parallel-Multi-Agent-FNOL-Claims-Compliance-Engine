@@ -4,7 +4,7 @@ import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
 import { AdjusterDecision, ClaimResult, DashboardClaim } from '../types';
 
-const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO']);
+const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 
 function ScoreBadge({ label, value, pass }: { label: string; value: string; pass: boolean }) {
   return (
@@ -42,6 +42,7 @@ export function ClaimRoute() {
           status: record.status,
           explanation: explanation ?? stored?.explanation ?? null,
           inputFlags: record.inputFlags ? record.inputFlags.split(',') : stored?.inputFlags ?? [],
+          gateFlags: record.gateFlags ? record.gateFlags.split(',') : stored?.gateFlags ?? [],
           failureReason: record.failureReason,
           ccSyncStatus: record.ccSyncStatus,
           record,
@@ -84,6 +85,8 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
   const [reviewError, setReviewError] = useState('');
   const [savingDecision, setSavingDecision] = useState(false);
   const [reviewSaved, setReviewSaved] = useState('');
+  const [adjustedReserve, setAdjustedReserve] = useState('');
+  const [overrideReason, setOverrideReason] = useState('');
 
   useEffect(() => setClaim(initial), [initial]);
 
@@ -91,6 +94,7 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
   const factors = explanation?.factors ?? [];
   const notes = claim.notes ?? [];
   const inputFlags = claim.inputFlags ?? [];
+  const gateFlags = claim.gateFlags ?? [];
   const recommendedAction = explanation?.recommendedAction ?? 'ESCALATE_TO_HUMAN';
   const reviewable = REVIEWABLE.has(claim.status);
   const deadline = claim.branchB?.deadline;
@@ -113,7 +117,15 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
     setReviewError('');
     setReviewSaved('');
     try {
-      const response = await apiClient.submitAdjusterReview(claim.claimId, { decision, adjusterId, notes: reviewNotes });
+      const override = adjustedReserve.trim()
+        ? { adjustedReserve: Number(adjustedReserve), overrideReason: overrideReason.trim() }
+        : {};
+      const response = await apiClient.submitAdjusterReview(claim.claimId, {
+        decision,
+        adjusterId,
+        notes: reviewNotes,
+        ...override,
+      });
       claimStore.updateStatus(claim.claimId, response.status);
       setClaim({ ...claim, status: response.status });
       setReviewSaved(
@@ -167,6 +179,15 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
         </section>
       )}
 
+      {gateFlags.length > 0 && (
+        <section className="flag-row" aria-label="Safety gate flags">
+          <strong>Safety gate flags:</strong>
+          {gateFlags.map((flag) => (
+            <span key={flag} className="flag-chip">{flag.replace(/_/g, ' ')}</span>
+          ))}
+        </section>
+      )}
+
       {explanation && (
         <section className="advisory-banner">
           <div className="advisory-icon">{recommendedAction.includes('ESCALATE') ? '!' : 'OK'}</div>
@@ -211,7 +232,12 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
               <div className="metric-box"><span>Recommended Reserve</span><strong>{money(claim.branchA.reserve.recommendedReserve)}</strong></div>
               <div className="metric-box"><span>Coverage Type</span><strong>{claim.branchA.coverage.coverageType ?? 'NONE'}</strong></div>
               <div className="metric-box"><span>Coverage Limit</span><strong>{money(claim.branchA.coverage.coverageLimit)}</strong></div>
+              <div className="metric-box">
+                <span>Reserve Confidence</span>
+                <strong>{claim.branchA.reserve.confidence != null ? Number(claim.branchA.reserve.confidence).toFixed(2) : '—'}</strong>
+              </div>
             </div>
+            {claim.branchA.reserve.confidenceBasis && <p className="muted">{claim.branchA.reserve.confidenceBasis}</p>}
           </div>
 
           <div className="branch-panel branch-b">
@@ -234,6 +260,16 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
               <p className="label">Redacted Description</p>
               <p>{claim.branchB.pii.redactedDescription}</p>
             </div>
+            {(claim.branchB.subrogation.complianceNotes ?? []).length > 0 && (
+              <div className="pii-box" style={{ marginTop: '12px' }}>
+                <p className="label">Subrogation Compliance Notes</p>
+                <ul>
+                  {claim.branchB.subrogation.complianceNotes!.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {deadline?.disclaimer && (
               <div className="pii-box" style={{ marginTop: '12px', background: '#fff8e6' }}>
                 <p className="label">Statutory Disclaimer</p>
@@ -254,6 +290,9 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
                 <div className="metric-box"><span>Reserve</span><strong>{money(claim.record.reserve)}</strong></div>
                 <div className="metric-box"><span>Channel</span><strong>{claim.record.channel ?? '—'}</strong></div>
                 <div className="metric-box"><span>Adjuster Decision</span><strong>{claim.record.adjusterDecision ?? 'PENDING'}</strong></div>
+                {claim.record.adjusterReserve != null && (
+                  <div className="metric-box"><span>Adjusted Reserve</span><strong>{money(claim.record.adjusterReserve)}</strong></div>
+                )}
               </div>
               <p className="muted">Branch details are only kept by the console that submitted the claim; the WHY panel and audit trail come from the server.</p>
             </div>
@@ -300,6 +339,25 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
             <label>Adjuster ID</label>
             <input value={adjusterId} onChange={(event) => setAdjusterId(event.target.value)} placeholder="ADJ-001" />
           </div>
+          <div className="form-field">
+            <label>Adjusted Reserve (optional)</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={adjustedReserve}
+              onChange={(event) => setAdjustedReserve(event.target.value)}
+              placeholder={claim.branchA ? String(claim.branchA.reserve.recommendedReserve) : 'AI reserve'}
+            />
+          </div>
+          <div className="form-field">
+            <label>Reason for Changing the AI Finding</label>
+            <input
+              value={overrideReason}
+              onChange={(event) => setOverrideReason(event.target.value)}
+              placeholder="Required when the reserve is adjusted"
+            />
+          </div>
           <div className="form-field full-width">
             <label>Decision Notes</label>
             <textarea
@@ -320,6 +378,7 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
               ['APPROVED_BY_ADJUSTER', 'approve', 'Approve'],
               ['REJECTED_BY_ADJUSTER', 'reject', 'Reject'],
               ['NEEDS_MORE_INFO', 'info', 'Need More Info'],
+              ['INVESTIGATION_REQUIRED', 'info', 'Require Investigation'],
               ['CLOSED', 'close', 'Close'],
             ] as [AdjusterDecision, string, string][]
           ).map(([decision, css, label]) => (
@@ -327,7 +386,9 @@ export default function ClaimDashboard({ claim: initial }: { claim: DashboardCla
               key={decision}
               type="button"
               className={`decision-btn ${css}`}
-              disabled={savingDecision || !adjusterId.trim() || !reviewable}
+              disabled={
+                savingDecision || !adjusterId.trim() || !reviewable || (!!adjustedReserve.trim() && !overrideReason.trim())
+              }
               onClick={() => submitReview(decision)}
             >
               {label}

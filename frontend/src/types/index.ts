@@ -19,6 +19,8 @@ export interface Reserve {
   estimatedDamage: number;
   factor: number;
   recommendedReserve: number;
+  confidence?: number | null;
+  confidenceBasis?: string | null;
 }
 
 export interface BranchAResult {
@@ -48,6 +50,7 @@ export interface Subrogation {
   score: number;
   recommendedAction: string;
   factors: Record<string, number>;
+  complianceNotes?: string[];
 }
 
 export interface AuditEvent {
@@ -115,6 +118,7 @@ export interface ClaimResult {
   notes: string[];
   inputFlags?: string[];
   ccSyncStatus?: string;
+  gateFlags?: string[];
 }
 
 /** Saved claim row (GET /fnol/status/{claimId}). */
@@ -136,6 +140,9 @@ export interface ClaimRecord {
   severityGate: string | null;
   inputFlags: string | null;
   ccSyncStatus: string | null;
+  gateFlags: string | null;
+  adjusterReserve: number | null;
+  overrideReason: string | null;
 }
 
 /**
@@ -150,6 +157,7 @@ export interface DashboardClaim {
   branchB?: BranchBResult;
   notes?: string[];
   inputFlags?: string[];
+  gateFlags?: string[];
   failureReason?: string | null;
   ccSyncStatus?: string | null;
   record?: ClaimRecord;
@@ -162,6 +170,7 @@ export interface QueueItem {
   reserve: number;
   severityGate: string | null;
   inputFlags: string | null;
+  gateFlags: string | null;
   failureReason: string | null;
   createdAt: string;
 }
@@ -174,12 +183,19 @@ export interface QueuePage {
   totalPages: number;
 }
 
-export type AdjusterDecision = 'APPROVED_BY_ADJUSTER' | 'REJECTED_BY_ADJUSTER' | 'NEEDS_MORE_INFO' | 'CLOSED';
+export type AdjusterDecision =
+  | 'APPROVED_BY_ADJUSTER'
+  | 'REJECTED_BY_ADJUSTER'
+  | 'NEEDS_MORE_INFO'
+  | 'INVESTIGATION_REQUIRED'
+  | 'CLOSED';
 
 export interface AdjusterReviewRequest {
   decision: AdjusterDecision;
   adjusterId: string;
   notes: string;
+  adjustedReserve?: number;
+  overrideReason?: string;
 }
 
 export interface AdjusterReviewResponse {
@@ -189,6 +205,8 @@ export interface AdjusterReviewResponse {
   adjusterId: string;
   adjusterNotes: string;
   reviewedAt: string;
+  adjustedReserve: number | null;
+  overrideReason: string | null;
 }
 
 export interface FormData {
@@ -201,4 +219,5 @@ export interface FormData {
   claimantSsn: string;
   claimantPhone: string;
   claimantEmail: string;
+  channel: 'WEB' | 'MOBILE' | 'PHONE' | 'API';
 }

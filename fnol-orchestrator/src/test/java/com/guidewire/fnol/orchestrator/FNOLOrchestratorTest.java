@@ -246,6 +246,54 @@ class FNOLOrchestratorTest {
         assertThat(response.notes()).anyMatch(n -> n.contains("marked for retry"));
     }
 
+    // ── Diagram alignment ───────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Diagram: Branch B's subrogation carries compliance notes; Branch A's reserve carries a confidence score")
+    void process_subrogationNotesAndReserveConfidence() {
+        FNOLResponse response = orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Rear-ended by other driver. Police report filed."));
+
+        assertThat(response.branchB().subrogation().complianceNotes())
+                .anyMatch(n -> n.contains("other party's insurer"))
+                .anyMatch(n -> n.contains("refer to the subrogation unit"));
+        assertThat(response.branchA().reserve().confidence()).isEqualByComparingTo("0.91");
+    }
+
+    @Test
+    @DisplayName("Diagram: a consistency flag at the gate blocks STP and is explained")
+    void process_gateFlagBlocksStp() {
+        fixture.policyCenter.add(OrchestratorFixture.autoPolicy("POL-AUTO-778899", "Avery Johnson"),
+                List.of(new Coverage("COLLISION", new BigDecimal("3000"), new BigDecimal("500"))), List.of());
+
+        FNOLResponse response = orchestrator.process(
+                OrchestratorFixture.payload("POL-AUTO-778899", "Avery Johnson", "Scraped a pole in a parking garage."));
+
+        assertThat(response.gateFlags()).containsExactly(GateConsistencyChecker.RESERVE_EXCEEDS_COVERAGE_LIMIT);
+        assertThat(response.explanation().factors()).allMatch(f -> "PASS".equals(f.status()));
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(response.notes()).anyMatch(n -> n.startsWith("CONSISTENCY CHECK RESERVE_EXCEEDS_COVERAGE_LIMIT"));
+    }
+
+    @Test
+    @DisplayName("Diagram: ClaimCenter gets a draft until a human decides")
+    void process_claimCenterDraftUntilHumanDecides() {
+        orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."));
+        orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Demo User", "Scraped a pole."));
+
+        assertThat(fixture.claimCenter.created).extracting(ClaimCreateRequest::initialStatus)
+                .containsExactly("DRAFT_PENDING_REVIEW", "DRAFT_PENDING_REVIEW");
+    }
+
+    @Test
+    @DisplayName("Diagram: STP with no advisory review goes straight to OPEN in ClaimCenter")
+    void process_unreviewedStpIsOpenInClaimCenter() {
+        fixture.stp.setRequireAdvisoryReview(false);
+        fixture.build().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."));
+
+        assertThat(fixture.claimCenter.created.get(0).initialStatus()).isEqualTo("OPEN");
+    }
+
     // ── P5: complete audit trail, no raw PII hashed ─────────────────────────────────
 
     @Test
