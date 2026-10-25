@@ -71,7 +71,7 @@ public class FailedIntakeRecorder {
                     List.of(auditAgent.record(claimId, "Intake", sanitized, reason, errorCode)),
                     AuditService.SYSTEM_ACTOR);
             // The adjuster handling the failed intake needs the photos too.
-            evidence.store(claimId, payload.evidenceUris());
+            evidence.store(claimId, payload);
 
             log.warn("[FNOL] Intake failed ({}); saved as {} with status {} for human attention — policy={}",
                     errorCode, claimId, status, payload.policyNumber());

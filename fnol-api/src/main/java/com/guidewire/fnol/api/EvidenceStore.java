@@ -36,7 +36,7 @@ public class EvidenceStore {
             "^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$", Pattern.CASE_INSENSITIVE);
     private static final Map<String, String> EXTENSION = Map.of(
             "image/jpeg", "jpg", "image/png", "png", "image/webp", "webp", "image/gif", "gif");
-    static final int MAX_DOCUMENTS = 5;
+    static final int MAX_DOCUMENTS = 8;
 
     private final ClaimDocumentRepository documents;
     private final AuditService auditService;
@@ -48,14 +48,24 @@ public class EvidenceStore {
         this.auditAgent = auditAgent;
     }
 
-    /** Stores up to five evidence items for the claim and audits each one. Never throws. */
+    /** Stores the payload's evidence with each photo's angle. */
+    public List<ClaimDocumentEntity> store(String claimId, com.guidewire.fnol.common.Models.FNOLPayload payload) {
+        return store(claimId, payload.evidenceUris(), payload.evidenceAngles());
+    }
+
+    /** Stores up to eight evidence items for the claim and audits each one. Never throws. */
     public List<ClaimDocumentEntity> store(String claimId, List<String> evidenceUris) {
+        return store(claimId, evidenceUris, null);
+    }
+
+    public List<ClaimDocumentEntity> store(String claimId, List<String> evidenceUris, List<String> angles) {
         List<ClaimDocumentEntity> stored = new ArrayList<>();
         if (evidenceUris == null) {
             return stored;
         }
         int index = 0;
-        for (String uri : evidenceUris) {
+        for (int position = 0; position < evidenceUris.size(); position++) {
+            String uri = evidenceUris.get(position);
             if (uri == null || uri.isBlank()) continue;
             if (stored.size() >= MAX_DOCUMENTS) {
                 log.warn("[Evidence] claimId={} has more than {} evidence items; the rest are not stored", claimId, MAX_DOCUMENTS);
@@ -65,9 +75,13 @@ public class EvidenceStore {
             try {
                 ClaimDocumentEntity doc = toDocument(claimId, uri.trim(), index);
                 if (doc == null) continue;
+                doc.angle = angleAt(angles, position);
+                if ("UPLOAD".equals(doc.source) && !"OTHER".equals(doc.angle)) {
+                    doc.name = doc.angle.toLowerCase(Locale.ROOT).replace('_', '-') + "-" + doc.name;
+                }
                 documents.save(doc);
                 auditService.append(claimId, List.of(auditAgent.record(claimId, "EvidenceStore",
-                        "name=" + doc.name + ";source=" + doc.source,
+                        "name=" + doc.name + ";angle=" + doc.angle + ";source=" + doc.source,
                         "sha256=" + doc.sha256 + ";bytes=" + doc.sizeBytes,
                         doc.isViewable() ? "STORED" : "REFERENCED")), AuditService.SYSTEM_ACTOR);
                 stored.add(doc);
@@ -76,6 +90,14 @@ public class EvidenceStore {
             }
         }
         return stored;
+    }
+
+    private static String angleAt(List<String> angles, int position) {
+        if (angles == null || position >= angles.size() || angles.get(position) == null || angles.get(position).isBlank()) {
+            return "OTHER";
+        }
+        String a = angles.get(position).trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z_]", "");
+        return a.isEmpty() ? "OTHER" : (a.length() > 16 ? a.substring(0, 16) : a);
     }
 
     private ClaimDocumentEntity toDocument(String claimId, String uri, int index) {

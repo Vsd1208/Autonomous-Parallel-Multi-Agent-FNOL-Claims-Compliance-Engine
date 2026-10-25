@@ -20,9 +20,42 @@ class IntakeReviewServiceTest {
 
     private final IntakeReviewService service = new IntakeReviewService();
 
+    /** Any evidence given is sent as the standard set (one copy per angle), so only the flag under test fires. */
     private static FNOLPayload payload(LocalDate incident, String claimant, List<String> evidence) {
+        if (evidence == null || evidence.isEmpty()) {
+            return new FNOLPayload("POL-AUTO-112233", incident, "CA", "Scraped a pole.", claimant,
+                    "01/02/1980", "123-45-6789", evidence, "WEB");
+        }
+        return withAngles(incident, claimant, AUTO_PHOTO_SET.stream().map(a -> evidence.get(0)).toList(), AUTO_PHOTO_SET);
+    }
+
+    private static FNOLPayload withAngles(LocalDate incident, String claimant, List<String> evidence, List<String> angles) {
         return new FNOLPayload("POL-AUTO-112233", incident, "CA", "Scraped a pole.", claimant,
-                "01/02/1980", "123-45-6789", evidence, "WEB");
+                "01/02/1980", "123-45-6789", evidence, "WEB", null, null, null, angles);
+    }
+
+    @Test
+    @DisplayName("INCOMPLETE_PHOTO_SET when an auto claim lacks a side of the vehicle or the close-up")
+    void incompletePhotoSet() {
+        LocalDate d = LocalDate.now().minusDays(3);
+        assertThat(service.review(withAngles(d, "Avery Johnson", List.of("mock://a"), null), POLICY, LOW))
+                .containsExactly(INCOMPLETE_PHOTO_SET);
+        FNOLPayload noRear = withAngles(d, "Avery Johnson", List.of("mock://a", "mock://b", "mock://c", "mock://d"),
+                List.of("front", "LEFT", "RIGHT", "CLOSE_UP"));
+        assertThat(service.review(noRear, POLICY, LOW)).containsExactly(INCOMPLETE_PHOTO_SET);
+        assertThat(missingPhotoAngles(noRear, POLICY)).containsExactly("REAR");
+    }
+
+    @Test
+    @DisplayName("A home claim needs an overview and a close-up")
+    void homePhotoSet() {
+        Policy home = new Policy("POL-HOME-334455", "HOME", "ACTIVE", START, START.plusYears(1),
+                "Avery Johnson", "TX", "House", List.of());
+        LocalDate d = LocalDate.now().minusDays(3);
+        assertThat(service.review(withAngles(d, "Avery Johnson", List.of("mock://a", "mock://b"),
+                List.of("OVERVIEW", "CLOSE_UP")), home, LOW)).isEmpty();
+        assertThat(missingPhotoAngles(withAngles(d, "Avery Johnson", List.of("mock://a"), List.of("CLOSE_UP")), home))
+                .containsExactly("OVERVIEW");
     }
 
     private static FNOLPayload clean() {

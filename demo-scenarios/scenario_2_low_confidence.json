@@ -10,10 +10,21 @@
     "claimantDob": "01/01/1990",
     "claimantSsn": "123-45-6789",
     "evidenceUris": [
-      "mock://photo/blurry-damage.jpg"
+      "mock://photo/blurry-damage-front.jpg",
+      "mock://photo/blurry-damage-rear.jpg",
+      "mock://photo/blurry-damage-left.jpg",
+      "mock://photo/blurry-damage-right.jpg",
+      "mock://photo/blurry-damage-close-up.jpg"
     ],
     "channel": "API",
-    "claimedAmount": 3500
+    "claimedAmount": 3500,
+    "evidenceAngles": [
+      "FRONT",
+      "REAR",
+      "LEFT",
+      "RIGHT",
+      "CLOSE_UP"
+    ]
   },
   "expectedStatus": 200,
   "expectedClaimStatus": "HUMAN_REVIEW",

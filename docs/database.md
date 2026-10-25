@@ -2,7 +2,7 @@
 
 ## Database Engine
 - **Target**: PostgreSQL 16 (docker-compose image `postgres:16-alpine`)
-- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V9; Hibernate runs with `ddl-auto: validate`
+- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V11; Hibernate runs with `ddl-auto: validate`
 - **ORM**: Spring Data JPA / Hibernate 6
 - **Tests**: H2 in PostgreSQL mode with `ddl-auto: create-drop` (Flyway disabled); the migrations are exercised by `docker compose up`
 
@@ -19,6 +19,8 @@
 | V7 | `V7__add_gate_flags_and_adjuster_override.sql` | `gate_flags`, `adjuster_reserve`, `override_reason` |
 | V8 | `V8__add_claim_documents.sql` | `claim_documents` table for evidence photos and references |
 | V9 | `V9__add_claimed_amount_and_deductible.sql` | `claimed_amount`, `deductible` |
+| V10 | `V10__add_inspections.sql` | `inspections` table (damage inspections / appraisals) |
+| V11 | `V11__add_photo_angle.sql` | `claim_documents.angle` |
 
 ## `claims`
 
@@ -30,7 +32,7 @@
 | `incident_date` | `DATE` | no | Date of loss |
 | `state` | `VARCHAR(255)` | no | US state code (`CA`, `NY`, `TX`, `FL`, `IL`) |
 | `estimated_damage` | `NUMERIC(14,2)` | no, `>= 0` | Vision estimate in USD (0 for REJ- claims) |
-| `reserve` | `NUMERIC(14,2)` | no, `>= 0` | Recommended payment: min(claimed, AI estimate) − deductible, capped at the limit (0 for REJ- claims) |
+| `reserve` | `NUMERIC(14,2)` | no, `>= 0` | Recommended reserve (amount owed): min(claimed, AI estimate) − deductible, capped at the limit (0 for REJ- claims) |
 | `claimed_amount` | `NUMERIC(14,2)` | yes, `>= 0` | What the claimant asked for |
 | `deductible` | `NUMERIC(14,2)` | yes | Policy deductible applied to the reserve |
 | `created_at` | `TIMESTAMPTZ` | no | |
@@ -81,7 +83,8 @@ Indexes: `idx_audit_trail_claim_id`, `idx_audit_trail_claim_seq`.
 |---|---|---|---|
 | `document_id` | `VARCHAR(64)` PK | no | UUID |
 | `claim_id` | `VARCHAR(32)` | no | Owning claim (`CLM-…` or `REJ-…`) |
-| `name` | `VARCHAR(255)` | no | `damage-photo-N.<ext>` for uploads, the file name for references |
+| `name` | `VARCHAR(255)` | no | `<angle>-damage-photo-N.<ext>` for uploads, the file name for references |
+| `angle` | `VARCHAR(16)` | yes | `FRONT`, `REAR`, `LEFT`, `RIGHT`, `CLOSE_UP`, `ODOMETER_VIN`, `OVERVIEW` or `OTHER` |
 | `content_type` | `VARCHAR(64)` | yes | `image/jpeg`, `image/png`, `image/webp` or `image/gif` (uploads only) |
 | `size_bytes` | `INTEGER` | yes | Image size (uploads only, at most 5 MB) |
 | `sha256` | `VARCHAR(64)` | yes | Hex SHA-256 of the image bytes (of the URI for references); also in the audit chain |
@@ -91,6 +94,15 @@ Indexes: `idx_audit_trail_claim_id`, `idx_audit_trail_claim_seq`.
 | `uploaded_at` | `TIMESTAMPTZ` | no | |
 
 Index: `idx_claim_documents_claim_id`.
+
+## `inspections`
+
+One row per inspection assignment. `status`: `ASSIGNED` (claim is `INSPECTION_ASSIGNED`), `COMPLETED` or `CANCELLED`
+(claim back to `HUMAN_REVIEW`). The report fills `accident_related_amount` (repair cost of this accident's damage,
+earlier damage excluded), `prior_damage_found`, `findings`, `recommendation` (`APPROVE`, `REDUCE`, `DENY`,
+`INVESTIGATE`) and `recommended_payment`, the recommended reserve after inspection = min(claimed amount,
+accident-related amount) − deductible, never below 0. (Column name kept from V10; no money is paid by this system.)
+`due_by` is 1 day for a desk review, 2 for a body-shop estimate and 3 for a field inspection.
 
 ## Mock ClaimCenter (schema `claimcenter`)
 

@@ -288,7 +288,7 @@ class FNOLOrchestratorTest {
         assertThat(response.branchA().reserve().settlementBasis()).isEqualByComparingTo("3000");
         assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("2000");
         assertThat(fixture.claimCenter.created.get(0).reserve()).isEqualByComparingTo("2000");
-        assertThat(response.notes()).anyMatch(n -> n.startsWith("SETTLEMENT: the claimant asks $3000"));
+        assertThat(response.notes()).anyMatch(n -> n.startsWith("RESERVE: the claimant asks $3000"));
     }
 
     @Test

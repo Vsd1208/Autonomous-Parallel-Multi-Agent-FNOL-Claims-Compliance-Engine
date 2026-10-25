@@ -74,11 +74,18 @@ Request (required: `policyNumber`, `incidentDate`, `state`, `description`):
   "claimantEmail": "avery@example.com",
   "evidenceUris": ["mock://photo/normal-front-bumper.jpg"],
   "channel": "WEB",
-  "claimedAmount": 3000
+  "claimedAmount": 3000,
+  "evidenceAngles": ["FRONT", "REAR", "LEFT", "RIGHT", "CLOSE_UP"]
 }
 ```
 
-- `claimedAmount` (optional, ≥ 0): what the claimant asks for. The recommended payment is
+- `evidenceAngles` (optional): one per `evidenceUris` entry, in the same order: `FRONT`, `REAR`, `LEFT`, `RIGHT`,
+  `CLOSE_UP`, `ODOMETER_VIN`, `OVERVIEW` (home) or `OTHER`. An auto claim needs front, rear, left, right and a
+  close-up; a home claim an overview and a close-up. Photos sent without that set raise `INCOMPLETE_PHOTO_SET`
+  (routes to `HUMAN_REVIEW`, with a note listing the missing views). All usable photos (up to 6, 15 MB in total)
+  go to the vision model in one request, each labelled with its angle.
+
+- `claimedAmount` (optional, ≥ 0): what the claimant asks for. The recommended reserve is
   `min(claimedAmount, AI estimate) − deductible`, capped at the coverage limit. More than 10% above the AI estimate
   raises `CLAIMED_EXCEEDS_AI_ESTIMATE` and the claim goes to `HUMAN_REVIEW`; it is never approved automatically.
 
@@ -182,6 +189,27 @@ whose output hash covers the document's SHA-256, so the photo shown to the adjus
 The stored image with its original content type, `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`,
 `Content-Security-Policy: default-src 'none'; sandbox` and `Cache-Control: private, max-age=300`. `404` if the
 document does not belong to that claim or is a reference without bytes.
+
+## Inspections (token)
+
+When the photos cannot settle a claim (amount claimed above the AI estimate, possible earlier damage, a poor
+photo), the adjuster assigns an inspector.
+
+- `GET /api/v1/inspectors`: the roster (`inspectorId`, `name`, `specialty`, `region`).
+- `POST /api/v1/fnol/{claimId}/inspections` with `{ "inspectorId": "INS-101", "inspectionType": "FIELD|DESK|SHOP",
+  "reason": "…", "assignedBy": "ADJ-001" }`: only while the claim awaits a decision (`409` otherwise, including
+  when an inspection is already open). The claim moves to `INSPECTION_ASSIGNED`, where `/review` returns `409`.
+  ClaimCenter gets status `PENDING_INSPECTION` and action `INSPECTION_ASSIGNED`.
+- `POST /api/v1/fnol/{claimId}/inspections/{inspectionId}/report` with `{ "inspectorId": "INS-101",
+  "accidentRelatedAmount": 5000, "priorDamageFound": true, "findings": "…", "recommendation": "APPROVE|REDUCE|DENY|INVESTIGATE" }`:
+  only by the assigned inspector. Sets `recommendedPayment` = min(claimed, accident-related) − deductible and
+  returns the claim to `HUMAN_REVIEW`.
+- `POST /api/v1/fnol/{claimId}/inspections/{inspectionId}/cancel` with `{ "adjusterId": "ADJ-001" }`.
+- `GET /api/v1/fnol/{claimId}/inspections`: all inspections on the claim, oldest first.
+
+Each step is an audit event (`InspectionAssignment`, `InspectionReport`, `InspectionCancelled`); free-text reasons
+and findings are stored in the audit chain only as SHA-256 hashes. In this prototype the inspector reports with
+the adjuster token; production needs a separate inspector role.
 
 ## `GET /api/v1/fnol/{claimId}/audit` (token)
 The claim's audit events in chain order and whether the chain recomputes. `404` for an unknown claim.

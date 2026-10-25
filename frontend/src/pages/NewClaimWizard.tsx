@@ -3,11 +3,16 @@ import { Link, useNavigate } from 'react-router-dom';
 import { PageTitle } from '../components/Shell';
 import { Button, DetailView, MessageBar, Panel, Toolbar, channelLabel, money } from '../components/ui';
 import { demoScenarios, recentDate } from '../demoScenarios';
+import { HOME_ANGLES, anglesFor } from '../photoAngles';
 import { ApiError, apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
 import { FormData } from '../types';
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+/** Photos are downscaled in the browser so a full set stays small (phone photos are often 3-8 MB). */
+const MAX_PHOTO_EDGE = 1600;
+
+type Photo = { uri: string; name: string; preview: string };
 
 const STEPS = ['Policy', 'Claimant & Reporting', 'Loss Details', 'Review & Submit'];
 
@@ -25,20 +30,37 @@ const emptyForm: FormData = {
   claimedAmount: '',
 };
 
-/** Reads an uploaded damage photo as a data: URI, which the API sends to the vision model. */
+/**
+ * Reads an uploaded damage photo as a JPEG data: URI, downscaled to MAX_PHOTO_EDGE on the longer side.
+ * The API sends it to the vision model and stores it for the adjuster.
+ */
 function readPhoto(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
       reject(new Error('Photo must be a JPEG, PNG, WebP or GIF image'));
       return;
     }
-    if (file.size > MAX_PHOTO_BYTES) {
-      reject(new Error('Photo must be 5 MB or smaller'));
+    if (file.size > 20 * 1024 * 1024) {
+      reject(new Error('Photo must be 20 MB or smaller'));
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(new Error('Could not read the photo'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Could not read the photo'));
+      img.onload = () => {
+        const scale = Math.min(1, MAX_PHOTO_EDGE / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const uri = canvas.toDataURL('image/jpeg', 0.85);
+        if (uri.length * 0.75 > MAX_PHOTO_BYTES) reject(new Error('Photo is too large even after resizing'));
+        else resolve(uri);
+      };
+      img.src = String(reader.result);
+    };
     reader.readAsDataURL(file);
   });
 }
@@ -59,9 +81,10 @@ export default function NewClaimWizard() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(emptyForm);
-  const [evidenceUri, setEvidenceUri] = useState('');
-  const [photoName, setPhotoName] = useState('');
-  const [photoPreview, setPhotoPreview] = useState('');
+  const [photos, setPhotos] = useState<Record<string, Photo>>({});
+  const [photosUnavailable, setPhotosUnavailable] = useState(false);
+  const angles = anglesFor(form.policyNumber);
+  const missingAngles = angles.filter((a) => a.required && !photos[a.key]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [escalatedClaimId, setEscalatedClaimId] = useState('');
@@ -74,26 +97,36 @@ export default function NewClaimWizard() {
     const scenario = demoScenarios.find((s) => s.name === name);
     if (!scenario) return;
     setForm({ ...scenario.data, incidentDate: recentDate() });
-    setEvidenceUri(scenario.evidenceUri);
-    setPhotoName('');
-    setPhotoPreview('');
+    // Demo: a mock reference per standard angle (the keywords in the name drive the mock vision provider).
+    const demo: Record<string, Photo> = {};
+    anglesFor(scenario.data.policyNumber).filter((a) => a.required).forEach((a) => {
+      const uri = scenario.evidenceUri.replace(/\.jpg$/, `-${a.key.toLowerCase().replace('_', '-')}.jpg`);
+      demo[a.key] = { uri, name: uri.replace('mock://photo/', ''), preview: '' };
+    });
+    setPhotos(demo);
+    setPhotosUnavailable(false);
     setError('');
     setStepError('');
   };
 
-  const onPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onPhoto = (angle: string) => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     try {
       const uri = await readPhoto(file);
-      setEvidenceUri(uri);
-      setPhotoName(file.name);
-      setPhotoPreview(uri);
+      setPhotos((p) => ({ ...p, [angle]: { uri, name: file.name, preview: uri } }));
       setStepError('');
     } catch (err: any) {
       setStepError(err.message);
     }
   };
+
+  const removePhoto = (angle: string) => setPhotos((p) => {
+    const next = { ...p };
+    delete next[angle];
+    return next;
+  });
 
   const missing = (): string[] => {
     const req: [keyof FormData, string, number][] = [
@@ -103,6 +136,9 @@ export default function NewClaimWizard() {
     ];
     const m = req.filter(([k, , s]) => s === step && !String(form[k]).trim()).map(([, label]) => label);
     if (step === 2 && form.claimedAmount.trim() && !(Number(form.claimedAmount) >= 0)) m.push('Amount claimed (a number, 0 or more)');
+    if (step === 2 && missingAngles.length && !photosUnavailable) {
+      m.push(`Photos: ${missingAngles.map((a) => a.label).join(', ')} (or tick that they are not available)`);
+    }
     return m;
   };
 
@@ -125,7 +161,8 @@ export default function NewClaimWizard() {
         ...form,
         claimantPhone: form.claimantPhone || undefined,
         claimantEmail: form.claimantEmail || undefined,
-        evidenceUris: evidenceUri.trim() ? [evidenceUri.trim()] : [],
+        evidenceUris: angles.filter((a) => photos[a.key]).map((a) => photos[a.key].uri),
+        evidenceAngles: angles.filter((a) => photos[a.key]).map((a) => a.key),
         claimedAmount: form.claimedAmount.trim() ? Number(form.claimedAmount) : undefined,
       });
       claimStore.save(response);
@@ -255,20 +292,45 @@ export default function NewClaimWizard() {
                 <input type="number" min="0" step="1" name="claimedAmount" value={form.claimedAmount} onChange={set}
                   placeholder="Repair quote or the claimant's estimate" />
               </Field>
-              <Field label="Damage photo" wide>
-                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={onPhoto} />
-              </Field>
-              <Field label="…or evidence URI" wide>
-                <input value={photoName ? '' : evidenceUri} disabled={!!photoName}
-                  onChange={(e) => setEvidenceUri(e.target.value)}
-                  placeholder="mock://photo/normal.jpg (demo) or an allow-listed https URL" />
-              </Field>
             </div>
-            {photoPreview && (
-              <figure className="photo-preview">
-                <img src={photoPreview} alt="Uploaded damage" />
-                <figcaption>{photoName} <Button onClick={() => { setPhotoName(''); setPhotoPreview(''); setEvidenceUri(''); }}>Remove</Button></figcaption>
-              </figure>
+          </Panel>
+        )}
+
+        {step === 2 && (
+          <Panel title={`Photos (${Object.keys(photos).length} of ${angles.length})`}>
+            <p className="hint">
+              Insurers need every side of the {angles === HOME_ANGLES ? 'affected area' : 'vehicle'}, not only the damage:
+              it shows the full extent and any damage from earlier events. Photos are resized before upload.
+            </p>
+            <div className="angle-grid">
+              {angles.map((a) => {
+                const p = photos[a.key];
+                return (
+                  <div key={a.key} className={`angle-slot${p ? ' filled' : ''}`}>
+                    <div className="angle-head">
+                      <span><strong>{a.label}</strong>{a.required && <span className="required"> *</span>}</span>
+                      <span className="muted">{a.hint}</span>
+                    </div>
+                    {p?.preview ? <img src={p.preview} alt={`${a.label} photo`} />
+                      : p ? <div className="evidence-placeholder"><span>Demo reference</span><small>{p.name}</small></div>
+                      : <div className="angle-empty">No photo</div>}
+                    <div className="angle-actions">
+                      <label className="btn btn-secondary file-btn">
+                        {p ? 'Replace' : 'Add photo'}
+                        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" aria-label={`${a.label} photo`}
+                          onChange={onPhoto(a.key)} />
+                      </label>
+                      {p && <Button onClick={() => removePhoto(a.key)}>Remove</Button>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {missingAngles.length > 0 && (
+              <label className="field checkbox">
+                <input type="checkbox" checked={photosUnavailable} onChange={(e) => setPhotosUnavailable(e.target.checked)} />
+                <span>Some photos are not available (the claim goes to an adjuster, who will request them)</span>
+              </label>
             )}
           </Panel>
         )}
@@ -287,7 +349,10 @@ export default function NewClaimWizard() {
                   ['Date of birth', form.claimantDob ? 'Provided (redacted before analysis)' : ''],
                   ['SSN', form.claimantSsn ? 'Provided (redacted before analysis)' : ''],
                   ['Amount claimed', form.claimedAmount ? money(Number(form.claimedAmount)) : ''],
-                  ['Evidence', photoName || evidenceUri || 'None (the claim will be flagged MISSING EVIDENCE)'],
+                  ['Photos', Object.keys(photos).length
+                    ? `${Object.keys(photos).length}: ${angles.filter((a) => photos[a.key]).map((a) => a.label).join(', ')}`
+                      + (missingAngles.length ? ` (missing ${missingAngles.map((a) => a.label).join(', ')})` : '')
+                    : 'None (the claim will be flagged MISSING EVIDENCE)'],
                 ]}
               />
               <div className="review-description">
@@ -298,7 +363,7 @@ export default function NewClaimWizard() {
             <MessageBar tone="info" title="What happens on Finish">
               The AI analyses the claim and pre-populates a draft in ClaimCenter. It recommends; an adjuster decides.
               If the amount claimed is within what the photos support, the claimed amount (less the deductible) is
-              recommended; if it is higher, the claim goes to an adjuster to request more photos or investigate.
+              the recommended reserve; if it is higher, the claim goes to an adjuster to request more photos or investigate.
             </MessageBar>
           </>
         )}

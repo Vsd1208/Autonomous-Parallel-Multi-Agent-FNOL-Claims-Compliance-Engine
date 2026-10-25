@@ -31,6 +31,10 @@ public class ClaimDocumentEntity {
     @Column(length = 64)
     public String sha256;
 
+    /** Which view of the loss this photo shows: FRONT, REAR, LEFT, RIGHT, CLOSE_UP, ODOMETER_VIN, OVERVIEW or OTHER. */
+    @Column(length = 16)
+    public String angle;
+
     /** UPLOAD (bytes stored), URL (https reference) or MOCK (demo mock:// reference). */
     @Column(length = 16, nullable = false)
     public String source;

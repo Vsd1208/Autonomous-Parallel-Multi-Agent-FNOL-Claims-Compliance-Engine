@@ -10,10 +10,15 @@
     "claimantDob": "01/01/1990",
     "claimantSsn": "123-45-6789",
     "evidenceUris": [
-      "mock://photo/water-damage.jpg"
+      "mock://photo/water-damage-overview.jpg",
+      "mock://photo/water-damage-close-up.jpg"
     ],
     "channel": "API",
-    "claimedAmount": 3000
+    "claimedAmount": 3000,
+    "evidenceAngles": [
+      "OVERVIEW",
+      "CLOSE_UP"
+    ]
   },
   "expectedStatus": 200,
   "expectedClaimStatus": "PENDING_ADVISORY_REVIEW",

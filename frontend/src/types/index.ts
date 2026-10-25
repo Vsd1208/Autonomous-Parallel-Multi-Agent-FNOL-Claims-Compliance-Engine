@@ -173,9 +173,39 @@ export interface DashboardClaim {
   record?: ClaimRecord;
 }
 
+/** GET /inspectors */
+export interface Inspector {
+  inspectorId: string;
+  name: string;
+  specialty: string;
+  region: string;
+}
+
+/** A damage inspection (GET /fnol/{id}/inspections). */
+export interface Inspection {
+  inspectionId: string;
+  claimId: string;
+  inspectorId: string;
+  inspectorName: string;
+  inspectionType: 'FIELD' | 'DESK' | 'SHOP';
+  reason: string;
+  status: 'ASSIGNED' | 'COMPLETED' | 'CANCELLED';
+  assignedBy: string;
+  assignedAt: string;
+  dueBy: string;
+  completedAt: string | null;
+  accidentRelatedAmount: number | null;
+  priorDamageFound: boolean | null;
+  findings: string | null;
+  recommendation: string | null;
+  recommendedPayment: number | null;
+}
+
 /** Evidence on a claim (GET /fnol/{id}/documents). Only viewable documents have stored image bytes. */
 export interface ClaimDocument {
   documentId: string;
+  /** FRONT, REAR, LEFT, RIGHT, CLOSE_UP, ODOMETER_VIN, OVERVIEW or OTHER */
+  angle?: string | null;
   claimId: string;
   name: string;
   contentType: string | null;

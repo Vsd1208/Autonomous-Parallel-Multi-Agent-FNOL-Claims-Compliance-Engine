@@ -45,7 +45,11 @@ public class GeminiVisionProvider implements VisionProvider {
 
     private static final String DAMAGE_ASSESSMENT_PROMPT = """
             You are an automotive insurance damage assessor for Guidewire ClaimCenter.
-            Analyze this vehicle damage photo and respond ONLY with a valid JSON object in this exact format:
+            You receive one or more photos of the same vehicle, each labelled with its angle (FRONT, REAR, LEFT,
+            RIGHT, CLOSE_UP, ODOMETER_VIN, OTHER). Assess the damage from this incident across all of them: use the
+            close-up for severity and the side views for the extent. If damage is spread over several areas, the
+            damageType is MULTIPLE. Rate photoQuality by the photos that show the damage.
+            Respond ONLY with a valid JSON object in this exact format:
             {
               "damageType": "FRONT_BUMPER | REAR_BUMPER | WINDSHIELD | SIDE_PANEL | ROOF | MULTIPLE | UNKNOWN",
               "severity": "MINOR | MODERATE | SEVERE",
@@ -71,6 +75,10 @@ public class GeminiVisionProvider implements VisionProvider {
             - damageTypeProbabilities must sum to approximately 1.0 across all types.
             - Do NOT include any explanation, markdown, or text outside the JSON object.
             """;
+
+    /** Photos per Gemini request (the standard set is five) and their combined size (inline limit is 20 MB). */
+    static final int MAX_IMAGES = 6;
+    static final long MAX_TOTAL_BYTES = 15L * 1024 * 1024;
 
     @Value("${gemini.api-key:}")
     private String apiKey;
@@ -114,12 +122,27 @@ public class GeminiVisionProvider implements VisionProvider {
             return fallback("NO_IMAGE");
         }
 
-        String uri = uris.get(0);
-        ImageData image;
-        try {
-            image = evidenceLoader.load(uri);
-        } catch (EvidenceRejectedException e) {
-            log.warn("[GeminiVision] Evidence refused ({}): {}", EvidenceImageLoader.describe(uri), e.getMessage());
+        // Every usable photo, labelled with its angle, up to MAX_IMAGES and MAX_TOTAL_BYTES per request.
+        List<Map<String, Object>> imageParts = new java.util.ArrayList<>();
+        long totalBytes = 0;
+        for (int i = 0; i < uris.size() && imageParts.size() / 2 < MAX_IMAGES; i++) {
+            String uri = uris.get(i);
+            if (uri == null || uri.isBlank()) continue;
+            try {
+                ImageData image = evidenceLoader.load(uri);
+                long bytes = (long) image.base64().length() * 3 / 4;
+                if (totalBytes + bytes > MAX_TOTAL_BYTES) {
+                    log.warn("[GeminiVision] Photo {} skipped: the request would exceed {} bytes", i + 1, MAX_TOTAL_BYTES);
+                    continue;
+                }
+                totalBytes += bytes;
+                imageParts.add(Map.of("text", "Photo " + (i + 1) + " — angle: " + payload.angleOf(i)));
+                imageParts.add(Map.of("inline_data", Map.of("mime_type", image.mimeType(), "data", image.base64())));
+            } catch (EvidenceRejectedException e) {
+                log.warn("[GeminiVision] Evidence refused ({}): {}", EvidenceImageLoader.describe(uri), e.getMessage());
+            }
+        }
+        if (imageParts.isEmpty()) {
             return fallback("EVIDENCE_REJECTED");
         }
 
@@ -128,15 +151,14 @@ public class GeminiVisionProvider implements VisionProvider {
             return fallback("NO_API_KEY");
         }
 
-        log.info("[GeminiVision] Sending image to Gemini {} — source={}", model, EvidenceImageLoader.describe(uri));
+        log.info("[GeminiVision] Sending {} photo(s) to Gemini {} — source={}", imageParts.size() / 2, model,
+                EvidenceImageLoader.describe(uris.get(0)));
         try {
+            List<Map<String, Object>> parts = new java.util.ArrayList<>();
+            parts.add(Map.of("text", DAMAGE_ASSESSMENT_PROMPT));
+            parts.addAll(imageParts);
             Map<String, Object> requestBody = Map.of(
-                    "contents", List.of(Map.of(
-                            "parts", List.of(
-                                    Map.of("text", DAMAGE_ASSESSMENT_PROMPT),
-                                    Map.of("inline_data", Map.of("mime_type", image.mimeType(), "data", image.base64()))
-                            )
-                    )),
+                    "contents", List.of(Map.of("parts", parts)),
                     "generationConfig", generationConfig()
             );
 

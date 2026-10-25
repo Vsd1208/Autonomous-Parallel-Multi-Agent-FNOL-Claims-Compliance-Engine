@@ -10,10 +10,21 @@
     "claimantDob": "01/01/1990",
     "claimantSsn": "123-45-6789",
     "evidenceUris": [
-      "mock://photo/normal-rear-bumper.jpg"
+      "mock://photo/normal-rear-bumper-front.jpg",
+      "mock://photo/normal-rear-bumper-rear.jpg",
+      "mock://photo/normal-rear-bumper-left.jpg",
+      "mock://photo/normal-rear-bumper-right.jpg",
+      "mock://photo/normal-rear-bumper-close-up.jpg"
     ],
     "channel": "API",
-    "claimedAmount": 2500
+    "claimedAmount": 2500,
+    "evidenceAngles": [
+      "FRONT",
+      "REAR",
+      "LEFT",
+      "RIGHT",
+      "CLOSE_UP"
+    ]
   },
   "expectedStatus": 200,
   "expectedClaimStatus": "HUMAN_REVIEW",

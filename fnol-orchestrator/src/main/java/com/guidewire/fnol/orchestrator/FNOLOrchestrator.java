@@ -417,6 +417,11 @@ public class FNOLOrchestrator {
             notes.add("MISSING EVIDENCE: no photos or documents were submitted. Request evidence from the claimant "
                     + "before relying on the damage estimate.");
         }
+        if (inputFlags.contains(IntakeReviewService.INCOMPLETE_PHOTO_SET)) {
+            notes.add("INCOMPLETE PHOTO SET: missing " + String.join(", ",
+                    IntakeReviewService.missingPhotoAngles(payload, policyRecord))
+                    + ". Request the missing photos: every side shows the full extent and any earlier damage.");
+        }
         if (inputFlags.contains(IntakeReviewService.INCIDENT_OUTSIDE_POLICY_PERIOD)) {
             notes.add("INCIDENT OUTSIDE POLICY PERIOD: the incident date is not within the policy term. "
                     + "Confirm coverage dates before any decision.");
@@ -440,9 +445,9 @@ public class FNOLOrchestrator {
         }
         ReserveResult r = branchA.reserve();
         if (r.claimedAmount() != null && r.claimedAmount().compareTo(branchA.damageAssessment().estimatedDamage()) <= 0) {
-            notes.add("SETTLEMENT: the claimant asks $" + r.claimedAmount() + ", within the AI estimate of $"
+            notes.add("RESERVE: the claimant asks $" + r.claimedAmount() + ", within the AI estimate of $"
                     + branchA.damageAssessment().estimatedDamage() + "; the claimed amount is used, less the $"
-                    + r.deductible() + " deductible = $" + r.recommendedReserve() + ".");
+                    + r.deductible() + " deductible = reserve $" + r.recommendedReserve() + ".");
         }
         if (!"OK".equals(branchB.deadline().urgencyFlag())) {
             notes.add("DEADLINE " + branchB.deadline().urgencyFlag() + ": acknowledge by "

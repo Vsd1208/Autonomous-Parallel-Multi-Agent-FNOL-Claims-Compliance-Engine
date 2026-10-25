@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { apiClient } from '../services/apiClient';
 import { ClaimDocument } from '../types';
+import { angleLabel, angleRank } from '../photoAngles';
 import { Button, DetailView, dateTime } from './ui';
 
 /** Loads a protected evidence image (adjuster token) and shows it; frees the object URL on unmount. */
@@ -67,6 +68,7 @@ export function EvidenceViewer({ doc, onClose }: { doc: ClaimDocument; onClose: 
           <div className="viewer-image"><EvidenceImage doc={doc} /></div>
           <aside className="viewer-meta">
             <DetailView rows={[
+              ['View', angleLabel(doc.angle)],
               ['Source', doc.source === 'UPLOAD' ? 'Uploaded at intake' : doc.source === 'MOCK' ? 'Demo reference' : 'Linked URL'],
               ['Type', doc.contentType],
               ['Size', doc.sizeBytes != null ? `${(doc.sizeBytes / 1024).toFixed(1)} KB` : null],
@@ -82,18 +84,33 @@ export function EvidenceViewer({ doc, onClose }: { doc: ClaimDocument; onClose: 
   );
 }
 
+/** Which views of the standard set the claimant sent, and which are missing. */
+export function PhotoSetCheck({ docs, required }: { docs: ClaimDocument[]; required: { key: string; label: string }[] }) {
+  const have = new Set(docs.map((d) => d.angle));
+  return (
+    <ul className="photo-set">
+      {required.map((a) => (
+        <li key={a.key} className={have.has(a.key) ? 'ok' : 'missing'}>
+          {have.has(a.key) ? '✓' : '✕'} {a.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Thumbnail grid; clicking one opens the viewer. */
 export function EvidenceGallery({ docs, empty }: { docs: ClaimDocument[]; empty?: string }) {
   const [open, setOpen] = useState<ClaimDocument | null>(null);
   if (docs.length === 0) return <p className="muted">{empty ?? 'No evidence was submitted with this claim.'}</p>;
+  const ordered = [...docs].sort((a, b) => angleRank(a.angle) - angleRank(b.angle));
   return (
     <>
       <div className="evidence-grid">
-        {docs.map((d) => (
+        {ordered.map((d) => (
           <figure key={d.documentId} className="evidence-card">
             <EvidenceImage doc={d} className="evidence-thumb" onClick={() => setOpen(d)} />
             <figcaption>
-              <span className="evidence-name">{d.name}</span>
+              <span className="evidence-name" title={d.name}><strong>{angleLabel(d.angle)}</strong></span>
               <Button onClick={() => setOpen(d)}>View</Button>
             </figcaption>
           </figure>

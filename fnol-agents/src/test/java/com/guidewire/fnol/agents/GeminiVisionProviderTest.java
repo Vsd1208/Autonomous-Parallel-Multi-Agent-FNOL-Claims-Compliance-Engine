@@ -19,6 +19,7 @@ import java.io.ByteArrayInputStream;
 import java.net.InetAddress;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -163,6 +164,34 @@ class GeminiVisionProviderTest {
         assertThat(captor.getValue().getBody().toString())
                 .contains("responseMimeType=application/json")
                 .contains("thinkingBudget=0");
+    }
+
+    @Test
+    @DisplayName("Sends every usable photo in one request, each labelled with its angle; refused ones are skipped")
+    @SuppressWarnings("unchecked")
+    void assess_sendsAllPhotosLabelledByAngle() {
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(geminiResponse("MULTIPLE", "MODERATE", 5200, 0.88)));
+        FNOLPayload payload = new FNOLPayload("POL-AUTO-112233", LocalDate.of(2026, 8, 16), "CA", "Side swipe",
+                "Avery Johnson", "01/02/1980", "123-45-6789",
+                List.of("data:image/jpeg;base64,/9j/4AAQ", "https://example.com/rear.jpg", "file:///etc/passwd",
+                        "data:image/png;base64,iVBORw0KGgo="),
+                "WEB", null, null, null, List.of("FRONT", "REAR", "LEFT", "close_up"));
+
+        DamageAssessment result = provider.assess(payload);
+
+        ArgumentCaptor<HttpEntity> captor = ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).postForEntity(anyString(), captor.capture(), eq(String.class));
+        Map<String, Object> body = (Map<String, Object>) captor.getValue().getBody();
+        List<Map<String, Object>> parts = (List<Map<String, Object>>)
+                ((List<Map<String, Object>>) body.get("contents")).get(0).get("parts");
+        // prompt + (label, image) for FRONT, REAR and CLOSE_UP; the file: URI is refused and skipped
+        assertThat(parts).hasSize(7);
+        assertThat(parts.get(1).get("text")).isEqualTo("Photo 1 — angle: FRONT");
+        assertThat(parts.get(3).get("text")).isEqualTo("Photo 2 — angle: REAR");
+        assertThat(parts.get(5).get("text")).isEqualTo("Photo 4 — angle: CLOSE_UP");
+        assertThat(parts.stream().filter(p -> p.containsKey("inline_data"))).hasSize(3);
+        assertThat(result.damageType()).isEqualTo("MULTIPLE");
     }
 
     @ParameterizedTest

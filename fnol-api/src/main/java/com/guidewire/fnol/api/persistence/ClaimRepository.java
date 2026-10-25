@@ -52,6 +52,22 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, String> {
                     @Param("reviewedAt") Instant reviewedAt,
                     @Param("reviewable") Collection<String> reviewable);
 
+    /**
+     * Moves a claim to {@code to} only if it is still in one of {@code from} (one conditional UPDATE,
+     * so two concurrent requests cannot both move it).
+     *
+     * @return 1 if moved, 0 if the claim was not in one of {@code from}
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update ClaimEntity c set c.status = :to, c.updatedAt = :at
+             where c.claimId = :claimId and c.status in :from
+            """)
+    int moveStatus(@Param("claimId") String claimId,
+                   @Param("from") Collection<String> from,
+                   @Param("to") String to,
+                   @Param("at") Instant at);
+
     /** Adjuster queue: claims in the given statuses, oldest first. */
     Page<ClaimEntity> findByStatusInOrderByCreatedAtAsc(Collection<String> statuses, Pageable pageable);
 

@@ -4,6 +4,8 @@ import {
   AuditTrail,
   ClaimDocument,
   ClaimRecord,
+  Inspection,
+  Inspector,
   ClaimResult,
   ExplanationObject,
   FormData,
@@ -53,6 +55,7 @@ export const apiClient = {
     evidenceUris: string[];
     channel: FormData['channel'];
     claimedAmount?: number;
+    evidenceAngles?: string[];
   }) => request<ClaimResult>('/api/v1/fnol/intake', { method: 'POST', body: JSON.stringify(payload) }),
 
   getClaimStatus: (claimId: string) =>
@@ -95,6 +98,27 @@ export const apiClient = {
       { method: 'POST', body: JSON.stringify(payload) },
       true
     ),
+
+  getInspectors: () => request<Inspector[]>('/api/v1/inspectors', {}, true),
+
+  getInspections: (claimId: string) =>
+    request<Inspection[]>(`/api/v1/fnol/${encodeURIComponent(claimId)}/inspections`, {}, true),
+
+  assignInspection: (claimId: string, body: { inspectorId: string; inspectionType: string; reason: string; assignedBy: string }) =>
+    request<Inspection>(`/api/v1/fnol/${encodeURIComponent(claimId)}/inspections`,
+      { method: 'POST', body: JSON.stringify(body) }, true),
+
+  reportInspection: (claimId: string, inspectionId: string, body: {
+    inspectorId: string; accidentRelatedAmount: number; priorDamageFound: boolean; findings: string; recommendation: string;
+  }) =>
+    request<Inspection>(
+      `/api/v1/fnol/${encodeURIComponent(claimId)}/inspections/${encodeURIComponent(inspectionId)}/report`,
+      { method: 'POST', body: JSON.stringify(body) }, true),
+
+  cancelInspection: (claimId: string, inspectionId: string, adjusterId: string) =>
+    request<Inspection>(
+      `/api/v1/fnol/${encodeURIComponent(claimId)}/inspections/${encodeURIComponent(inspectionId)}/cancel`,
+      { method: 'POST', body: JSON.stringify({ adjusterId }) }, true),
 
   /** Pushes the recorded decision to ClaimCenter again after a failed sync. */
   retryClaimCenterSync: (claimId: string) =>

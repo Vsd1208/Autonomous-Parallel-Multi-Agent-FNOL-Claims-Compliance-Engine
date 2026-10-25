@@ -4,10 +4,12 @@ import { InfoBar, PageTitle, Sidebar, Workspace } from '../components/Shell';
 import {
   Button, DetailView, ListView, MessageBar, Panel, StatusChip, Toolbar, channelLabel, dateTime, humanize, money,
 } from '../components/ui';
-import { EvidenceGallery } from '../components/Evidence';
+import { EvidenceGallery, PhotoSetCheck } from '../components/Evidence';
+import { angleLabel, anglesFor } from '../photoAngles';
+import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionResult } from '../components/Inspection';
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
-import { AdjusterDecision, AuditTrail, ClaimDocument, DashboardClaim } from '../types';
+import { AdjusterDecision, AuditTrail, ClaimDocument, DashboardClaim, Inspection } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 
@@ -18,6 +20,7 @@ const SECTIONS = [
   ['compliance', 'Compliance'],
   ['financials', 'Financials'],
   ['documents', 'Documents'],
+  ['inspection', 'Inspection'],
   ['decision', 'Decision'],
   ['history', 'History'],
 ] as const;
@@ -39,6 +42,15 @@ export default function ClaimFile() {
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [docs, setDocs] = useState<ClaimDocument[]>([]);
+  const [inspections, setInspections] = useState<Inspection[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.getInspections(claimId).then((i) => !cancelled && setInspections(i)).catch(() => !cancelled && setInspections([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [claimId, reload]);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +120,8 @@ export default function ClaimFile() {
         end: true,
         badge: key === 'summary' && flagCount ? flagCount
           : key === 'documents' && docs.length ? docs.length
+          : key === 'inspection' && claim.status === 'INSPECTION_ASSIGNED' ? '!'
+          : key === 'inspection' && inspections.length ? inspections.length
           : key === 'decision' && REVIEWABLE.has(claim.status) ? '!' : undefined,
       }))}
     />
@@ -127,14 +141,15 @@ export default function ClaimFile() {
         ]}
       />
       <Workspace sidebar={sidebar}>
-        <SectionView section={section as Section} claim={claim} docs={docs} onChanged={() => setReload((n) => n + 1)} />
+        <SectionView section={section as Section} claim={claim} docs={docs} inspections={inspections}
+          onChanged={() => setReload((n) => n + 1)} />
       </Workspace>
     </>
   );
 }
 
-function SectionView({ section, claim, docs, onChanged }: {
-  section: Section; claim: DashboardClaim; docs: ClaimDocument[]; onChanged: () => void;
+function SectionView({ section, claim, docs, inspections, onChanged }: {
+  section: Section; claim: DashboardClaim; docs: ClaimDocument[]; inspections: Inspection[]; onChanged: () => void;
 }) {
   switch (section) {
     case 'summary': return <Summary claim={claim} docs={docs} onChanged={onChanged} />;
@@ -143,7 +158,8 @@ function SectionView({ section, claim, docs, onChanged }: {
     case 'compliance': return <Compliance claim={claim} />;
     case 'financials': return <Financials claim={claim} />;
     case 'documents': return <Documents docs={docs} />;
-    case 'decision': return <Decision claim={claim} onChanged={onChanged} />;
+    case 'inspection': return <InspectionSection claim={claim} inspections={inspections} onChanged={onChanged} />;
+    case 'decision': return <Decision claim={claim} inspections={inspections} onChanged={onChanged} />;
     case 'history': return <History claimId={claim.claimId} />;
   }
 }
@@ -162,6 +178,7 @@ const FLAG_TEXT: Record<string, string> = {
   CLAIMANT_NAME_MISMATCH: 'The claimant is not the named insured.',
   INCIDENT_OUTSIDE_POLICY_PERIOD: 'The loss date is outside the policy term.',
   INCIDENT_NEAR_POLICY_START: 'The loss happened within 30 days of the policy start.',
+  INCOMPLETE_PHOTO_SET: 'Not every side of the vehicle (or the damage close-up) was photographed.',
   HIGH_CLAIM_FREQUENCY: 'The policy has a high recent claim frequency.',
   SEVERITY_ESTIMATE_MISMATCH: 'The damage severity does not match the estimated amount.',
   RESERVE_EXCEEDS_COVERAGE_LIMIT: 'The loss after the deductible is above the coverage limit; the reserve is capped.',
@@ -255,7 +272,7 @@ function Summary({ claim, docs, onChanged }: { claim: DashboardClaim; docs: Clai
           ['Amount claimed', money(claim.branchA?.reserve.claimedAmount ?? r?.claimedAmount)],
           ['AI estimate (from photos)', money(claim.branchA?.damageAssessment.estimatedDamage ?? r?.estimatedDamage)],
           ['Deductible', money(claim.branchA?.reserve.deductible ?? r?.deductible)],
-          ['Recommended payment', money(claim.branchA?.reserve.recommendedReserve ?? r?.reserve)],
+          ['Recommended reserve', money(claim.branchA?.reserve.recommendedReserve ?? r?.reserve)],
           ['Adjuster reserve', r?.adjusterReserve != null ? money(r.adjusterReserve) : null],
           ['AI confidence', e?.factors.find((f) => f.factor === 'AI Confidence')?.value],
           ['Subrogation score', claim.branchB ? `${claim.branchB.subrogation.score} / 100` : null],
@@ -306,8 +323,10 @@ function Advisory({ claim }: { claim: DashboardClaim }) {
 
 function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocument[] }) {
   const a = claim.branchA;
+  const required = anglesFor(claim.record?.policyNumber ?? claim.branchA?.coverage.policyNumber ?? '').filter((x) => x.required);
   const photos = (
-    <Panel title="Damage Photo">
+    <Panel title={`Damage Photos (${docs.length})`}>
+      <PhotoSetCheck docs={docs} required={required} />
       <EvidenceGallery docs={docs} empty="No photo was submitted with this claim." />
     </Panel>
   );
@@ -398,7 +417,7 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
   );
 }
 
-/** How the recommended payment was reached: lower of claimed and AI estimate, less the deductible. */
+/** How the recommended reserve was reached: lower of claimed and AI estimate, less the deductible. */
 function SettlementPanel({ claim }: { claim: DashboardClaim }) {
   const r = claim.record;
   const res = claim.branchA?.reserve;
@@ -408,13 +427,13 @@ function SettlementPanel({ claim }: { claim: DashboardClaim }) {
   const basis = res?.settlementBasis ?? (claimed != null && estimate != null ? Math.min(claimed, estimate) : estimate);
   const over = claimed != null && estimate != null && claimed > estimate;
   return (
-    <Panel title="Settlement">
+    <Panel title="Reserve Calculation">
       <DetailView columns={2} rows={[
         ['Amount claimed', claimed != null ? money(claimed) : 'Not stated'],
         ['AI estimate (from photos)', money(estimate)],
         ['Basis (lower of the two)', money(basis)],
         ['Less deductible', deductible != null ? money(deductible) : null],
-        ['Recommended payment', <strong key="pay">{money(res?.recommendedReserve ?? r?.reserve)}</strong>],
+        ['Recommended reserve (amount owed)', <strong key="pay">{money(res?.recommendedReserve ?? r?.reserve)}</strong>],
         ['Rule', over ? 'Claimed more than the photos support: adjuster decides' : 'Within the AI estimate: claimed amount used'],
       ]} />
     </Panel>
@@ -426,7 +445,7 @@ function Financials({ claim }: { claim: DashboardClaim }) {
   const reserve = claim.branchA?.reserve;
   return (
     <>
-      <PageTitle title="Financials" subtitle="Reserves. No payments are made by the AI." />
+      <PageTitle title="Financials" subtitle="Reserves recommended at FNOL. Payments are made later in ClaimCenter, never by the AI." />
       <SettlementPanel claim={claim} />
       <Panel title="Reserve Lines" flush>
         <ListView head={['Line', 'Cost type', 'Amount claimed', 'AI estimate', 'AI recommended', 'Adjuster', 'Confidence']}>
@@ -461,9 +480,10 @@ function Documents({ docs }: { docs: ClaimDocument[] }) {
         <EvidenceGallery docs={docs} />
       </Panel>
       <Panel title="All Documents" flush>
-        <ListView head={['Name', 'Source', 'Type', 'Size', 'Received', 'SHA-256']} empty="No documents">
+        <ListView head={['View', 'Name', 'Source', 'Type', 'Size', 'Received', 'SHA-256']} empty="No documents">
           {docs.map((d) => (
             <tr key={d.documentId}>
+              <td>{angleLabel(d.angle)}</td>
               <td>{d.name}</td>
               <td>{d.source === 'UPLOAD' ? 'Uploaded' : d.source === 'MOCK' ? 'Demo reference' : 'Linked URL'}</td>
               <td>{d.contentType ?? '—'}</td>
@@ -478,30 +498,76 @@ function Documents({ docs }: { docs: ClaimDocument[] }) {
   );
 }
 
-function Decision({ claim, onChanged }: { claim: DashboardClaim; onChanged: () => void }) {
+/** Inspection: assign an inspector while the claim awaits a decision; the open assignment's report form; history. */
+function InspectionSection({ claim, inspections, onChanged }: {
+  claim: DashboardClaim; inspections: Inspection[]; onChanged: () => void;
+}) {
+  const open = inspections.find((i) => i.status === 'ASSIGNED');
+  const canAssign = REVIEWABLE.has(claim.status) && !claim.claimId.startsWith('REJ-');
+  return (
+    <>
+      <PageTitle title="Inspection" subtitle="An inspector confirms which damage this accident caused and what it costs to repair." />
+      {open && <InspectionReportForm claimId={claim.claimId} inspection={open} onChanged={onChanged} />}
+      {!open && canAssign && <AssignInspection claim={claim} onChanged={onChanged} />}
+      {!open && !canAssign && (
+        <MessageBar tone="info" title="An inspector can be assigned only while the claim awaits a decision" />
+      )}
+      <InspectionHistory inspections={inspections} />
+    </>
+  );
+}
+
+function Decision({ claim, inspections, onChanged }: {
+  claim: DashboardClaim; inspections: Inspection[]; onChanged: () => void;
+}) {
+  const navigate = useNavigate();
+  const latest = [...inspections].reverse().find((i) => i.status === 'COMPLETED');
+  const open = inspections.find((i) => i.status === 'ASSIGNED');
+  const claimed = claim.branchA?.reserve.claimedAmount ?? claim.record?.claimedAmount ?? null;
+  const estimate = claim.branchA?.damageAssessment.estimatedDamage ?? claim.record?.estimatedDamage ?? null;
+  const deductible = claim.branchA?.reserve.deductible ?? claim.record?.deductible ?? null;
+  const aiPayment = claim.branchA?.reserve.recommendedReserve ?? claim.record?.reserve ?? null;
+  // The inspector's figure, once reported, replaces the photo-based one as the recommendation.
+  const recommended = latest?.recommendedPayment ?? aiPayment;
+  const recommendedBy = latest?.recommendedPayment != null ? `inspection by ${latest.inspectorName}` : 'AI (photos)';
+
   const [adjusterId, setAdjusterId] = useState('ADJ-001');
   const [notes, setNotes] = useState('');
-  const [adjustedReserve, setAdjustedReserve] = useState('');
+  const [finalAmount, setFinalAmount] = useState(recommended != null ? String(recommended) : '');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
+
+  useEffect(() => {
+    setFinalAmount(recommended != null ? String(recommended) : '');
+    setReason('');
+  }, [recommended]);
+
   const reviewable = REVIEWABLE.has(claim.status);
-  const overrideIncomplete = !!adjustedReserve.trim() && !reason.trim();
-  const claimed = claim.branchA?.reserve.claimedAmount ?? claim.record?.claimedAmount ?? null;
-  const estimate = claim.branchA?.damageAssessment.estimatedDamage ?? claim.record?.estimatedDamage ?? null;
-  const aiPayment = claim.branchA?.reserve.recommendedReserve ?? claim.record?.reserve ?? null;
+  const final = finalAmount.trim() === '' ? null : Number(finalAmount);
+  const invalidAmount = final != null && !(final >= 0);
+  const changed = final != null && recommended != null && final !== Number(recommended);
+  const reasonMissing = changed && !reason.trim();
   const claimedOverEstimate = (claim.gateFlags ?? []).includes('CLAIMED_EXCEEDS_AI_ESTIMATE')
     || (claimed != null && estimate != null && claimed > estimate);
+  const blocked = busy || !reviewable || !adjusterId.trim() || invalidAmount || reasonMissing;
 
-  /** quickNote fills empty notes; aiFigure ignores a typed override (the option approves the AI's payment). */
-  const submit = async (decision: AdjusterDecision, quickNote?: string, aiFigure = false) => {
+  /**
+   * The final amount is sent as the adjuster's reserve whenever it differs from the AI's figure. Equal to the
+   * inspected recommendation, the inspection is the recorded reason; otherwise the adjuster's own reason.
+   */
+  const submit = async (decision: AdjusterDecision, quickNote?: string) => {
     setBusy(true);
     setError('');
     setSaved('');
     try {
-      const override = adjustedReserve.trim() && !aiFigure
-        ? { adjustedReserve: Number(adjustedReserve), overrideReason: reason.trim() } : {};
+      const differsFromAi = final != null && aiPayment != null && final !== Number(aiPayment);
+      const override = differsFromAi ? {
+        adjustedReserve: final!,
+        overrideReason: reason.trim()
+          || `Inspection by ${latest?.inspectorName}: accident-related damage ${money(latest?.accidentRelatedAmount)}`,
+      } : {};
       const text = notes.trim() || quickNote || '';
       const res = await apiClient.submitAdjusterReview(claim.claimId, { decision, adjusterId, notes: text, ...override });
       claimStore.updateStatus(claim.claimId, res.status);
@@ -518,51 +584,76 @@ function Decision({ claim, onChanged }: { claim: DashboardClaim; onChanged: () =
     <>
       <Toolbar>
         {DECISIONS.map(([d, label, variant]) => (
-          <Button key={d} variant={variant} disabled={busy || !reviewable || !adjusterId.trim() || overrideIncomplete}
-            onClick={() => submit(d)}>{label}</Button>
+          <Button key={d} variant={variant} disabled={blocked} onClick={() => submit(d)}>
+            {d === 'APPROVED_BY_ADJUSTER' && final != null ? `Approve (reserve ${money(final)})` : label}
+          </Button>
         ))}
       </Toolbar>
-      <PageTitle title="Decision" subtitle="Human Review: the adjuster has final authority." />
+      <PageTitle title="Decision" subtitle="Human Review Point 3: the adjuster has final authority, including the reserve sent to ClaimCenter." />
       {!reviewable && (
         <MessageBar tone="info" title={`This claim is ${humanize(claim.status).toLowerCase()}`}>
-          A final decision has been recorded or the claim cannot be reviewed.
+          {open ? 'It is waiting for the inspector. ' : ''}A decision can be recorded only while the claim awaits one.
         </MessageBar>
       )}
       {error && <MessageBar tone="error" title="Not saved">{error}</MessageBar>}
       {saved && <MessageBar tone="success" title={saved} />}
-      {overrideIncomplete && <MessageBar tone="warning" title="Give a reason for changing the AI reserve" />}
-      {reviewable && claimedOverEstimate && (
+      {open && (
+        <MessageBar tone="info" title={`Waiting for the inspection by ${open.inspectorName} (due ${open.dueBy})`}>
+          <a href="#" onClick={(ev) => { ev.preventDefault(); navigate(`/claim/${claim.claimId}/inspection`); }}>Open the inspection</a>
+        </MessageBar>
+      )}
+      {reviewable && claimedOverEstimate && !latest && (
         <MessageBar tone="warning" title={`Claimant asks ${money(claimed)}; the photos support ${money(estimate)}`}>
-          This is not approved automatically. Choose how to proceed:
+          Not approved automatically. Verify the extra amount before reserving it:
           <div className="option-row">
             <Button disabled={busy || !adjusterId.trim()} onClick={() => submit('NEEDS_MORE_INFO',
               `Requested more photos / a repair quote: claimed ${money(claimed)}, photos support ${money(estimate)}.`)}>
               Request more photos</Button>
+            <Button disabled={busy} onClick={() => navigate(`/claim/${claim.claimId}/inspection`)}>Assign inspector</Button>
             <Button disabled={busy || !adjusterId.trim()} onClick={() => submit('INVESTIGATION_REQUIRED',
               `Sent to investigation: claimed ${money(claimed)}, photos support ${money(estimate)}.`)}>
               Send to investigation</Button>
-            <Button variant="primary" disabled={busy || !adjusterId.trim()} onClick={() => submit('APPROVED_BY_ADJUSTER',
-              `Approved at the AI estimate ${money(estimate)} (claimed ${money(claimed)}); pays ${money(aiPayment)} after the deductible.`, true)}>
-              Approve at AI estimate ({money(aiPayment)})</Button>
           </div>
         </MessageBar>
       )}
+      {latest && (
+        <Panel title="Inspection Result">
+          <InspectionResult inspection={latest} />
+        </Panel>
+      )}
+      <Panel title="Reserve Recommendation">
+        <DetailView columns={2} rows={[
+          ['Amount claimed', claimed != null ? money(claimed) : 'Not stated'],
+          ['AI estimate (photos)', money(estimate)],
+          ['Inspected damage', latest ? money(latest.accidentRelatedAmount) : '—'],
+          ['Deductible', money(deductible)],
+          ['Recommended reserve', <span key="r"><strong>{money(recommended)}</strong> <span className="muted">({recommendedBy})</span></span>],
+        ]} />
+        <div className="form-grid">
+          <label className="field">
+            <span className="field-label">Final reserve ($)<span className="required"> *</span></span>
+            <input type="number" min="0" step="1" value={finalAmount} disabled={!reviewable}
+              onChange={(e) => setFinalAmount(e.target.value)} />
+          </label>
+          <label className="field wide">
+            <span className="field-label">Reason for a different reserve{changed && <span className="required"> *</span>}</span>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} disabled={!reviewable || !changed}
+              placeholder={changed ? `Why ${money(final)} instead of ${money(recommended)} (e.g. body shop invoice)` : 'Only needed if you change the amount'} />
+          </label>
+        </div>
+        {changed && (
+          <MessageBar tone={reasonMissing ? 'warning' : 'info'}
+            title={`You are changing the reserve from ${money(recommended)} to ${money(final)}`}>
+            {reasonMissing ? 'Give a reason; it is recorded in the audit history.' : 'The reason is recorded in the audit history.'}
+            {claimed != null && final != null && final > claimed && ' This is more than the claimant asked for.'}
+          </MessageBar>
+        )}
+      </Panel>
       <Panel title="Adjuster Review">
         <div className="form-grid">
           <label className="field">
             <span className="field-label">Adjuster ID<span className="required"> *</span></span>
             <input value={adjusterId} onChange={(e) => setAdjusterId(e.target.value)} disabled={!reviewable} />
-          </label>
-          <label className="field">
-            <span className="field-label">Adjusted reserve</span>
-            <input type="number" min="0" step="1" value={adjustedReserve} disabled={!reviewable}
-              onChange={(e) => setAdjustedReserve(e.target.value)}
-              placeholder={claim.branchA ? String(claim.branchA.reserve.recommendedReserve) : 'AI reserve'} />
-          </label>
-          <label className="field wide">
-            <span className="field-label">Reason for changing the AI finding</span>
-            <input value={reason} onChange={(e) => setReason(e.target.value)} disabled={!reviewable}
-              placeholder="Required when the reserve is adjusted" />
           </label>
           <label className="field wide">
             <span className="field-label">Decision notes</span>
@@ -576,9 +667,9 @@ function Decision({ claim, onChanged }: { claim: DashboardClaim; onChanged: () =
           <DetailView rows={[
             ['Decision', <StatusChip value={claim.record.adjusterDecision} />],
             ['Adjuster', claim.record.adjusterId],
-            ['Adjusted reserve', claim.record.adjusterReserve != null
-              ? `${money(claim.record.adjusterReserve)} (AI recommended ${money(claim.record.reserve)})` : null],
-            ['Override reason', claim.record.overrideReason],
+            ['Final reserve', claim.record.adjusterReserve != null
+              ? `${money(claim.record.adjusterReserve)} (AI recommended ${money(claim.record.reserve)})` : money(claim.record.reserve)],
+            ['Reason', claim.record.overrideReason],
             ['Notes', claim.record.adjusterNotes],
             ['Reviewed', dateTime(claim.record.reviewedAt)],
           ]} />

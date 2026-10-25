@@ -21,7 +21,9 @@ public final class Models {
             String channel,         // intake source: WEB | MOBILE | PHONE | API (optional)
             String claimantPhone,   // optional; PII — never persisted or logged
             String claimantEmail,   // optional; PII — never persisted or logged
-            @PositiveOrZero BigDecimal claimedAmount  // what the claimant asks for; optional for API clients
+            @PositiveOrZero BigDecimal claimedAmount, // what the claimant asks for; optional for API clients
+            List<String> evidenceAngles               // optional, one per evidence URI: FRONT, REAR, LEFT, RIGHT,
+                                                      // CLOSE_UP, ODOMETER_VIN, OVERVIEW (home), OTHER
     ) {
         /** Payload without claimant contact details or a claimed amount. */
         public FNOLPayload(String policyNumber, LocalDate incidentDate, String state, String description,
@@ -37,6 +39,24 @@ public final class Models {
                            List<String> evidenceUris, String channel, String claimantPhone, String claimantEmail) {
             this(policyNumber, incidentDate, state, description, claimantName, claimantDob, claimantSsn,
                     evidenceUris, channel, claimantPhone, claimantEmail, null);
+        }
+
+        /** Payload without photo angles. */
+        public FNOLPayload(String policyNumber, LocalDate incidentDate, String state, String description,
+                           String claimantName, String claimantDob, String claimantSsn,
+                           List<String> evidenceUris, String channel, String claimantPhone, String claimantEmail,
+                           BigDecimal claimedAmount) {
+            this(policyNumber, incidentDate, state, description, claimantName, claimantDob, claimantSsn,
+                    evidenceUris, channel, claimantPhone, claimantEmail, claimedAmount, null);
+        }
+
+        /** The angle of evidence item {@code index} (upper case), or OTHER when not given. */
+        public String angleOf(int index) {
+            if (evidenceAngles == null || index >= evidenceAngles.size() || evidenceAngles.get(index) == null
+                    || evidenceAngles.get(index).isBlank()) {
+                return "OTHER";
+            }
+            return evidenceAngles.get(index).trim().toUpperCase(java.util.Locale.ROOT);
         }
     }
 

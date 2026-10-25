@@ -16,6 +16,11 @@ const VIEWS: Record<string, { label: string; statuses: string[]; hint: string }>
     statuses: ['PENDING_ADVISORY_REVIEW'],
     hint: 'STP-eligible claims waiting for an adjuster to confirm the AI advisory.',
   },
+  inspection: {
+    label: 'Awaiting Inspection',
+    statuses: ['INSPECTION_ASSIGNED'],
+    hint: 'Claims waiting for an inspector to confirm the accident-related damage.',
+  },
   blocked: {
     label: 'Blocked (Compliance)',
     statuses: ['BLOCKED_COMPLIANCE'],

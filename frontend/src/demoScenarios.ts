@@ -12,7 +12,7 @@ const insured = {
 
 /**
  * Mirrors demo-scenarios/*.json. The mock AI estimate is $4,200 for vehicle photos, so "Clean STP" claims
- * less than that (paid as claimed, less the deductible) and "Claim Above Estimate" claims more (adjuster decides). The mock:// photo keywords drive MockVisionProvider
+ * less than that (reserved as claimed, less the deductible) and "Claim Above Estimate" claims more (adjuster decides). The mock:// photo keywords drive MockVisionProvider
  * (GEMINI_VISION_ENABLED=false); with Gemini enabled, upload a real photo instead.
  */
 export const demoScenarios: Scenario[] = [

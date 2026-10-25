@@ -69,16 +69,20 @@ final class OrchestratorFixture {
     /** A clean payload: no PII in the description, a mock photo, the insured as claimant. */
     static FNOLPayload payload(String policyNumber, String claimantName, String description) {
         return new FNOLPayload(policyNumber, LocalDate.now().minusDays(2), "CA", description,
-                claimantName, "01/02/1980", "123-45-6789",
-                List.of("mock://photo/front-bumper.jpg"), "WEB");
+                claimantName, "01/02/1980", "123-45-6789", FULL_SET, "WEB", null, null, null, FULL_SET_ANGLES);
     }
+
+    /** The standard photo set (every side plus a close-up), as mock references. */
+    static final List<String> FULL_SET_ANGLES = List.of("FRONT", "REAR", "LEFT", "RIGHT", "CLOSE_UP");
+    static final List<String> FULL_SET = FULL_SET_ANGLES.stream()
+            .map(a -> "mock://photo/front-bumper-" + a.toLowerCase() + ".jpg").toList();
 
     /** Same claim, with the amount the claimant asks for. */
     static FNOLPayload payload(String policyNumber, String claimantName, String description, String claimedAmount) {
         FNOLPayload p = payload(policyNumber, claimantName, description);
         return new FNOLPayload(p.policyNumber(), p.incidentDate(), p.state(), p.description(), p.claimantName(),
                 p.claimantDob(), p.claimantSsn(), p.evidenceUris(), p.channel(), null, null,
-                new java.math.BigDecimal(claimedAmount));
+                new java.math.BigDecimal(claimedAmount), p.evidenceAngles());
     }
 
     static final class StubPolicyCenter implements PolicyCenterClient {

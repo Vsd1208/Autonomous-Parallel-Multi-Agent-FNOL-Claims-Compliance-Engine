@@ -148,7 +148,7 @@ public class FNOLController {
             throw e;
         }
         // Keep the photos the AI assessed so the adjuster can see them (best effort, audited).
-        evidence.store(claimId, payload.evidenceUris());
+        evidence.store(claimId, payload);
         return response;
     }
 
