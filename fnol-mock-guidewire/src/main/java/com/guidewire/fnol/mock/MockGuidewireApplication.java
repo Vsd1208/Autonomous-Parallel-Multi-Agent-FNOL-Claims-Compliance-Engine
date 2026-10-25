@@ -1,6 +1,8 @@
 package com.guidewire.fnol.mock;
 
 import com.guidewire.fnol.common.Models.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -9,10 +11,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @SpringBootApplication
@@ -55,17 +55,22 @@ class PolicyCenterController {
 
 @RestController
 class ClaimCenterController {
+    private static final Logger log = LoggerFactory.getLogger(ClaimCenterController.class);
+
+    private final ClaimCenterStore store;
     private final AtomicInteger sequence;
-    private final Map<String, Claim> claims = new ConcurrentHashMap<>();
-    private final Map<String, List<ClaimAttachment>> attachments = new ConcurrentHashMap<>();
-    private final Map<String, List<ClaimReviewAction>> reviewActions = new ConcurrentHashMap<>();
 
     /**
-     * The counter is in memory, so a restart would reissue IDs that the FNOL database already holds.
-     * Set MOCK_CC_START_SEQUENCE above the highest issued number to continue after a restart.
+     * Claims live in the database, so they survive a restart like in a real ClaimCenter, and numbering continues
+     * after the highest stored claim. MOCK_CC_START_SEQUENCE only raises the first number (e.g. for an empty
+     * in-memory database while the FNOL database already holds claims).
      */
-    ClaimCenterController(@Value("${MOCK_CC_START_SEQUENCE:1}") int startSequence) {
-        this.sequence = new AtomicInteger(startSequence);
+    ClaimCenterController(ClaimCenterStore store, @Value("${MOCK_CC_START_SEQUENCE:1}") int startSequence) {
+        this.store = store;
+        int highest = store.highestClaimNumber();
+        this.sequence = new AtomicInteger(Math.max(startSequence, highest + 1));
+        log.info("[MockCC] {} stored claim number(s) up to {}; next is {}", highest > 0 ? "Found" : "No",
+                highest, sequence.get());
     }
 
     @PostMapping("/cc/claims")
@@ -76,49 +81,33 @@ class ClaimCenterController {
         String id = "CLM-2026-%06d".formatted(sequence.getAndIncrement());
         // The FNOL engine pre-populates a draft until a human decides; OPEN enters the standard claim process.
         String status = request.initialStatus() != null ? request.initialStatus() : "OPEN";
-        claims.put(id, new Claim(id, status, request.policyNumber(), request.incidentDate(), request.state(),
-                request.estimatedDamage(), request.reserve()));
+        store.insert(id, status, request);
         return new ClaimCreateResponse(id, status);
     }
 
     @GetMapping("/cc/claims/{claimId}")
     Claim get(@PathVariable("claimId") String claimId) {
-        Claim c = Optional.ofNullable(claims.get(claimId))
+        return store.find(claimId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Synthetic claim not found"));
-        return new Claim(c.claimId(), c.status(), c.policyNumber(), c.incidentDate(), c.state(),
-                c.estimatedDamage(), c.reserve(), c.notes(), List.copyOf(attachmentsOf(claimId)),
-                List.copyOf(reviewActions.getOrDefault(claimId, List.of())));
     }
 
     /** Applies a status/notes/reserve change and tracks it as a review action. */
     @PutMapping("/cc/claims/{claimId}")
     Claim update(@PathVariable("claimId") String claimId, @RequestBody ClaimUpdateRequest request) {
-        Claim updated = claims.computeIfPresent(claimId, (id, c) -> new Claim(id,
-                request.status() != null ? request.status() : c.status(),
-                c.policyNumber(), c.incidentDate(), c.state(), c.estimatedDamage(),
-                request.adjustedReserve() != null ? request.adjustedReserve() : c.reserve(),
-                request.notes(), List.of(), List.of()));
-        if (updated == null) {
+        if (!store.update(claimId, request)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Synthetic claim not found");
         }
-        reviewActions.computeIfAbsent(claimId, id -> Collections.synchronizedList(new ArrayList<>()))
-                .add(new ClaimReviewAction(Instant.now(), request.action(), updated.status(), request.adjusterId(),
-                        request.notes(), request.adjustedReserve()));
         return get(claimId);
     }
 
     @PostMapping("/cc/claims/{claimId}/attachments")
     @ResponseStatus(HttpStatus.CREATED)
     ClaimAttachment attach(@PathVariable("claimId") String claimId, @RequestBody ClaimAttachment attachment) {
-        if (!claims.containsKey(claimId)) {
+        if (!store.exists(claimId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Synthetic claim not found");
         }
-        attachmentsOf(claimId).add(attachment);
+        store.attach(claimId, attachment);
         return attachment;
-    }
-
-    private List<ClaimAttachment> attachmentsOf(String claimId) {
-        return attachments.computeIfAbsent(claimId, id -> Collections.synchronizedList(new ArrayList<>()));
     }
 }
 

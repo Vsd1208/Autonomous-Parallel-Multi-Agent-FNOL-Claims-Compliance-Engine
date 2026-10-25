@@ -12,7 +12,8 @@
     "evidenceUris": [
       "mock://photo/normal-front-bumper.jpg"
     ],
-    "channel": "API"
+    "channel": "API",
+    "claimedAmount": 3000
   },
   "expectedStatus": 200,
   "expectedClaimStatus": "PENDING_ADVISORY_REVIEW",

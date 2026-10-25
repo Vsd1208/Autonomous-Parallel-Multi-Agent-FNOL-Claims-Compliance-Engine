@@ -35,10 +35,13 @@ public class ExplanationBuilder {
 
         // Factor 1: AI Confidence
         boolean aiConfidencePassed = damage.confidence().compareTo(stp.getConfidence()) >= 0;
+        boolean calibrated = damage.rawConfidence() != null;
         factors.add(new ExplanationFactor("AI Confidence",
-                String.format("%.2f", damage.confidence()),
+                String.format("%.2f", damage.confidence())
+                        + (calibrated ? String.format(" (model said %.2f)", damage.rawConfidence()) : ""),
                 status(aiConfidencePassed),
-                "Vision confidence must be >= " + stp.getConfidence()));
+                "Vision confidence must be >= " + stp.getConfidence()
+                        + (calibrated ? "; calibrated against labelled damage photos" : "")));
 
         // Factor 2: Coverage Status
         factors.add(new ExplanationFactor("Coverage Status",

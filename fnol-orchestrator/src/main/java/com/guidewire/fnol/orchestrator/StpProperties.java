@@ -31,6 +31,11 @@ public class StpProperties {
      * PENDING_ADVISORY_REVIEW until an adjuster confirms it. When false it is STRAIGHT_THROUGH_PROCESSING.
      */
     private boolean requireAdvisoryReview = true;
+    /**
+     * How far the claimed amount may exceed the AI estimate before the claim goes to an adjuster
+     * (0.10 = 10%). Within it, the AI estimate is still the most that is reserved automatically.
+     */
+    private BigDecimal claimedAmountTolerance = new BigDecimal("0.10");
 
     public BigDecimal getConfidence() { return confidence; }
     public void setConfidence(BigDecimal confidence) { this.confidence = confidence; }
@@ -49,6 +54,9 @@ public class StpProperties {
 
     public BigDecimal getPiiRedactionConfidence() { return piiRedactionConfidence; }
     public void setPiiRedactionConfidence(BigDecimal piiRedactionConfidence) { this.piiRedactionConfidence = piiRedactionConfidence; }
+
+    public BigDecimal getClaimedAmountTolerance() { return claimedAmountTolerance; }
+    public void setClaimedAmountTolerance(BigDecimal claimedAmountTolerance) { this.claimedAmountTolerance = claimedAmountTolerance; }
 
     public boolean isRequireAdvisoryReview() { return requireAdvisoryReview; }
     public void setRequireAdvisoryReview(boolean requireAdvisoryReview) { this.requireAdvisoryReview = requireAdvisoryReview; }

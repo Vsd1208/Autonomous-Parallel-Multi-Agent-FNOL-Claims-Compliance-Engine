@@ -51,7 +51,8 @@ class FNOLOrchestratorTest {
         assertThat(branchA.damageAssessment().severity()).isEqualTo("MODERATE");
         assertThat(branchA.coverage().covered()).isTrue();
         assertThat(branchA.coverage().coverageType()).isEqualTo("COLLISION");
-        assertThat(branchA.reserve().recommendedReserve()).isEqualByComparingTo("4830");
+        // $4,200 AI estimate − $1,000 deductible: the reserve is what the insurer owes, never above the estimate.
+        assertThat(branchA.reserve().recommendedReserve()).isEqualByComparingTo("3200");
 
         BranchBResult branchB = response.branchB();
         assertThat(branchB.pii().piiDetected()).isTrue();
@@ -270,9 +271,46 @@ class FNOLOrchestratorTest {
                 OrchestratorFixture.payload("POL-AUTO-778899", "Avery Johnson", "Scraped a pole in a parking garage."));
 
         assertThat(response.gateFlags()).containsExactly(GateConsistencyChecker.RESERVE_EXCEEDS_COVERAGE_LIMIT);
+        assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("3000");   // capped at the limit
         assertThat(response.explanation().factors()).allMatch(f -> "PASS".equals(f.status()));
         assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
         assertThat(response.notes()).anyMatch(n -> n.startsWith("CONSISTENCY CHECK RESERVE_EXCEEDS_COVERAGE_LIMIT"));
+    }
+
+    @Test
+    @DisplayName("Settlement: a claim below the AI estimate is STP-eligible and pays the claimed amount less the deductible")
+    void process_claimBelowEstimatePaysClaimedAmount() {
+        FNOLResponse response = orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000"));
+
+        assertThat(response.gateFlags()).isEmpty();
+        assertThat(response.status()).isEqualTo("PENDING_ADVISORY_REVIEW");
+        assertThat(response.branchA().reserve().settlementBasis()).isEqualByComparingTo("3000");
+        assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("2000");
+        assertThat(fixture.claimCenter.created.get(0).reserve()).isEqualByComparingTo("2000");
+        assertThat(response.notes()).anyMatch(n -> n.startsWith("SETTLEMENT: the claimant asks $3000"));
+    }
+
+    @Test
+    @DisplayName("Settlement: a claim above the AI estimate is never auto-approved; it goes to an adjuster with options")
+    void process_claimAboveEstimateGoesToAdjuster() {
+        FNOLResponse response = orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "9000"));
+
+        assertThat(response.gateFlags()).containsExactly(GateConsistencyChecker.CLAIMED_EXCEEDS_AI_ESTIMATE);
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("3200");
+        assertThat(response.notes()).anyMatch(n -> n.contains("request more photos, send to investigation"));
+    }
+
+    @Test
+    @DisplayName("Settlement: up to 10% above the AI estimate is tolerated, but only the AI estimate is reserved")
+    void process_claimWithinToleranceIsReservedAtEstimate() {
+        FNOLResponse response = orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "4500"));
+
+        assertThat(response.gateFlags()).isEmpty();
+        assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("3200");
     }
 
     @Test

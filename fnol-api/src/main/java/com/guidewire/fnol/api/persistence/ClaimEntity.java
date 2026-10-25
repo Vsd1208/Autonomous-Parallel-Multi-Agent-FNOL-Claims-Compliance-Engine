@@ -18,7 +18,12 @@ public class ClaimEntity {
   public LocalDate incidentDate;
   public String state;
   public BigDecimal estimatedDamage;
+  /** Recommended payment: min(claimed, AI estimate) − deductible, capped at the coverage limit. */
   public BigDecimal reserve;
+  /** What the claimant asked for (null when not stated). */
+  public BigDecimal claimedAmount;
+  /** Policy deductible applied to the reserve. */
+  public BigDecimal deductible;
   public String adjusterDecision;
   public String adjusterId;
   @Column(length = 2000)
@@ -73,6 +78,8 @@ public class ClaimEntity {
     e.state          = p.state();
     e.estimatedDamage = r.branchA().damageAssessment().estimatedDamage();
     e.reserve        = r.branchA().reserve().recommendedReserve();
+    e.claimedAmount  = p.claimedAmount();
+    e.deductible     = r.branchA().reserve().deductible();
     e.channel        = p.channel();
     e.severityGate   = r.severityGate();
     e.inputFlags     = r.inputFlags() == null || r.inputFlags().isEmpty() ? null : String.join(",", r.inputFlags());

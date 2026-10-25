@@ -9,6 +9,9 @@ services:
     ports:
       # host port is configurable in case 5432 is already in use; the API connects over the compose network
       - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      # FNOL claims, audit chain and evidence, plus the mock ClaimCenter (schema "claimcenter")
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fnol -d fnol"]
       interval: 5s
@@ -25,8 +28,15 @@ services:
       MOCK_GW_TIMEOUT: "${MOCK_GW_TIMEOUT:-false}"
       # true delays PolicyCenter coverages (Branch A) by 12 s (trips the 3 s read timeout inside the branch)
       MOCK_PC_TIMEOUT: "${MOCK_PC_TIMEOUT:-false}"
-      # first ClaimCenter claim number; raise it after a restart so IDs do not collide with stored claims
+      # lowest first ClaimCenter claim number; numbering otherwise continues after the highest stored claim
       MOCK_CC_START_SEQUENCE: "${MOCK_CC_START_SEQUENCE:-1}"
+      # Mock ClaimCenter claims live in Postgres (schema "claimcenter"), so restarts keep them
+      MOCK_CC_DB_URL: jdbc:postgresql://postgres:5432/fnol
+      MOCK_CC_DB_USERNAME: fnol
+      MOCK_CC_DB_PASSWORD: fnol
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "9090:9090"
     healthcheck:
@@ -54,10 +64,11 @@ services:
       FNOL_STP_REQUIRE_ADVISORY_REVIEW: "${FNOL_STP_REQUIRE_ADVISORY_REVIEW:-true}"
       # Empty token = adjuster endpoints (review, audit, explanation, queue) reject every request.
       FNOL_ADJUSTER_TOKEN: "${FNOL_ADJUSTER_TOKEN:-}"
-      FNOL_CORS_ALLOWED_ORIGINS: "${FNOL_CORS_ALLOWED_ORIGINS:-http://localhost:5173}"
+      FNOL_CORS_ALLOWED_ORIGINS: "${FNOL_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
       FNOL_EVIDENCE_ALLOWED_HOSTS: "${FNOL_EVIDENCE_ALLOWED_HOSTS:-}"
     ports:
-      - "8080:8080"
+      # Override API_HOST_PORT when another server (e.g. Apache) already uses 8080 on the host.
+      - "${API_HOST_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,10 +87,13 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        VITE_API_BASE_URL: http://localhost:8080
+        VITE_API_BASE_URL: "http://localhost:${API_HOST_PORT:-8080}"
         VITE_ADJUSTER_TOKEN: "${FNOL_ADJUSTER_TOKEN:-}"
     ports:
       - "5173:5173"
     depends_on:
       fnol-api:
         condition: service_healthy
+
+volumes:
+  postgres_data:

@@ -36,7 +36,7 @@ Policy terms start six months before today and run for a year, so the data never
 |---|---|
 | `MOCK_GW_TIMEOUT=true` | `POST /cc/claims` waits 11 s (trips the API's 3 s read timeout after the fan-out) |
 | `MOCK_PC_TIMEOUT=true` | `GET /pc/policies/{id}/coverages` waits 12 s (trips the 3 s read timeout inside Branch A) |
-| `MOCK_CC_START_SEQUENCE=N` | First claim number issued; the counter is in memory, so raise it after a restart to avoid reissuing stored IDs (the API refuses a reused ID with 409 `CLAIM_ID_CONFLICT`) |
+| `MOCK_CC_START_SEQUENCE=N` | Lowest first claim number. Claims are stored in the database (`MOCK_CC_DB_URL`; Postgres schema `claimcenter` under Compose), so numbering continues after the highest stored claim and a restart neither loses claims nor reissues IDs |
 
 ## Adapter Abstraction Architecture
 

@@ -12,7 +12,8 @@
     "evidenceUris": [
       "mock://photo/normal-damage.jpg"
     ],
-    "channel": "API"
+    "channel": "API",
+    "claimedAmount": 3500
   },
   "expectedStatus": 422,
   "expectedError": "COMPLIANCE_BLOCK"

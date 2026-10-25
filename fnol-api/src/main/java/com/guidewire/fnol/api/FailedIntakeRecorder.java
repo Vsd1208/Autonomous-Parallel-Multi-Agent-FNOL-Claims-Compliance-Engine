@@ -32,13 +32,15 @@ public class FailedIntakeRecorder {
     private final AuditService auditService;
     private final AuditTrailAgent auditAgent;
     private final PiiRedactionAgent redaction;
+    private final EvidenceStore evidence;
 
     public FailedIntakeRecorder(ClaimRepository claims, AuditService auditService,
-                                AuditTrailAgent auditAgent, PiiRedactionAgent redaction) {
+                                AuditTrailAgent auditAgent, PiiRedactionAgent redaction, EvidenceStore evidence) {
         this.claims = claims;
         this.auditService = auditService;
         this.auditAgent = auditAgent;
         this.redaction = redaction;
+        this.evidence = evidence;
     }
 
     /**
@@ -56,6 +58,7 @@ public class FailedIntakeRecorder {
             e.state = payload.state();
             e.estimatedDamage = BigDecimal.ZERO;
             e.reserve = BigDecimal.ZERO;
+            e.claimedAmount = payload.claimedAmount();
             e.channel = payload.channel();
             e.failureReason = truncate(reason, 500);
             e.ccSyncStatus = "NOT_FILED";
@@ -67,6 +70,8 @@ public class FailedIntakeRecorder {
             auditService.append(claimId,
                     List.of(auditAgent.record(claimId, "Intake", sanitized, reason, errorCode)),
                     AuditService.SYSTEM_ACTOR);
+            // The adjuster handling the failed intake needs the photos too.
+            evidence.store(claimId, payload.evidenceUris());
 
             log.warn("[FNOL] Intake failed ({}); saved as {} with status {} for human attention — policy={}",
                     errorCode, claimId, status, payload.policyNumber());

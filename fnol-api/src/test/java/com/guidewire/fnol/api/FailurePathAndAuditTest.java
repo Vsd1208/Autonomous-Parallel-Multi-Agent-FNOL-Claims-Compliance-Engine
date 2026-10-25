@@ -142,7 +142,8 @@ class FailurePathAndAuditTest {
 
         JsonNode trail = getAudit(claimId);
         assertThat(trail.path("chainValid").asBoolean()).isTrue();
-        assertThat(trail.path("records")).hasSize(7);
+        assertThat(trail.path("records")).hasSize(8);   // 7 pipeline events + the stored evidence reference
+        assertThat(trail.path("records").get(7).path("agentName").asText()).isEqualTo("EvidenceStore");
         assertThat(trail.path("records").get(0).path("seq").asInt()).isEqualTo(1);
         assertThat(trail.path("records").get(6).path("agentName").asText()).isEqualTo("ReconciliationGate");
 
@@ -198,8 +199,8 @@ class FailurePathAndAuditTest {
 
     private void assertIntakeAudit(String claimId, String errorCode) {
         List<AuditEntity> events = audits.findByClaimIdOrderBySeqAscTimestampAsc(claimId);
-        assertThat(events).hasSize(1);
-        assertThat(events.get(0).agentName).isEqualTo("Intake");
+        // The failed intake, then the evidence kept for the adjuster (a mock:// reference here).
+        assertThat(events).extracting(e -> e.agentName).containsExactly("Intake", "EvidenceStore");
         assertThat(events.get(0).status).isEqualTo(errorCode);
         assertThat(events.get(0).chainHash).hasSize(64);
     }

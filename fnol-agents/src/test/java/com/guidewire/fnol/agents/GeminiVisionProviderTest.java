@@ -159,6 +159,10 @@ class GeminiVisionProviderTest {
         assertThat(url.getValue()).contains("gemini-2.5-flash").doesNotContain("key=").doesNotContain("test-api-key");
         assertThat(captor.getValue().getHeaders().getFirst("x-goog-api-key")).isEqualTo("test-api-key");
         assertThat(captor.getValue().getBody().toString()).contains("damage assessor");
+        // JSON-only output with thinking off, so the call stays well inside the read timeout.
+        assertThat(captor.getValue().getBody().toString())
+                .contains("responseMimeType=application/json")
+                .contains("thinkingBudget=0");
     }
 
     @ParameterizedTest

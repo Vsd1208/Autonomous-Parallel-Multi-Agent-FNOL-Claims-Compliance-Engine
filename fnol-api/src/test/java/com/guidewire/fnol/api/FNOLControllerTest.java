@@ -76,7 +76,10 @@ class FNOLControllerTest {
                 "01/02/1980",
                 "123-45-6789",
                 List.of("mock://photo/evidence.jpg"),
-                "WEB"
+                "WEB",
+                null,
+                null,
+                new BigDecimal("3000")
         );
 
         mockMvc.perform(post("/api/v1/fnol/intake")
@@ -86,7 +89,9 @@ class FNOLControllerTest {
                 .andExpect(jsonPath("$.claimId").value("CLM-2026-000001"))
                 .andExpect(jsonPath("$.status").value("HUMAN_REVIEW"))
                 .andExpect(jsonPath("$.branchA.coverage.covered").value(true))
-                .andExpect(jsonPath("$.branchA.reserve.recommendedReserve").value(4830))
+                // Claimed $3,000 < AI $4,200: pay the claimed amount less the $1,000 deductible
+                .andExpect(jsonPath("$.branchA.reserve.claimedAmount").value(3000))
+                .andExpect(jsonPath("$.branchA.reserve.recommendedReserve").value(2000))
                 .andExpect(jsonPath("$.branchB.pii.piiDetected").value(true))
                 .andExpect(jsonPath("$.branchB.deadline.state").value("CA"))
                 .andExpect(jsonPath("$.branchB.subrogation.score").isNumber())
@@ -105,7 +110,10 @@ class FNOLControllerTest {
         mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000001"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.claimId").value("CLM-2026-000001"))
-                .andExpect(jsonPath("$.policyNumber").value("POL-AUTO-112233"));
+                .andExpect(jsonPath("$.policyNumber").value("POL-AUTO-112233"))
+                .andExpect(jsonPath("$.claimedAmount").value(3000))
+                .andExpect(jsonPath("$.deductible").value(1000))
+                .andExpect(jsonPath("$.reserve").value(2000));
 
         AdjusterReviewRequest review = new AdjusterReviewRequest(
                 "APPROVED_BY_ADJUSTER",

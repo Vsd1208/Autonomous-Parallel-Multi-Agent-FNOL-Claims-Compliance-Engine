@@ -2,6 +2,7 @@ import {
   AdjusterReviewRequest,
   AdjusterReviewResponse,
   AuditTrail,
+  ClaimDocument,
   ClaimRecord,
   ClaimResult,
   ExplanationObject,
@@ -51,6 +52,7 @@ export const apiClient = {
     claimantEmail?: string;
     evidenceUris: string[];
     channel: FormData['channel'];
+    claimedAmount?: number;
   }) => request<ClaimResult>('/api/v1/fnol/intake', { method: 'POST', body: JSON.stringify(payload) }),
 
   getClaimStatus: (claimId: string) =>
@@ -61,6 +63,24 @@ export const apiClient = {
 
   getAuditTrail: (claimId: string) =>
     request<AuditTrail>(`/api/v1/fnol/${encodeURIComponent(claimId)}/audit`, {}, true),
+
+  getDocuments: (claimId: string) =>
+    request<ClaimDocument[]>(`/api/v1/fnol/${encodeURIComponent(claimId)}/documents`, {}, true),
+
+  /**
+   * Fetches a stored evidence image with the adjuster token and returns an object URL for <img>.
+   * The caller must URL.revokeObjectURL it when done.
+   */
+  getDocumentImageUrl: async (claimId: string, documentId: string) => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/fnol/${encodeURIComponent(claimId)}/documents/${encodeURIComponent(documentId)}/content`,
+      { headers: { 'X-Adjuster-Token': ADJUSTER_TOKEN } }
+    );
+    if (!response.ok) {
+      throw new ApiError(`Image unavailable: HTTP ${response.status}`, response.status);
+    }
+    return URL.createObjectURL(await response.blob());
+  },
 
   getQueue: (statuses: string[], page = 0, size = 20) =>
     request<QueuePage>(
@@ -73,6 +93,14 @@ export const apiClient = {
     request<AdjusterReviewResponse>(
       `/api/v1/fnol/${encodeURIComponent(claimId)}/review`,
       { method: 'POST', body: JSON.stringify(payload) },
+      true
+    ),
+
+  /** Pushes the recorded decision to ClaimCenter again after a failed sync. */
+  retryClaimCenterSync: (claimId: string) =>
+    request<{ claimId: string; ccSyncStatus: string }>(
+      `/api/v1/fnol/${encodeURIComponent(claimId)}/claimcenter-sync`,
+      { method: 'POST' },
       true
     ),
 

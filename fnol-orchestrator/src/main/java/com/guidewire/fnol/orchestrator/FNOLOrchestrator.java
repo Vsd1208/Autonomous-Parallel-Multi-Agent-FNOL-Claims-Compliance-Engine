@@ -270,8 +270,8 @@ public class FNOLOrchestrator {
         validation.requireCovered(coverage);    // hard stop: no uncovered claim proceeds
         log.debug("[Branch A] Coverage verified — type={}, covered={}", coverage.coverageType(), coverage.covered());
 
-        // Step A3: Reserve calculation (BigDecimal: damage × 1.15 ULAE factor)
-        ReserveResult res = reserve.execute(damage);
+        // Step A3: Reserve = what the insurer owes: min(claimed, AI estimate) − deductible, capped at the limit
+        ReserveResult res = reserve.calculate(damage, coverage, payload.claimedAmount());
         log.debug("[Branch A — Operational AI] Completed — reserve={}", res.recommendedReserve());
 
         return new BranchAResult(damage, coverage, res);
@@ -426,13 +426,23 @@ public class FNOLOrchestrator {
                 case GateConsistencyChecker.SEVERITY_ESTIMATE_MISMATCH ->
                         "the damage severity label does not match the estimated amount; verify the estimate.";
                 case GateConsistencyChecker.RESERVE_EXCEEDS_COVERAGE_LIMIT ->
-                        "the recommended reserve is above the coverage limit; confirm exposure before reserving.";
+                        "the loss after the deductible is above the coverage limit; the reserve is capped at the limit.";
+                case GateConsistencyChecker.CLAIMED_EXCEEDS_AI_ESTIMATE ->
+                        "the claimant asks $" + branchA.reserve().claimedAmount() + " but the photos support $"
+                                + branchA.damageAssessment().estimatedDamage() + "; request more photos, send to "
+                                + "investigation, or approve at the AI estimate. Not approved automatically.";
                 case GateConsistencyChecker.DAMAGE_TYPE_LINE_MISMATCH ->
                         "the damage type does not fit the policy's line of business; confirm the right policy and photos.";
                 case GateConsistencyChecker.CONFIDENCE_PHOTO_QUALITY_MISMATCH ->
                         "high AI confidence was reported for a poor-quality photo; do not rely on the estimate alone.";
                 default -> "review before any decision.";
             });
+        }
+        ReserveResult r = branchA.reserve();
+        if (r.claimedAmount() != null && r.claimedAmount().compareTo(branchA.damageAssessment().estimatedDamage()) <= 0) {
+            notes.add("SETTLEMENT: the claimant asks $" + r.claimedAmount() + ", within the AI estimate of $"
+                    + branchA.damageAssessment().estimatedDamage() + "; the claimed amount is used, less the $"
+                    + r.deductible() + " deductible = $" + r.recommendedReserve() + ".");
         }
         if (!"OK".equals(branchB.deadline().urgencyFlag())) {
             notes.add("DEADLINE " + branchB.deadline().urgencyFlag() + ": acknowledge by "

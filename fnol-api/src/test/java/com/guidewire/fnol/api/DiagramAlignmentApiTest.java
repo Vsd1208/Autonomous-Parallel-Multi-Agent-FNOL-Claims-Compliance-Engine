@@ -139,7 +139,7 @@ class DiagramAlignmentApiTest {
         assertThat(saved.status).isEqualTo("HUMAN_REVIEW");
         assertThat(saved.failureReason).isEqualTo("ClaimCenter rejected the claim payload");
         assertThat(audits.findByClaimIdOrderBySeqAscTimestampAsc(saved.claimId))
-                .extracting(a -> a.agentName).containsExactly("Intake");
+                .extracting(a -> a.agentName).containsExactly("Intake", "EvidenceStore");
     }
 
     // ── Duplicate check: require human verification ────────────────────────────────

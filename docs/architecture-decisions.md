@@ -88,7 +88,7 @@
 - **Decision**:
   - `ReserveResult.confidence` = vision confidence × photo-quality weight (CLEAR 1.00, PARTIAL 0.85, BLURRY 0.70, UNUSABLE 0.50, unknown 0.80).
   - Subrogation runs in Branch B as a liability assessment with compliance notes (`SubrogationScorer.assessLiability`); the gate adds Branch A's severity (`applySeverity`). Branch B stays independent of Branch A.
-  - `GateConsistencyChecker` flags `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH` and `CONFIDENCE_PHOTO_QUALITY_MISMATCH`. Gate flags block STP like intake flags.
+  - `GateConsistencyChecker` flags `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH` and `CLAIMED_EXCEEDS_AI_ESTIMATE`. Gate flags block STP like intake flags.
   - ClaimCenter claims are pre-populated as `DRAFT_PENDING_REVIEW` and move to `OPEN` (approved), `DENIED`, `PENDING_INFORMATION`, `UNDER_INVESTIGATION` or `CLOSED` when an adjuster decides; every decision is tracked as a review action. Only STP with advisory review switched off is created `OPEN`.
   - Adjusters can set `adjustedReserve` (with a required `overrideReason`) and choose `INVESTIGATION_REQUIRED`.
   - Every processing failure except invalid input (400) is saved as a `REJ-` claim for human review.

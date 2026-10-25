@@ -55,12 +55,15 @@ class AgentTests {
         assertThat(assess.apply("mock://photo/blurry.jpg").confidence()).isEqualByComparingTo("0.61");
         assertThat(assess.apply("mock://photo/severe.jpg").estimatedDamage()).isEqualByComparingTo("24000");
         assertThat(assess.apply("mock://photo/water.jpg").damageType()).isEqualTo("WATER_DAMAGE");
+        // An uploaded photo whose base64 happens to contain a keyword is not treated as one.
+        assertThat(assess.apply("data:image/png;base64,AAslowAAwaterAAsevereAAblurryAA").damageType()).isEqualTo("FRONT_BUMPER");
+        assertThat(assess.apply("data:image/png;base64,AAslowAAwaterAAsevereAAblurryAA").confidence()).isEqualByComparingTo("0.91");
         assertThat(provider.assess(new FNOLPayload("POL-AUTO-112233", LocalDate.now(), "CA", "loss",
                 null, null, null, List.of(), null)).confidence()).isEqualByComparingTo("0.60");
     }
 
     @Test
-    @DisplayName("ReserveCalculatorAgent computes reserve = estimatedDamage * 1.15 using BigDecimal")
+    @DisplayName("ReserveCalculatorAgent never reserves more than the AI estimate (no loading)")
     void reserveCalculatorAgent_computesCorrectReserve() {
         ReserveCalculatorAgent agent = new ReserveCalculatorAgent();
 
@@ -68,8 +71,8 @@ class AgentTests {
         ReserveResult result = agent.execute(assessment);
 
         assertThat(result.estimatedDamage()).isEqualByComparingTo("4200");
-        assertThat(result.factor()).isEqualByComparingTo("1.15");
-        assertThat(result.recommendedReserve()).isEqualByComparingTo("4830");
+        assertThat(result.factor()).isEqualByComparingTo("1");
+        assertThat(result.recommendedReserve()).isEqualByComparingTo("4200");
     }
 
     @Test

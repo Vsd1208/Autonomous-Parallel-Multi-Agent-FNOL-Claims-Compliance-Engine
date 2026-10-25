@@ -17,8 +17,10 @@ public class GateConsistencyChecker {
 
     /** Vision's severity label disagrees with its own estimate (bands from the vision prompt). */
     public static final String SEVERITY_ESTIMATE_MISMATCH = "SEVERITY_ESTIMATE_MISMATCH";
-    /** The recommended reserve is above the matched coverage limit. */
+    /** The loss after the deductible is above the matched coverage limit (the reserve is capped at the limit). */
     public static final String RESERVE_EXCEEDS_COVERAGE_LIMIT = "RESERVE_EXCEEDS_COVERAGE_LIMIT";
+    /** The claimant asks for more than the photos support; never paid without an adjuster. */
+    public static final String CLAIMED_EXCEEDS_AI_ESTIMATE = "CLAIMED_EXCEEDS_AI_ESTIMATE";
     /** The damage type does not fit the policy's line of business (e.g. a bumper on a home policy). */
     public static final String DAMAGE_TYPE_LINE_MISMATCH = "DAMAGE_TYPE_LINE_MISMATCH";
     /** High vision confidence reported for a photo it rated blurry or unusable. */
@@ -47,10 +49,19 @@ public class GateConsistencyChecker {
             flags.add(SEVERITY_ESTIMATE_MISMATCH);
         }
 
+        ReserveResult reserve = branchA.reserve();
         BigDecimal limit = branchA.coverage().coverageLimit();
+        BigDecimal deductible = reserve.deductible() == null ? BigDecimal.ZERO : reserve.deductible();
+        BigDecimal basis = reserve.settlementBasis() == null ? reserve.recommendedReserve() : reserve.settlementBasis();
         if (branchA.coverage().covered() && limit != null && limit.signum() > 0
-                && branchA.reserve().recommendedReserve().compareTo(limit) > 0) {
+                && basis.subtract(deductible).compareTo(limit) > 0) {
             flags.add(RESERVE_EXCEEDS_COVERAGE_LIMIT);
+        }
+
+        // More than the AI estimate plus the tolerance: the claimant must support it (photos, investigation).
+        BigDecimal allowed = damage.estimatedDamage().multiply(BigDecimal.ONE.add(stp.getClaimedAmountTolerance()));
+        if (reserve.claimedAmount() != null && reserve.claimedAmount().compareTo(allowed) > 0) {
+            flags.add(CLAIMED_EXCEEDS_AI_ESTIMATE);
         }
 
         String line = policy.policyType();

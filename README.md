@@ -37,7 +37,8 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs
 | Parallel branches on a bounded executor, one deadline, interrupting cancel | Done |
 | Vision: Gemini provider with SSRF-safe evidence loading; deterministic mock provider | Done |
 | Coverage by line of business (AUTO, HOME) | Done (synthetic rules) |
-| Reserve (damage × 1.15, BigDecimal) with confidence score | Done |
+| Recommended payment: min(amount claimed, AI estimate) − deductible, capped at the limit (BigDecimal), with confidence score | Done |
+| Claims above the AI estimate never auto-approved: adjuster can request more photos, investigate or approve at the AI estimate | Done |
 | PII redaction (SSN, DOB, MRN, name, phone, email) + PII guardrail | Done |
 | Statutory deadlines: acknowledge-by, decide-by, urgency flag | Done (synthetic rules) |
 | Subrogation: Branch B liability assessment with compliance notes, finalised with Branch A's severity | Done |
@@ -62,7 +63,7 @@ fnol-enrichment/      PolicyCenter/ClaimCenter clients, ClaimHistoryEnricher
 fnol-agents/          Agents, vision providers, EvidenceImageLoader, rule providers
 fnol-guardrails/      Input, output, PII and coverage guardrails
 fnol-orchestrator/    FNOLOrchestrator, IntakeReviewService, ExplanationBuilder, STP settings
-fnol-api/             REST API, security filters, audit chain, persistence, Flyway V1–V7, PDF
+fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V8, PDF
 frontend/             React + Vite console: intake, claim dashboard, queue, audit trail
 demo-scenarios/       Seven scenario payloads, run-all.sh, duplicate script
 postman/              Request collection
@@ -82,7 +83,7 @@ Severity from estimated damage: **LOW** ≤ $5,000, **MEDIUM** ≤ $20,000, **HI
 | Claim History | Claim frequency risk LOW or MEDIUM |
 | Subrogation Risk | Score < 70 |
 
-A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
+A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `CLAIMED_EXCEEDS_AI_ESTIMATE`; the last is raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
 
 ## API
 
@@ -94,6 +95,8 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 | POST | `/api/v1/fnol/intake` | Submit an FNOL and receive the full analysis |
 | GET | `/api/v1/fnol/status/{claimId}` | Saved claim row (status, decision, flags, failure reason, sync status) |
 | GET 🔒 | `/api/v1/fnol/{claimId}/explanation` | Saved WHY panel |
+| GET 🔒 | `/api/v1/fnol/{claimId}/documents` | Evidence on the claim (photos and references) |
+| GET 🔒 | `/api/v1/fnol/{claimId}/documents/{documentId}/content` | The stored photo |
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit` | Audit events in chain order + `chainValid` |
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit/pdf` | PDF audit report |
 | POST 🔒 | `/api/v1/fnol/{claimId}/review` | Record an adjuster decision (approve, reject, more info, investigation, close), optionally adjusting the reserve |
@@ -164,11 +167,19 @@ Run with mock vision (`.env.demo`). `run-all.sh` substitutes a fresh incident da
 | `GEMINI_VISION_ENABLED` | `true` | `false` = deterministic mock vision |
 | `GEMINI_VISION_MODEL` | `gemini-2.5-flash` | Model name |
 | `GEMINI_VISION_READ_TIMEOUT_SECONDS` | `8` | Gemini read timeout (below the orchestrator deadline) |
+| `GEMINI_VISION_THINKING_BUDGET` | `0` | Gemini 2.5 thinking tokens; 0 keeps calls fast |
+| `GEMINI_VISION_CALIBRATION_ENABLED` | `true` | Apply the trained confidence calibration when one matches the model |
 | `MOCK_GW_TIMEOUT` | `false` | Mock ClaimCenter create waits 11 s |
 | `MOCK_PC_TIMEOUT` | `false` | Mock PolicyCenter coverages wait 12 s |
-| `MOCK_CC_START_SEQUENCE` | `1` | First mock ClaimCenter claim number (raise after a mock restart) |
+| `MOCK_CC_START_SEQUENCE` | `1` | Lowest first mock ClaimCenter claim number; numbering otherwise continues after the highest stored claim |
+| `MOCK_CC_DB_URL` | in-memory H2 | Mock ClaimCenter database; Compose uses Postgres (schema `claimcenter`), so its claims survive restarts |
+| `API_HOST_PORT` | `8080` | Host port for the API (use e.g. `8081` if another server already uses 8080) |
 | `POSTGRES_HOST_PORT` | `5432` | Host port for the compose Postgres |
 | `VITE_API_BASE_URL` | `http://localhost:8080` | API address for the console |
+
+## Vision evaluation
+
+`tools/vision-eval/` measures Gemini's damage-zone accuracy on a public-domain (CC0) labelled car-damage dataset and trains a calibration map for its confidence score. See [tools/vision-eval/README.md](tools/vision-eval/README.md).
 
 ## Known limits
 

@@ -1,0 +1,21 @@
+{
+  "scenario": "claim_above_estimate",
+  "description": "Same clean claim, but the claimant asks $9,000 while the photo supports $4,200. Never approved automatically: HUMAN_REVIEW with CLAIMED_EXCEEDS_AI_ESTIMATE, and the adjuster can request more photos, investigate, or approve at the AI estimate.",
+  "payload": {
+    "policyNumber": "POL-AUTO-112233",
+    "incidentDate": "2026-09-20",
+    "state": "CA",
+    "description": "Vehicle involved in a minor collision. Front bumper damaged.",
+    "claimantName": "Avery Johnson",
+    "claimantDob": "01/01/1990",
+    "claimantSsn": "123-45-6789",
+    "evidenceUris": [
+      "mock://photo/normal-front-bumper.jpg"
+    ],
+    "channel": "API",
+    "claimedAmount": 9000
+  },
+  "expectedStatus": 200,
+  "expectedClaimStatus": "HUMAN_REVIEW",
+  "expectedDecision": "ADVISORY_RECOMMENDED_ACTION"
+}

@@ -1,2 +1,14 @@
 server:
   port: ${SERVER_PORT:9090}
+
+# Mock ClaimCenter storage. Docker Compose points this at Postgres (schema "claimcenter");
+# run on its own, it uses a private in-memory H2 database that is lost on exit.
+spring:
+  datasource:
+    url: ${MOCK_CC_DB_URL:jdbc:h2:mem:claimcenter-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1}
+    username: ${MOCK_CC_DB_USERNAME:sa}
+    password: ${MOCK_CC_DB_PASSWORD:}
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:claimcenter-schema.sql

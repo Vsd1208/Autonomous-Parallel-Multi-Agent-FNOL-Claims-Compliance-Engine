@@ -12,7 +12,8 @@
     "evidenceUris": [
       "mock://photo/slow-damage.jpg"
     ],
-    "channel": "API"
+    "channel": "API",
+    "claimedAmount": 3500
   },
   "expectedStatus": 504,
   "expectedError": "PROCESSING_TIMEOUT"

@@ -8,6 +8,7 @@ import com.guidewire.fnol.common.Models.DamageAssessment;
 import com.guidewire.fnol.common.Models.FNOLPayload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -77,16 +78,32 @@ public class GeminiVisionProvider implements VisionProvider {
     @Value("${gemini.vision.model:gemini-2.5-flash}")
     private String model;
 
+    /**
+     * Gemini 2.5 "thinking" tokens. 0 (default) turns thinking off: the structured damage JSON does not
+     * need it, and thinking can push a call past the read timeout, which forces the fallback assessment.
+     */
+    @Value("${gemini.vision.thinking-budget:0}")
+    private int thinkingBudget;
+
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final EvidenceImageLoader evidenceLoader;
+    private final VisionConfidenceCalibrator calibrator;
 
+    @Autowired
     public GeminiVisionProvider(@Qualifier(GeminiVisionConfig.GEMINI_REST_TEMPLATE) RestTemplate restTemplate,
                                 ObjectMapper objectMapper,
-                                EvidenceImageLoader evidenceLoader) {
+                                EvidenceImageLoader evidenceLoader,
+                                VisionConfidenceCalibrator calibrator) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
         this.evidenceLoader = evidenceLoader;
+        this.calibrator = calibrator;
+    }
+
+    /** Without confidence calibration (Gemini's confidence is used as reported). */
+    public GeminiVisionProvider(RestTemplate restTemplate, ObjectMapper objectMapper, EvidenceImageLoader evidenceLoader) {
+        this(restTemplate, objectMapper, evidenceLoader, VisionConfidenceCalibrator.none());
     }
 
     @Override
@@ -119,7 +136,8 @@ public class GeminiVisionProvider implements VisionProvider {
                                     Map.of("text", DAMAGE_ASSESSMENT_PROMPT),
                                     Map.of("inline_data", Map.of("mime_type", image.mimeType(), "data", image.base64()))
                             )
-                    ))
+                    )),
+                    "generationConfig", generationConfig()
             );
 
             HttpHeaders headers = new HttpHeaders();
@@ -137,6 +155,17 @@ public class GeminiVisionProvider implements VisionProvider {
             log.error("[GeminiVision] Unexpected error during vision assessment — using fallback. Cause: {}", e.getMessage());
             return fallback("PARSE_ERROR");
         }
+    }
+
+    /** JSON-only output; thinking budget only for 2.5 models (older models reject thinkingConfig). */
+    private Map<String, Object> generationConfig() {
+        Map<String, Object> config = new java.util.LinkedHashMap<>();
+        config.put("responseMimeType", "application/json");
+        config.put("temperature", 0);
+        if (model != null && model.contains("2.5")) {
+            config.put("thinkingConfig", Map.of("thinkingBudget", thinkingBudget));
+        }
+        return config;
     }
 
     /**
@@ -174,16 +203,21 @@ public class GeminiVisionProvider implements VisionProvider {
             );
         }
 
-        log.info("[GeminiVision] Assessment — type={}, severity={}, estimate={}, confidence={}, photoQuality={}",
-                damageType, severity, estimatedDamage, confidence, photoQuality);
+        // Gemini's confidence is self-reported; when a calibration map is active, replace it with the share
+        // of answers that were actually right at that confidence on labelled photos (tools/vision-eval).
+        BigDecimal raw = BigDecimal.valueOf(confidence);
+        BigDecimal calibrated = calibrator.calibrate(raw, probabilities);
+        log.info("[GeminiVision] Assessment — type={}, severity={}, estimate={}, confidence={} (raw {}), photoQuality={}",
+                damageType, severity, estimatedDamage, calibrated, raw, photoQuality);
 
         return new DamageAssessment(
                 damageType,
                 severity,
                 new BigDecimal(estimatedDamage),
-                BigDecimal.valueOf(confidence),
+                calibrated,
                 photoQuality,
-                probabilities
+                probabilities,
+                calibrator.isActive() ? raw : null
         );
     }
 

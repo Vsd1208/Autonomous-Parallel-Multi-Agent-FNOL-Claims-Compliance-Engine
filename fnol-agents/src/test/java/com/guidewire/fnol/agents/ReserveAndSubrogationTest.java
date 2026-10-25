@@ -30,13 +30,53 @@ class ReserveAndSubrogationTest {
         ReserveCalculatorAgent agent = new ReserveCalculatorAgent();
 
         ReserveResult clear = agent.execute(damage("MODERATE", "0.91", "CLEAR"));
-        assertThat(clear.recommendedReserve()).isEqualByComparingTo("4830");
+        assertThat(clear.recommendedReserve()).isEqualByComparingTo("4200");
         assertThat(clear.confidence()).isEqualByComparingTo("0.91");
         assertThat(clear.confidenceBasis()).contains("CLEAR");
 
         assertThat(agent.execute(damage("MODERATE", "0.90", "BLURRY")).confidence()).isEqualByComparingTo("0.63");
         assertThat(agent.execute(damage("MODERATE", "0.60", "UNUSABLE")).confidence()).isEqualByComparingTo("0.30");
         assertThat(agent.execute(damage("MODERATE", "0.90", "UNKNOWN")).confidence()).isEqualByComparingTo("0.72");
+    }
+
+    private static PolicyValidationResult coverage(String limit, String deductible) {
+        return new PolicyValidationResult("POL-AUTO-112233", true, true, true, true, "COLLISION",
+                new BigDecimal(limit), new BigDecimal(deductible), List.of());
+    }
+
+    @Test
+    @DisplayName("Claimed amount below the AI estimate: pay the claimed amount less the deductible")
+    void claimedBelowEstimateUsesClaimedAmount() {
+        ReserveResult r = new ReserveCalculatorAgent().calculate(damage("MODERATE", "0.91", "CLEAR"),
+                coverage("50000", "1000"), new BigDecimal("3000"));
+
+        assertThat(r.settlementBasis()).isEqualByComparingTo("3000");
+        assertThat(r.deductible()).isEqualByComparingTo("1000");
+        assertThat(r.recommendedReserve()).isEqualByComparingTo("2000");
+    }
+
+    @Test
+    @DisplayName("Claimed amount above the AI estimate: reserve only what the photos support, less the deductible")
+    void claimedAboveEstimateUsesAiEstimate() {
+        ReserveResult r = new ReserveCalculatorAgent().calculate(damage("MODERATE", "0.91", "CLEAR"),
+                coverage("50000", "1000"), new BigDecimal("9000"));
+
+        assertThat(r.claimedAmount()).isEqualByComparingTo("9000");
+        assertThat(r.settlementBasis()).isEqualByComparingTo("4200");
+        assertThat(r.recommendedReserve()).isEqualByComparingTo("3200");
+    }
+
+    @Test
+    @DisplayName("The reserve is never negative (loss below the deductible) and never above the coverage limit")
+    void reserveIsBoundedByDeductibleAndLimit() {
+        ReserveCalculatorAgent agent = new ReserveCalculatorAgent();
+
+        assertThat(agent.calculate(damage("MINOR", "0.91", "CLEAR"), coverage("50000", "1000"), new BigDecimal("800"))
+                .recommendedReserve()).isEqualByComparingTo("0");
+        DamageAssessment total = new DamageAssessment("SIDE_PANEL", "SEVERE", new BigDecimal("80000"),
+                new BigDecimal("0.9"), "CLEAR", Map.of());
+        assertThat(agent.calculate(total, coverage("50000", "1000"), null).recommendedReserve())
+                .isEqualByComparingTo("50000");
     }
 
     @Test

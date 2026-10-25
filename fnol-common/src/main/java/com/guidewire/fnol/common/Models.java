@@ -20,14 +20,23 @@ public final class Models {
             List<String> evidenceUris,
             String channel,         // intake source: WEB | MOBILE | PHONE | API (optional)
             String claimantPhone,   // optional; PII — never persisted or logged
-            String claimantEmail    // optional; PII — never persisted or logged
+            String claimantEmail,   // optional; PII — never persisted or logged
+            @PositiveOrZero BigDecimal claimedAmount  // what the claimant asks for; optional for API clients
     ) {
-        /** Payload without claimant contact details. */
+        /** Payload without claimant contact details or a claimed amount. */
         public FNOLPayload(String policyNumber, LocalDate incidentDate, String state, String description,
                            String claimantName, String claimantDob, String claimantSsn,
                            List<String> evidenceUris, String channel) {
             this(policyNumber, incidentDate, state, description, claimantName, claimantDob, claimantSsn,
-                    evidenceUris, channel, null, null);
+                    evidenceUris, channel, null, null, null);
+        }
+
+        /** Payload without a claimed amount. */
+        public FNOLPayload(String policyNumber, LocalDate incidentDate, String state, String description,
+                           String claimantName, String claimantDob, String claimantSsn,
+                           List<String> evidenceUris, String channel, String claimantPhone, String claimantEmail) {
+            this(policyNumber, incidentDate, state, description, claimantName, claimantDob, claimantSsn,
+                    evidenceUris, channel, claimantPhone, claimantEmail, null);
         }
     }
 
@@ -114,8 +123,14 @@ public final class Models {
             BigDecimal estimatedDamage,
             BigDecimal confidence,
             String photoQuality,                          // "CLEAR" | "BLURRY" | "PARTIAL" | "UNUSABLE" | "UNKNOWN"
-            Map<String, BigDecimal> damageTypeProbabilities  // e.g. {"FRONT_BUMPER": 0.87, "SIDE_PANEL": 0.09, ...}
+            Map<String, BigDecimal> damageTypeProbabilities, // e.g. {"FRONT_BUMPER": 0.87, "SIDE_PANEL": 0.09, ...}
+            BigDecimal rawConfidence                      // the model's own confidence when `confidence` is calibrated
     ) {
+        public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
+                                String photoQuality, Map<String, BigDecimal> damageTypeProbabilities) {
+            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, null);
+        }
+
         /**
          * Backward-compatible factory used by internal stubs and tests that do not
          * supply Gemini vision metadata. Defaults photoQuality to "UNKNOWN" and
@@ -133,10 +148,20 @@ public final class Models {
             BigDecimal factor,
             BigDecimal recommendedReserve,
             BigDecimal confidence,      // 0-1: vision confidence weighted by photo quality
-            String confidenceBasis
+            String confidenceBasis,
+            BigDecimal claimedAmount,   // what the claimant asked for (null when not stated)
+            BigDecimal settlementBasis, // the lower of the claimed amount and the AI estimate
+            BigDecimal deductible,      // subtracted from the basis; the reserve is what the insurer owes
+            BigDecimal coverageLimit    // the reserve is capped here
     ) {
         public ReserveResult(BigDecimal estimatedDamage, BigDecimal factor, BigDecimal recommendedReserve) {
             this(estimatedDamage, factor, recommendedReserve, null, null);
+        }
+
+        public ReserveResult(BigDecimal estimatedDamage, BigDecimal factor, BigDecimal recommendedReserve,
+                             BigDecimal confidence, String confidenceBasis) {
+            this(estimatedDamage, factor, recommendedReserve, confidence, confidenceBasis,
+                    null, estimatedDamage, null, null);
         }
     }
 

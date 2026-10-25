@@ -12,7 +12,8 @@
     "evidenceUris": [
       "mock://photo/normal-rear-bumper.jpg"
     ],
-    "channel": "API"
+    "channel": "API",
+    "claimedAmount": 2500
   },
   "expectedStatus": 200,
   "expectedClaimStatus": "HUMAN_REVIEW",

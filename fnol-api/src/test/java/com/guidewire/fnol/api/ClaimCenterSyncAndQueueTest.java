@@ -79,6 +79,27 @@ class ClaimCenterSyncAndQueueTest {
     }
 
     @Test
+    @DisplayName("POST /claimcenter-sync re-sends the recorded decision after a FAILED sync; only FAILED can be retried")
+    void failedSyncCanBeRetried() throws Exception {
+        String claimId = saveClaim("CLM-Q-", "HUMAN_REVIEW", Instant.now());
+        doThrow(new ResourceAccessException("ClaimCenter down")).when(claimCenterClient).updateClaim(anyString(), any());
+        review(claimId).andExpect(status().isOk());
+        assertThat(claims.findById(claimId).orElseThrow().ccSyncStatus).isEqualTo("FAILED");
+
+        mockMvc.perform(post("/api/v1/fnol/" + claimId + "/claimcenter-sync")).andExpect(status().isUnauthorized());
+
+        reset(claimCenterClient);
+        mockMvc.perform(post("/api/v1/fnol/" + claimId + "/claimcenter-sync").header("X-Adjuster-Token", TOKEN))
+                .andExpect(status().isOk());
+
+        verify(claimCenterClient).updateClaim(eq(claimId),
+                eq(new ClaimUpdateRequest("OPEN", "Photos match.", "APPROVED_BY_ADJUSTER", "ADJ-001", null)));
+        assertThat(claims.findById(claimId).orElseThrow().ccSyncStatus).isEqualTo("SYNCED");
+        mockMvc.perform(post("/api/v1/fnol/" + claimId + "/claimcenter-sync").header("X-Adjuster-Token", TOKEN))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     @DisplayName("Reviewing a failed intake (REJ-) does not call ClaimCenter")
     void failedIntakeIsNotSynced() throws Exception {
         String claimId = saveClaim("REJ-", "HUMAN_REVIEW", Instant.now());

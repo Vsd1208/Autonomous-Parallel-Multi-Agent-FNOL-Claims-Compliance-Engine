@@ -73,6 +73,14 @@ final class OrchestratorFixture {
                 List.of("mock://photo/front-bumper.jpg"), "WEB");
     }
 
+    /** Same claim, with the amount the claimant asks for. */
+    static FNOLPayload payload(String policyNumber, String claimantName, String description, String claimedAmount) {
+        FNOLPayload p = payload(policyNumber, claimantName, description);
+        return new FNOLPayload(p.policyNumber(), p.incidentDate(), p.state(), p.description(), p.claimantName(),
+                p.claimantDob(), p.claimantSsn(), p.evidenceUris(), p.channel(), null, null,
+                new java.math.BigDecimal(claimedAmount));
+    }
+
     static final class StubPolicyCenter implements PolicyCenterClient {
         final Map<String, Policy> policies = new ConcurrentHashMap<>();
         final Map<String, List<Coverage>> coverages = new ConcurrentHashMap<>();

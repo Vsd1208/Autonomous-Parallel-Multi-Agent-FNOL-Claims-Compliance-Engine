@@ -24,6 +24,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.ResourceAccessException;
 
+import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
 
@@ -38,6 +39,8 @@ public class FNOLController {
     private final AuditService auditService;
     private final FailedIntakeRecorder failedIntakes;
     private final DuplicateSubmissionRecorder duplicates;
+    private final EvidenceStore evidence;
+    private final ClaimDocumentRepository documents;
     private final IdempotencyStore idempotencyStore;
     private final AuditPdfGenerator pdfGenerator;
     private final AuditTrailAgent auditAgent;
@@ -53,6 +56,8 @@ public class FNOLController {
             AuditService auditService,
             FailedIntakeRecorder failedIntakes,
             DuplicateSubmissionRecorder duplicates,
+            EvidenceStore evidence,
+            ClaimDocumentRepository documents,
             IdempotencyStore idempotencyStore,
             AuditPdfGenerator pdfGenerator,
             AuditTrailAgent auditAgent,
@@ -62,6 +67,8 @@ public class FNOLController {
         this.auditService      = auditService;
         this.failedIntakes     = failedIntakes;
         this.duplicates        = duplicates;
+        this.evidence          = evidence;
+        this.documents         = documents;
         this.idempotencyStore  = idempotencyStore;
         this.pdfGenerator      = pdfGenerator;
         this.auditAgent        = auditAgent;
@@ -140,6 +147,8 @@ public class FNOLController {
                     + "Reconcile this orphaned ClaimCenter claim.", claimId, e);
             throw e;
         }
+        // Keep the photos the AI assessed so the adjuster can see them (best effort, audited).
+        evidence.store(claimId, payload.evidenceUris());
         return response;
     }
 
@@ -206,22 +215,44 @@ public class FNOLController {
 
     /**
      * Pushes the adjuster decision to ClaimCenter. A ClaimCenter outage must not fail the review,
-     * so failures are logged and the claim is marked FAILED for the retry job.
+     * so failures are logged and the claim is marked FAILED; POST /fnol/{claimId}/claimcenter-sync retries it.
      */
-    private String syncDecisionToClaimCenter(ClaimEntity claim, String decision, AdjusterReviewRequest request) {
+    private String syncDecisionToClaimCenter(ClaimEntity claim, String decision, String adjusterId, String notes,
+                                             BigDecimal adjustedReserve) {
         if (claim.claimId.startsWith("REJ-")) {
             return "NOT_FILED";   // failed intake: there is no ClaimCenter claim to update
         }
         try {
             // Updates the pre-populated claim and tracks the review action in ClaimCenter.
             claimCenter.updateClaim(claim.claimId, new ClaimUpdateRequest(CLAIMCENTER_STATUS.get(decision),
-                    request.notes(), decision, request.adjusterId(), request.adjustedReserve()));
+                    notes, decision, adjusterId, adjustedReserve));
             return "SYNCED";
         } catch (RuntimeException e) {
             log.warn("[FNOL] ClaimCenter update failed for claimId={} after review; cc_sync_status=FAILED: {}",
                     claim.claimId, e.getMessage());
             return "FAILED";
         }
+    }
+
+    /** Retries pushing the recorded adjuster decision to ClaimCenter after a FAILED sync. */
+    @PostMapping("/fnol/{claimId}/claimcenter-sync")
+    @Transactional
+    ResponseEntity<?> retryClaimCenterSync(@PathVariable("claimId") String claimId) {
+        ClaimEntity claim = claims.findById(claimId).orElse(null);
+        if (claim == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (claim.adjusterDecision == null || !"FAILED".equals(claim.ccSyncStatus)) {
+            throw new InvalidStateException("Claim " + claimId + " has ClaimCenter sync status "
+                    + claim.ccSyncStatus + "; only a FAILED decision sync can be retried");
+        }
+        claim.ccSyncStatus = syncDecisionToClaimCenter(claim, claim.adjusterDecision, claim.adjusterId,
+                claim.adjusterNotes, claim.adjusterReserve);
+        claims.save(claim);
+        auditService.append(claimId, List.of(auditAgent.record(claimId, "ClaimCenterSync",
+                "decision=" + claim.adjusterDecision + ";retry=true",
+                "ccSyncStatus=" + claim.ccSyncStatus, claim.ccSyncStatus)), claim.adjusterId);
+        return ResponseEntity.ok(Map.of("claimId", claimId, "ccSyncStatus", claim.ccSyncStatus));
     }
 
     // ── Adjuster Queue ────────────────────────────────────────────────────────
@@ -239,6 +270,34 @@ public class FNOLController {
         Page<ClaimEntity> result = claims.findByStatusInOrderByCreatedAtAsc(statuses, PageRequest.of(page, size));
         return new QueuePage(result.getContent().stream().map(QueueItem::of).toList(),
                 page, size, result.getTotalElements(), result.getTotalPages());
+    }
+
+    // ── Evidence documents ────────────────────────────────────────────────────
+    @GetMapping("/fnol/{claimId}/documents")
+    ResponseEntity<?> documents(@PathVariable("claimId") String claimId) {
+        if (!claims.existsById(claimId)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(documents.findByClaimIdOrderByUploadedAtAscNameAsc(claimId));
+    }
+
+    /**
+     * The stored image. Only JPEG/PNG/WebP/GIF are ever stored; nosniff and a no-script CSP stop the
+     * browser from treating the bytes as anything else, and private caching keeps them off shared caches.
+     */
+    @GetMapping("/fnol/{claimId}/documents/{documentId}/content")
+    ResponseEntity<byte[]> documentContent(@PathVariable("claimId") String claimId,
+                                           @PathVariable("documentId") String documentId) {
+        return documents.findByDocumentIdAndClaimId(documentId, claimId)
+                .filter(ClaimDocumentEntity::isViewable)
+                .map(doc -> ResponseEntity.ok()
+                        .contentType(MediaType.parseMediaType(doc.contentType))
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + doc.name + "\"")
+                        .header("X-Content-Type-Options", "nosniff")
+                        .header("Content-Security-Policy", "default-src 'none'; sandbox")
+                        .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+                        .body(doc.content))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     // ── Audit Trail (hash chain) ──────────────────────────────────────────────
@@ -310,7 +369,8 @@ public class FNOLController {
                 decision)), request.adjusterId());
 
         ClaimEntity updated = claims.findById(claimId).orElseThrow();
-        updated.ccSyncStatus = syncDecisionToClaimCenter(updated, decision, request);
+        updated.ccSyncStatus = syncDecisionToClaimCenter(updated, decision, request.adjusterId(), request.notes(),
+                request.adjustedReserve());
         claims.save(updated);
         return ResponseEntity.ok(new AdjusterReviewResponse(
                 updated.claimId,

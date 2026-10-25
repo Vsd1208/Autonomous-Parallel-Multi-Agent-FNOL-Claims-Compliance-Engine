@@ -25,6 +25,10 @@ gemini:
     enabled: ${GEMINI_VISION_ENABLED:true}
     model: ${GEMINI_VISION_MODEL:gemini-2.5-flash}
     read-timeout-seconds: ${GEMINI_VISION_READ_TIMEOUT_SECONDS:8}
+    thinking-budget: ${GEMINI_VISION_THINKING_BUDGET:0}
+    calibration:
+      # Applies vision-calibration.json (tools/vision-eval) when it matches the model and thinking budget
+      enabled: ${GEMINI_VISION_CALIBRATION_ENABLED:true}
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/fnol}

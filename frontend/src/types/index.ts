@@ -5,9 +5,11 @@ export interface DamageAssessment {
   confidence: number;
   photoQuality?: string;
   damageTypeProbabilities?: Record<string, number>;
+  rawConfidence?: number | null;
 }
 
 export interface Coverage {
+  policyNumber?: string;
   covered: boolean;
   coverageType: string | null;
   coverageLimit: number;
@@ -21,6 +23,12 @@ export interface Reserve {
   recommendedReserve: number;
   confidence?: number | null;
   confidenceBasis?: string | null;
+  /** What the claimant asked for. */
+  claimedAmount?: number | null;
+  /** min(claimed, AI estimate): the most the AI will reserve before the deductible. */
+  settlementBasis?: number | null;
+  deductible?: number | null;
+  coverageLimit?: number | null;
 }
 
 export interface BranchAResult {
@@ -130,6 +138,8 @@ export interface ClaimRecord {
   state: string;
   estimatedDamage: number;
   reserve: number;
+  claimedAmount: number | null;
+  deductible: number | null;
   adjusterDecision: string | null;
   adjusterId: string | null;
   adjusterNotes: string | null;
@@ -161,6 +171,20 @@ export interface DashboardClaim {
   failureReason?: string | null;
   ccSyncStatus?: string | null;
   record?: ClaimRecord;
+}
+
+/** Evidence on a claim (GET /fnol/{id}/documents). Only viewable documents have stored image bytes. */
+export interface ClaimDocument {
+  documentId: string;
+  claimId: string;
+  name: string;
+  contentType: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  source: 'UPLOAD' | 'URL' | 'MOCK' | string;
+  sourceUri: string | null;
+  uploadedAt: string;
+  viewable: boolean;
 }
 
 export interface QueueItem {
@@ -220,4 +244,6 @@ export interface FormData {
   claimantPhone: string;
   claimantEmail: string;
   channel: 'WEB' | 'MOBILE' | 'PHONE' | 'API';
+  /** Amount the claimant asks for, as typed (whole dollars). */
+  claimedAmount: string;
 }

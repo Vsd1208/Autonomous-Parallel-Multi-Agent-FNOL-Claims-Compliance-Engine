@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 
 /**
  * Requires header {@code X-Adjuster-Token} equal to {@code fnol.security.adjuster-token} on the
- * adjuster-only endpoints: review, audit, audit PDF, explanation and the claim queue.
+ * adjuster-only endpoints: review, audit, audit PDF, explanation, evidence documents and the claim queue.
  *
  * <p>Fails closed: if no token is configured, every protected request is rejected. This is a
  * shared-secret prototype control, not user authentication; production needs per-adjuster
@@ -26,7 +26,7 @@ public class AdjusterTokenFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Adjuster-Token";
 
     private static final Pattern PROTECTED = Pattern.compile(
-            "^/api/v1/fnol/(queue|[^/]+/(review|audit|audit/pdf|explanation))/?$");
+            "^/api/v1/fnol/(queue|[^/]+/(review|claimcenter-sync|audit|audit/pdf|explanation|documents|documents/[^/]+/content))/?$");
 
     private final byte[] expected;
 

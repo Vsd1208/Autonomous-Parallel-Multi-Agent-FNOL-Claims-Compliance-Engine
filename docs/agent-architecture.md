@@ -27,6 +27,8 @@ Extracts damage type, severity, estimated repair cost, confidence, photo quality
 - Uses its own `RestTemplate` bean (`geminiRestTemplate`, injected by qualifier): 3 s connect, `gemini.vision.read-timeout-seconds` (default 8) read — below the 10 s orchestrator deadline so the fallback can still be returned.
 - Sends the key in the `x-goog-api-key` header, never in the URL; logs only scheme and host of evidence URIs.
 - Loads evidence through **`EvidenceImageLoader`**, which accepts only `data:image/(jpeg|png|webp|gif);base64` (≤ 5 MB) and `https://` URLs whose host is in `fnol.evidence.allowed-hosts` (default empty = no downloads), resolve only to public addresses (no loopback, link-local such as 169.254.169.254, private, carrier-grade NAT or unique-local ranges), answer 200 without redirect, send `image/*` and ≤ 5 MB. `http:`, `file:` and `mock:` URIs are refused.
+- Requests JSON output with thinking off (`gemini.vision.thinking-budget`, default 0) so calls stay inside the read timeout.
+- **Confidence calibration** (`VisionConfidenceCalibrator`): when `vision-calibration.json` is on the classpath and matches the configured model and thinking budget, Gemini's self-reported confidence is replaced by the share of correct answers measured on labelled photos (`tools/vision-eval`), keyed on the gap between Gemini's two highest damage-type probabilities (its self-reported confidence does not distinguish right from wrong answers); the raw value is kept in `rawConfidence` and shown in the WHY panel.
 - **Fallback** (confidence 0.60, which always routes to a human): no evidence (`NO_IMAGE`), refused evidence (`EVIDENCE_REJECTED`), no API key (`NO_API_KEY`), Gemini error (`API_ERROR`) or unparseable reply (`PARSE_ERROR`).
 
 **`MockVisionProvider`** (active when `gemini.vision.enabled=false`; tests and `.env.demo`)
@@ -36,7 +38,7 @@ Keywords in the first evidence URI: `blurry` → confidence 0.61; `severe` → M
 Reads the policy and coverages from PolicyCenter. Covered = policy found, status `ACTIVE`, today within the policy term, and a coverage accepted by the line-of-business rule from **`CoverageRuleProvider`**. `SyntheticCoverageRuleProvider` (prototype values): AUTO → COLLISION or COMPREHENSIVE; HOME → DWELLING or PERSONAL_PROPERTY; other lines → nothing qualifies. The matched rule and coverage are written into `reasoning`. `ValidationGuardrail` turns "not covered" into `CoverageNotEligibleException` (HTTP 502, saved as a REJ- claim).
 
 ### `ReserveCalculatorAgent`
-`recommendedReserve = estimatedDamage × 1.15`, `BigDecimal`, `HALF_UP` to whole dollars. `confidence` = vision confidence × photo-quality weight (CLEAR 1.00, PARTIAL 0.85, BLURRY 0.70, UNUSABLE 0.50, unknown 0.80), with the calculation in `confidenceBasis`.
+`recommendedReserve` is what the insurer owes: `basis = min(claimedAmount, estimatedDamage)` (the AI estimate when no amount was claimed), then `max(basis − deductible, 0)`, capped at the coverage limit; `BigDecimal`, `HALF_UP` to whole dollars, no loading. It is never more than the claimant asked for or the photos support. `confidence` = vision confidence × photo-quality weight (CLEAR 1.00, PARTIAL 0.85, BLURRY 0.70, UNUSABLE 0.50, unknown 0.80), with the calculation in `confidenceBasis`.
 
 ---
 
@@ -59,7 +61,7 @@ Regex redaction of SSN (`***-**-****`), DOB (`**/**/****`), MRN (`[REDACTED_MRN]
 `applySeverity` adds Branch A's severity points — MINOR 5 / MODERATE 15 / SEVERE 25 (other values 15) — caps the score at 100, sets `INVESTIGATE` at 70 or more (else `MONITOR`) and adds a referral note. A rear-end claim with a police report and MODERATE damage scores 70, so it goes to a human for subrogation.
 
 ### `GateConsistencyChecker`
-Cross-checks the branches and the policy: `SEVERITY_ESTIMATE_MISMATCH` (severity label vs. estimate band: MINOR < $2,000, MODERATE ≤ $10,000, else SEVERE), `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH` (vehicle damage on a HOME policy, water damage on AUTO), `CONFIDENCE_PHOTO_QUALITY_MISMATCH` (confidence ≥ 0.85 on a BLURRY/UNUSABLE photo). Flags block STP and add an explanation note.
+Cross-checks the branches and the policy: `SEVERITY_ESTIMATE_MISMATCH` (severity label vs. estimate band: MINOR < $2,000, MODERATE ≤ $10,000, else SEVERE), `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH` (vehicle damage on a HOME policy, water damage on AUTO), `CONFIDENCE_PHOTO_QUALITY_MISMATCH` (confidence ≥ 0.85 on a BLURRY/UNUSABLE photo), `CLAIMED_EXCEEDS_AI_ESTIMATE` (amount claimed more than `fnol.stp.claimed-amount-tolerance`, default 10%, above the AI estimate: the adjuster requests more photos, investigates, or approves at the AI estimate). `RESERVE_EXCEEDS_COVERAGE_LIMIT` now means the loss after the deductible is above the limit (the reserve itself is capped). Flags block STP and add an explanation note.
 
 ### `AuditTrailAgent`
 SHA-256 (hex) of `String.valueOf(input)` and of the output. Callers pass a `SanitizedIntake` or agent outputs, never the raw payload. `AuditService` (in `fnol-api`) chains the records — see `docs/database.md`.

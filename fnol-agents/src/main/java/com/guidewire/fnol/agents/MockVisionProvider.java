@@ -13,7 +13,8 @@ import java.util.Map;
 /**
  * Deterministic vision provider used when {@code gemini.vision.enabled=false} (tests and demos).
  *
- * <p>Keywords in the first {@code mock://} evidence URI pick the assessment:
+ * <p>Keywords in the first evidence URI, when it is a {@code mock://} URI, pick the assessment
+ * (uploaded photos and https URLs always get the normal one):
  * <ul>
  *   <li>{@code blurry} — FRONT_BUMPER, $4,200, confidence 0.61 (fails the confidence factor)</li>
  *   <li>{@code severe} — MULTIPLE, $24,000, SEVERE (HIGH severity, always a human)</li>
@@ -36,7 +37,10 @@ public class MockVisionProvider implements VisionProvider {
             return new DamageAssessment("UNKNOWN", "MODERATE", new BigDecimal("3500"), new BigDecimal("0.60"),
                     "UNUSABLE", Map.of("UNKNOWN", BigDecimal.ONE));
         }
-        String uri = uris.get(0).toLowerCase(Locale.ROOT);
+        // Keywords are read only from mock:// URIs. An uploaded photo (data: URI) is a long base64
+        // string that could contain "slow" or "water" by chance, so it always gets the normal assessment.
+        String first = uris.get(0).toLowerCase(Locale.ROOT);
+        String uri = first.startsWith("mock://") ? first : "";
 
         if (uri.contains("slow")) {
             try {
