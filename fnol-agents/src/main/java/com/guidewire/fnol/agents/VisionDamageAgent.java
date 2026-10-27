@@ -16,4 +16,9 @@ public class VisionDamageAgent implements FNOLAgent<FNOLPayload, DamageAssessmen
     public DamageAssessment execute(FNOLPayload input) {
         return provider.assess(input);
     }
+
+    /** Vehicle or property damage, depending on the policy's line of business (AUTO, HOME). */
+    public DamageAssessment execute(FNOLPayload input, String lineOfBusiness) {
+        return provider.assess(input, lineOfBusiness);
+    }
 }

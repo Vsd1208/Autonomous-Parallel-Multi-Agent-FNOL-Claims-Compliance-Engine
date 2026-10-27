@@ -194,6 +194,42 @@ class GeminiVisionProviderTest {
         assertThat(result.damageType()).isEqualTo("MULTIPLE");
     }
 
+    @Test
+    @DisplayName("A HOME claim gets the property prompt (causes of loss incl. FLOOD); an AUTO claim keeps the vehicle prompt")
+    void assess_homeLineUsesPropertyPrompt() {
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(geminiResponse("FLOOD", "SEVERE", 38000, 0.9)));
+        ArgumentCaptor<HttpEntity> captor = ArgumentCaptor.forClass(HttpEntity.class);
+
+        DamageAssessment home = provider.assess(payloadWithUri("https://example.com/house.jpg"), "HOME");
+        provider.assess(payloadWithUri("https://example.com/car.jpg"), "AUTO");
+
+        verify(restTemplate, times(2)).postForEntity(anyString(), captor.capture(), eq(String.class));
+        assertThat(captor.getAllValues().get(0).getBody().toString())
+                .contains("homeowners insurance property damage assessor").contains("FLOOD").doesNotContain("FRONT_BUMPER");
+        assertThat(captor.getAllValues().get(1).getBody().toString())
+                .contains("automotive insurance damage assessor").doesNotContain("FIRE_SMOKE");
+        assertThat(home.damageType()).isEqualTo("FLOOD");
+        assertThat(home.estimatedDamage()).isEqualByComparingTo("38000");
+        // Both prompts ask what the photos actually show.
+        assertThat(captor.getAllValues()).allSatisfy(r -> assertThat(r.getBody().toString())
+                .contains("photoSubject").contains("VEHICLE | BUILDING | OTHER_PROPERTY | NONE"));
+    }
+
+    @Test
+    @DisplayName("Parses photoSubject; an older reply without it leaves it null (no subject check)")
+    void assess_parsesPhotoSubject() {
+        String withSubject = """
+                {"candidates": [{"content": {"parts": [{"text": "{ \\"photoSubject\\": \\"BUILDING\\", \\"damageType\\": \\"UNKNOWN\\", \\"severity\\": \\"MODERATE\\", \\"estimatedDamage\\": 3000, \\"confidence\\": 0.9, \\"photoQuality\\": \\"CLEAR\\" }"}]}}]}
+                """;
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(withSubject))
+                .thenReturn(ResponseEntity.ok(geminiResponse("FRONT_BUMPER", "MODERATE", 4200, 0.91)));
+
+        assertThat(provider.assess(payloadWithUri("https://example.com/a.jpg"), "AUTO").photoSubject()).isEqualTo("BUILDING");
+        assertThat(provider.assess(payloadWithUri("https://example.com/b.jpg"), "AUTO").photoSubject()).isNull();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
             "http://127.0.0.1/admin.jpg",

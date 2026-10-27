@@ -182,7 +182,7 @@ public class FNOLOrchestrator {
         Future<BranchAResult> futureA;
         Future<BranchBResult> futureB;
         try {
-            futureA = executor.submit(() -> runOperationalAI(payload));
+            futureA = executor.submit(() -> runOperationalAI(payload, policyRecord.policyType()));
         } catch (RejectedExecutionException e) {
             throw capacityExceeded(payload, e);
         }
@@ -242,6 +242,24 @@ public class FNOLOrchestrator {
         return found;
     }
 
+    /** Explains PHOTO_SUBJECT_MISMATCH: what the photos show versus what the policy insures. */
+    static String photoSubjectNote(String subject, String lineOfBusiness) {
+        if ("NONE".equals(subject)) {
+            return "the photos show no damaged property; request photos of the damage.";
+        }
+        String seen = switch (subject == null ? "" : subject) {
+            case "VEHICLE" -> "a vehicle";
+            case "BUILDING" -> "a building";
+            default -> "other property (not a vehicle or a building)";
+        };
+        if ("HOME".equals(lineOfBusiness) && "OTHER_PROPERTY".equals(subject)) {
+            return "the photos show " + seen + "; confirm whether it is covered as another structure (e.g. a fence) "
+                    + "or as personal property before relying on the estimate.";
+        }
+        return "the photos show " + seen + ", but the policy line is " + lineOfBusiness + "; confirm the policy number "
+                + "and the photos before any decision.";
+    }
+
     private static long remainingNanos(long deadline) {
         return Math.max(0, deadline - System.nanoTime());
     }
@@ -258,11 +276,12 @@ public class FNOLOrchestrator {
     //  Analyzes loss photos → extracts damage severity → passes structured parameters
     //  to Guidewire's deterministic rules engine for coverage verification and reserve.
     // ─────────────────────────────────────────────────────────────────────────────────
-    private BranchAResult runOperationalAI(FNOLPayload payload) {
+    private BranchAResult runOperationalAI(FNOLPayload payload, String lineOfBusiness) {
         log.debug("[Branch A — Operational AI] Starting — policy={}", payload.policyNumber());
 
-        // Step A1: Vision analysis — loss photo → structured damage JSON (type, severity, confidence)
-        DamageAssessment damage = vision.execute(payload);
+        // Step A1: Vision analysis — loss photos → structured damage JSON (type, severity, confidence);
+        // vehicle damage areas for AUTO, cause of loss for HOME
+        DamageAssessment damage = vision.execute(payload, lineOfBusiness);
         log.debug("[Branch A] Vision complete — severity={}, confidence={}", damage.severity(), damage.confidence());
 
         // Step A2: Coverage verification against the line-of-business coverage rule
@@ -438,6 +457,11 @@ public class FNOLOrchestrator {
                                 + "investigation, or approve at the AI estimate. Not approved automatically.";
                 case GateConsistencyChecker.DAMAGE_TYPE_LINE_MISMATCH ->
                         "the damage type does not fit the policy's line of business; confirm the right policy and photos.";
+                case GateConsistencyChecker.PHOTO_SUBJECT_MISMATCH -> photoSubjectNote(
+                        branchA.damageAssessment().photoSubject(), policyRecord.policyType());
+                case GateConsistencyChecker.POSSIBLE_FLOOD_EXCLUSION ->
+                        "the photos show flood (rising surface water), which standard homeowners policies exclude; "
+                                + "confirm the cause of loss and check for a separate flood policy before any payment.";
                 case GateConsistencyChecker.AMBIGUOUS_DAMAGE_TYPE ->
                         "the AI could not settle on one damage type (its top answers were close); check the photos "
                                 + "yourself before relying on the damage type or estimate.";

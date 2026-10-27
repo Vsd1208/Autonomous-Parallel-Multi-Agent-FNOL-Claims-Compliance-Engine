@@ -2,6 +2,7 @@ package com.guidewire.fnol.agents;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.guidewire.fnol.common.Models.DamageAssessment;
 import com.guidewire.fnol.common.Models.FNOLPayload;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +31,25 @@ class VisionConfidenceCalibratorTest {
                            {"from": 0.85, "to": 0.9, "calibrated": 0.62, "n": 60},
                            {"from": 0.95, "to": 1.0, "calibrated": 0.71, "n": 30}]}
                 """.formatted(model, budget));
+    }
+
+    @Test
+    @DisplayName("A map measured with a different vehicle prompt is not applied; one with the current prompt is")
+    void mapForAnotherPromptIsIgnored() throws Exception {
+        ObjectNode other = (ObjectNode) calibration("gemini-2.5-flash", 0);
+        other.put("promptSha256", "61a89427e0e132d9");   // v2-multiphoto, before photoSubject
+        assertThat(new VisionConfidenceCalibrator(other, "gemini-2.5-flash", 0).isActive()).isFalse();
+        ObjectNode current = (ObjectNode) calibration("gemini-2.5-flash", 0);
+        current.put("promptSha256", VisionConfidenceCalibrator.VEHICLE_PROMPT_SHA);
+        assertThat(new VisionConfidenceCalibrator(current, "gemini-2.5-flash", 0).isActive()).isTrue();
+    }
+
+    @Test
+    @DisplayName("The app's prompt fingerprint is the one tools/vision-eval records (update the v3-subject run if this changes)")
+    void promptFingerprintMatchesEvaluationTool() {
+        // Computed by tools/vision-eval/evaluate.py prompt_sha() from the same text block. If the vehicle prompt
+        // changes, this fails: start a new evaluation run (new --run name) and update the expected value.
+        assertThat(VisionConfidenceCalibrator.VEHICLE_PROMPT_SHA).isEqualTo("501b3308884a64f8");
     }
 
     @Test

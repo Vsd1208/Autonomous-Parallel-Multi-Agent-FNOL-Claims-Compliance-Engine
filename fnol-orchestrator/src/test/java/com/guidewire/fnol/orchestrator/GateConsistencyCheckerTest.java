@@ -85,6 +85,44 @@ class GateConsistencyCheckerTest {
                 .containsExactly(DAMAGE_TYPE_LINE_MISMATCH);
         assertThat(checker.check(policy("HOME"), branchA("WATER_DAMAGE", "MODERATE", "4200", "0.90", "CLEAR", "350000")))
                 .isEmpty();
+        // Every property cause of loss counts, not just water.
+        assertThat(checker.check(policy("AUTO"), branchA("FIRE_SMOKE", "SEVERE", "40000", "0.91", "CLEAR", "50000")))
+                .containsExactly(DAMAGE_TYPE_LINE_MISMATCH);
+        assertThat(checker.check(policy("HOME"), branchA("FALLEN_TREE", "SEVERE", "18000", "0.91", "CLEAR", "350000")))
+                .isEmpty();
+    }
+
+    private static BranchAResult showing(String subject, String type, String limit) {
+        BranchAResult base = branchA(type, "MODERATE", "4200", "0.90", "CLEAR", limit);
+        return new BranchAResult(base.damageAssessment().withPhotoSubject(subject), base.coverage(), base.reserve());
+    }
+
+    @Test
+    @DisplayName("PHOTO_SUBJECT_MISMATCH when the photos do not show what the policy insures, whatever the damage type")
+    void photoSubjectMismatch() {
+        // The right subject, or none reported (mock, fallback, older claims): no flag.
+        assertThat(checker.check(policy("AUTO"), showing("VEHICLE", "FRONT_BUMPER", "50000"))).isEmpty();
+        assertThat(checker.check(policy("HOME"), showing("BUILDING", "WATER_DAMAGE", "350000"))).isEmpty();
+        assertThat(checker.check(policy("AUTO"), showing(null, "FRONT_BUMPER", "50000"))).isEmpty();
+        // A house on an auto policy: the vehicle prompt can only answer a vehicle area, so the type alone
+        // never shows it; the subject does.
+        assertThat(checker.check(policy("AUTO"), showing("BUILDING", "UNKNOWN", "50000")))
+                .containsExactly(PHOTO_SUBJECT_MISMATCH);
+        assertThat(checker.check(policy("HOME"), showing("VEHICLE", "UNKNOWN", "350000")))
+                .containsExactly(PHOTO_SUBJECT_MISMATCH);
+        assertThat(checker.check(policy("HOME"), showing("OTHER_PROPERTY", "WIND_STORM", "350000")))
+                .containsExactly(PHOTO_SUBJECT_MISMATCH);
+        assertThat(checker.check(policy("AUTO"), showing("NONE", "UNKNOWN", "50000")))
+                .containsExactly(PHOTO_SUBJECT_MISMATCH);
+    }
+
+    @Test
+    @DisplayName("POSSIBLE_FLOOD_EXCLUSION for flood on a home policy; a burst pipe (WATER_DAMAGE) is not flood")
+    void floodOnHomePolicy() {
+        assertThat(checker.check(policy("HOME"), branchA("FLOOD", "SEVERE", "38000", "0.92", "CLEAR", "350000")))
+                .containsExactly(POSSIBLE_FLOOD_EXCLUSION);
+        assertThat(checker.check(policy("HOME"), branchA("WATER_DAMAGE", "MODERATE", "4200", "0.92", "CLEAR", "350000")))
+                .isEmpty();
     }
 
     @Test

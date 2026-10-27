@@ -147,7 +147,7 @@ Response `200` (abridged):
 - `explanation.decision`: `STRAIGHT_THROUGH` or `ADVISORY_RECOMMENDED_ACTION`. `recommendedAction`: `APPROVE_AND_STP`, `ESCALATE_TO_HUMAN`, `ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY`.
 - `inputFlags` (Human Review Point 1): `MISSING_EVIDENCE`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`. Any flag routes to `HUMAN_REVIEW`.
 - `ccSyncStatus`: `SYNCED` if the WHY panel and evidence list were attached in ClaimCenter, `FAILED` otherwise (intake still succeeds).
-- `gateFlags` (reconciliation-gate consistency checks): `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`. Any flag routes to `HUMAN_REVIEW`.
+- `gateFlags` (reconciliation-gate consistency checks): `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`. Any flag routes to `HUMAN_REVIEW`.
 - `branchB.subrogation` is assessed in Branch B (third-party liability and `complianceNotes`) and finalised at the gate with Branch A's severity.
 - The ClaimCenter claim is created as `DRAFT_PENDING_REVIEW` (or `OPEN` for STP with advisory review off).
 

@@ -32,8 +32,8 @@ import java.util.Objects;
  *   <li>{@code confidence} (default) — Gemini's self-reported confidence.</li>
  * </ul>
  *
- * <p>The map is only valid for the model and thinking budget it was measured with, so it is applied
- * only when both match the configuration; otherwise confidence passes through unchanged and a warning
+ * <p>The map is only valid for the prompt, model and thinking budget it was measured with, so it is applied
+ * only when all three match the configuration; otherwise confidence passes through unchanged and a warning
  * is logged. Disable with {@code gemini.vision.calibration.enabled=false}.
  */
 @Component
@@ -43,6 +43,19 @@ public class VisionConfidenceCalibrator {
     static final String RESOURCE = "vision-calibration.json";
 
     static final String SIGNAL_MARGIN = "probabilityMargin";
+
+    /** Fingerprint of the vehicle prompt, computed as tools/vision-eval/evaluate.py does (first 16 hex of SHA-256). */
+    static final String VEHICLE_PROMPT_SHA = promptSha(GeminiVisionProvider.DAMAGE_ASSESSMENT_PROMPT);
+
+    static String promptSha(String prompt) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(prompt.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest).substring(0, 16);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 
     record Step(BigDecimal from, BigDecimal calibrated) {}
 
@@ -122,6 +135,13 @@ public class VisionConfidenceCalibrator {
         }
         String forModel = calibration.path("model").asText();
         int forBudget = calibration.path("thinkingBudget").asInt(-1);
+        String forPrompt = calibration.path("promptSha256").asText("");
+        if (!forPrompt.isEmpty() && !"unrecorded".equals(forPrompt) && !forPrompt.equals(VEHICLE_PROMPT_SHA)) {
+            log.warn("[GeminiVision] Confidence calibration was measured with vehicle prompt {} but the app's prompt is {}; "
+                    + "confidence will NOT be calibrated. Re-run tools/vision-eval with a new --run name.",
+                    forPrompt, VEHICLE_PROMPT_SHA);
+            return List.of();
+        }
         if (!forModel.equals(model) || forBudget != thinkingBudget) {
             log.warn("[GeminiVision] Confidence calibration is for {} (thinking budget {}) but the configuration is {} "
                     + "(thinking budget {}); confidence will NOT be calibrated. Re-run tools/vision-eval.",

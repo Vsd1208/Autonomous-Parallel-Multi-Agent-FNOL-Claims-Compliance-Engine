@@ -1,0 +1,25 @@
+{
+  "scenario": "home_flood",
+  "description": "Home policy, photos show flood: standard homeowners policies exclude flood, so the gate raises POSSIBLE_FLOOD_EXCLUSION and an adjuster confirms the cause of loss.",
+  "payload": {
+    "policyNumber": "POL-HOME-334455",
+    "incidentDate": "2026-09-27",
+    "state": "TX",
+    "description": "The river rose overnight and the ground floor is under water.",
+    "claimantName": "Riley Smith",
+    "claimantDob": "01/01/1990",
+    "claimantSsn": "123-45-6789",
+    "evidenceUris": [
+      "mock://photo/flood-overview.jpg",
+      "mock://photo/flood-close-up.jpg"
+    ],
+    "channel": "API",
+    "claimedAmount": 38000,
+    "evidenceAngles": [
+      "OVERVIEW",
+      "CLOSE_UP"
+    ]
+  },
+  "expectedStatus": 200,
+  "expectedClaimStatus": "HUMAN_REVIEW"
+}

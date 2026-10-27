@@ -31,6 +31,18 @@ public class GateConsistencyChecker {
     public static final String CLAIMED_EXCEEDS_AI_ESTIMATE = "CLAIMED_EXCEEDS_AI_ESTIMATE";
     /** The damage type does not fit the policy's line of business (e.g. a bumper on a home policy). */
     public static final String DAMAGE_TYPE_LINE_MISMATCH = "DAMAGE_TYPE_LINE_MISMATCH";
+    /**
+     * Vision reports FLOOD on a HOME policy. Standard homeowners policies exclude flood (it needs a separate
+     * flood policy), but the cause of loss must be confirmed by a person: the AI never denies a claim.
+     */
+    public static final String POSSIBLE_FLOOD_EXCLUSION = "POSSIBLE_FLOOD_EXCLUSION";
+    /**
+     * The photos do not show what the policy insures: vision reports what it sees (photoSubject) independently of
+     * the prompt the policy selected, e.g. a house on an auto policy, a car on a home policy, or nothing damaged.
+     */
+    public static final String PHOTO_SUBJECT_MISMATCH = "PHOTO_SUBJECT_MISMATCH";
+    /** The photo subject each line of business insures. */
+    static final Map<String, String> EXPECTED_SUBJECT = Map.of("AUTO", "VEHICLE", "HOME", "BUILDING");
     /** High vision confidence reported for a photo it rated blurry or unusable. */
     public static final String CONFIDENCE_PHOTO_QUALITY_MISMATCH = "CONFIDENCE_PHOTO_QUALITY_MISMATCH";
 
@@ -38,7 +50,9 @@ public class GateConsistencyChecker {
     static final BigDecimal MODERATE_MAX = new BigDecimal("10000");
 
     private static final Set<String> VEHICLE_DAMAGE = Set.of("FRONT_BUMPER", "REAR_BUMPER", "WINDSHIELD", "SIDE_PANEL");
-    private static final Set<String> PROPERTY_DAMAGE = Set.of("WATER_DAMAGE");
+    /** Causes of loss from the property prompt (GeminiVisionProvider.PROPERTY_ASSESSMENT_PROMPT). */
+    private static final Set<String> PROPERTY_DAMAGE =
+            Set.of("WATER_DAMAGE", "FLOOD", "FIRE_SMOKE", "WIND_STORM", "FALLEN_TREE");
     private static final Set<String> POOR_PHOTOS = Set.of("BLURRY", "UNUSABLE");
 
     private final StpProperties stp;
@@ -76,6 +90,13 @@ public class GateConsistencyChecker {
         if (("HOME".equals(line) && VEHICLE_DAMAGE.contains(damage.damageType()))
                 || ("AUTO".equals(line) && PROPERTY_DAMAGE.contains(damage.damageType()))) {
             flags.add(DAMAGE_TYPE_LINE_MISMATCH);
+        }
+        String expectedSubject = EXPECTED_SUBJECT.get(line);
+        if (damage.photoSubject() != null && expectedSubject != null && !expectedSubject.equals(damage.photoSubject())) {
+            flags.add(PHOTO_SUBJECT_MISMATCH);
+        }
+        if ("HOME".equals(line) && "FLOOD".equals(damage.damageType())) {
+            flags.add(POSSIBLE_FLOOD_EXCLUSION);
         }
 
         Map<String, BigDecimal> probabilities = damage.damageTypeProbabilities();

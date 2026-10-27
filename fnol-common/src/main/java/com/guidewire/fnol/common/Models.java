@@ -144,11 +144,24 @@ public final class Models {
             BigDecimal confidence,
             String photoQuality,                          // "CLEAR" | "BLURRY" | "PARTIAL" | "UNUSABLE" | "UNKNOWN"
             Map<String, BigDecimal> damageTypeProbabilities, // e.g. {"FRONT_BUMPER": 0.87, "SIDE_PANEL": 0.09, ...}
-            BigDecimal rawConfidence                      // the model's own confidence when `confidence` is calibrated
+            BigDecimal rawConfidence,                     // the model's own confidence when `confidence` is calibrated
+            String photoSubject                           // what the photos show: "VEHICLE" | "BUILDING" | "OTHER_PROPERTY" | "NONE"; null = not reported
     ) {
         public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
                                 String photoQuality, Map<String, BigDecimal> damageTypeProbabilities) {
-            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, null);
+            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, null, null);
+        }
+
+        public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
+                                String photoQuality, Map<String, BigDecimal> damageTypeProbabilities,
+                                BigDecimal rawConfidence) {
+            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, rawConfidence, null);
+        }
+
+        /** The same assessment with the photo subject the vision model reported. */
+        public DamageAssessment withPhotoSubject(String subject) {
+            return new DamageAssessment(damageType, severity, estimatedDamage, confidence, photoQuality,
+                    damageTypeProbabilities, rawConfidence, subject);
         }
 
         /**

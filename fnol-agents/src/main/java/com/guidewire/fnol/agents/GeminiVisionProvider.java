@@ -24,7 +24,7 @@ import java.util.Map;
 /**
  * Real AI vision provider for Branch A (Operational AI).
  *
- * Sends car damage photos to Google Gemini and parses the structured JSON response into a
+ * Sends vehicle or property damage photos (by the policy's line of business) to Google Gemini and parses the structured JSON response into a
  * {@link DamageAssessment} used by the reserve calculation pipeline.
  *
  * Activation: {@code gemini.vision.enabled=true} (default). Evidence is loaded through
@@ -43,14 +43,16 @@ public class GeminiVisionProvider implements VisionProvider {
     private static final String GEMINI_API_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
-    private static final String DAMAGE_ASSESSMENT_PROMPT = """
+    static final String DAMAGE_ASSESSMENT_PROMPT = """
             You are an automotive insurance damage assessor for Guidewire ClaimCenter.
             You receive one or more photos of the same vehicle, each labelled with its angle (FRONT, REAR, LEFT,
             RIGHT, CLOSE_UP, ODOMETER_VIN, OTHER). Assess the damage from this incident across all of them: use the
             close-up for severity and the side views for the extent. If damage is spread over several areas, the
             damageType is MULTIPLE. Rate photoQuality by the photos that show the damage.
+            First report what the photos actually show, whatever you were told to expect (photoSubject).
             Respond ONLY with a valid JSON object in this exact format:
             {
+              "photoSubject": "VEHICLE | BUILDING | OTHER_PROPERTY | NONE",
               "damageType": "FRONT_BUMPER | REAR_BUMPER | WINDSHIELD | SIDE_PANEL | ROOF | MULTIPLE | UNKNOWN",
               "severity": "MINOR | MODERATE | SEVERE",
               "estimatedDamage": <integer USD repair cost estimate>,
@@ -67,9 +69,58 @@ public class GeminiVisionProvider implements VisionProvider {
               }
             }
             Rules:
+            - photoSubject: VEHICLE = a car, van, truck or motorcycle; BUILDING = a house or other building, inside or
+              outside; OTHER_PROPERTY = anything else (fence, boat, garden, contents); NONE = no damaged property.
             - damageType must be exactly one of the listed enum values (the highest-probability type).
             - severity must be MINOR (< $2,000), MODERATE ($2,000–$10,000), or SEVERE (> $10,000).
             - estimatedDamage must be a plain integer (no $ sign, no commas).
+            - confidence reflects your overall certainty in the entire assessment (1.0 = fully confident).
+            - photoQuality: CLEAR = sharp and well-lit, BLURRY = out of focus, PARTIAL = partially visible, UNUSABLE = cannot assess.
+            - damageTypeProbabilities must sum to approximately 1.0 across all types.
+            - Do NOT include any explanation, markdown, or text outside the JSON object.
+            """;
+
+    /**
+     * Home claims. The cause of loss decides coverage: flood is excluded from standard homeowners policies, so it
+     * must not be confused with water from a burst pipe. Both prompts ask what the photos show (photoSubject) so a
+     * photo of the wrong kind of property is caught whichever prompt the policy selects.
+     */
+    static final String PROPERTY_ASSESSMENT_PROMPT = """
+            You are a homeowners insurance property damage assessor for Guidewire ClaimCenter.
+            You receive one or more photos of the same property, each labelled with its angle (OVERVIEW, CLOSE_UP,
+            OTHER = the source of the damage). Identify the cause of loss and assess the damage across all of them.
+            First report what the photos actually show, whatever you were told to expect (photoSubject).
+            Causes of loss:
+            - WATER_DAMAGE: water released inside the building, e.g. a burst or leaking pipe or appliance.
+            - FLOOD: rising surface water from outside (river, storm surge, flash flood) entering or surrounding the building.
+            - FIRE_SMOKE: fire, smoke or soot damage, including wildfire.
+            - WIND_STORM: roof, siding or windows damaged by wind, hurricane, tornado or hail.
+            - FALLEN_TREE: a tree or large limb fell onto the building.
+            - MULTIPLE: two or more of these causes. UNKNOWN: no property damage can be seen.
+            Respond ONLY with a valid JSON object in this exact format:
+            {
+              "photoSubject": "VEHICLE | BUILDING | OTHER_PROPERTY | NONE",
+              "damageType": "WATER_DAMAGE | FLOOD | FIRE_SMOKE | WIND_STORM | FALLEN_TREE | MULTIPLE | UNKNOWN",
+              "severity": "MINOR | MODERATE | SEVERE",
+              "estimatedDamage": <integer USD repair or rebuild cost estimate>,
+              "confidence": <decimal 0.0 to 1.0>,
+              "photoQuality": "CLEAR | BLURRY | PARTIAL | UNUSABLE",
+              "damageTypeProbabilities": {
+                "WATER_DAMAGE": <0.0-1.0>,
+                "FLOOD": <0.0-1.0>,
+                "FIRE_SMOKE": <0.0-1.0>,
+                "WIND_STORM": <0.0-1.0>,
+                "FALLEN_TREE": <0.0-1.0>,
+                "MULTIPLE": <0.0-1.0>,
+                "UNKNOWN": <0.0-1.0>
+              }
+            }
+            Rules:
+            - photoSubject: VEHICLE = a car, van, truck or motorcycle; BUILDING = a house or other building, inside or
+              outside; OTHER_PROPERTY = anything else (fence, boat, garden, contents); NONE = no damaged property.
+            - damageType must be exactly one of the listed enum values (the highest-probability type).
+            - severity must be MINOR (< $2,000), MODERATE ($2,000–$10,000), or SEVERE (> $10,000).
+            - estimatedDamage must be a plain integer (no $ sign, no commas). A destroyed home is a full rebuild.
             - confidence reflects your overall certainty in the entire assessment (1.0 = fully confident).
             - photoQuality: CLEAR = sharp and well-lit, BLURRY = out of focus, PARTIAL = partially visible, UNUSABLE = cannot assess.
             - damageTypeProbabilities must sum to approximately 1.0 across all types.
@@ -116,6 +167,12 @@ public class GeminiVisionProvider implements VisionProvider {
 
     @Override
     public DamageAssessment assess(FNOLPayload payload) {
+        return assess(payload, "AUTO");
+    }
+
+    @Override
+    public DamageAssessment assess(FNOLPayload payload, String lineOfBusiness) {
+        String prompt = "HOME".equalsIgnoreCase(lineOfBusiness) ? PROPERTY_ASSESSMENT_PROMPT : DAMAGE_ASSESSMENT_PROMPT;
         List<String> uris = payload.evidenceUris();
         if (uris == null || uris.isEmpty()) {
             log.warn("[GeminiVision] No evidenceUris provided — using deterministic fallback assessment.");
@@ -155,7 +212,7 @@ public class GeminiVisionProvider implements VisionProvider {
                 EvidenceImageLoader.describe(uris.get(0)));
         try {
             List<Map<String, Object>> parts = new java.util.ArrayList<>();
-            parts.add(Map.of("text", DAMAGE_ASSESSMENT_PROMPT));
+            parts.add(Map.of("text", prompt));
             parts.addAll(imageParts);
             Map<String, Object> requestBody = Map.of(
                     "contents", List.of(Map.of("parts", parts)),
@@ -168,7 +225,9 @@ public class GeminiVisionProvider implements VisionProvider {
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 
             ResponseEntity<String> response = restTemplate.postForEntity(GEMINI_API_URL.formatted(model), request, String.class);
-            return parseGeminiResponse(response.getBody());
+            // The calibration map was measured on the vehicle prompt only; property answers keep Gemini's confidence.
+            return parseGeminiResponse(response.getBody(),
+                    prompt == DAMAGE_ASSESSMENT_PROMPT ? calibrator : VisionConfidenceCalibrator.none());
 
         } catch (RestClientException e) {
             log.error("[GeminiVision] Gemini API call failed — using fallback assessment. Cause: {}", e.getClass().getSimpleName());
@@ -194,7 +253,7 @@ public class GeminiVisionProvider implements VisionProvider {
      * Parses the Gemini API response JSON and extracts the DamageAssessment.
      * Gemini returns: { "candidates": [{ "content": { "parts": [{ "text": "<json>" }] } }] }
      */
-    private DamageAssessment parseGeminiResponse(String responseBody) throws Exception {
+    private DamageAssessment parseGeminiResponse(String responseBody, VisionConfidenceCalibrator calibrator) throws Exception {
         JsonNode root = objectMapper.readTree(responseBody);
         String text = root
                 .path("candidates").get(0)
@@ -216,6 +275,7 @@ public class GeminiVisionProvider implements VisionProvider {
         int estimatedDamage = assessment.path("estimatedDamage").asInt(3500);
         double confidence   = assessment.path("confidence").asDouble(0.75);
         String photoQuality = assessment.path("photoQuality").asText("UNKNOWN");
+        String photoSubject = assessment.hasNonNull("photoSubject") ? assessment.path("photoSubject").asText() : null;
 
         Map<String, BigDecimal> probabilities = new java.util.LinkedHashMap<>();
         JsonNode probNode = assessment.path("damageTypeProbabilities");
@@ -229,8 +289,8 @@ public class GeminiVisionProvider implements VisionProvider {
         // of answers that were actually right at that confidence on labelled photos (tools/vision-eval).
         BigDecimal raw = BigDecimal.valueOf(confidence);
         BigDecimal calibrated = calibrator.calibrate(raw, probabilities);
-        log.info("[GeminiVision] Assessment — type={}, severity={}, estimate={}, confidence={} (raw {}), photoQuality={}",
-                damageType, severity, estimatedDamage, calibrated, raw, photoQuality);
+        log.info("[GeminiVision] Assessment — subject={}, type={}, severity={}, estimate={}, confidence={} (raw {}), photoQuality={}",
+                photoSubject, damageType, severity, estimatedDamage, calibrated, raw, photoQuality);
 
         return new DamageAssessment(
                 damageType,
@@ -239,7 +299,8 @@ public class GeminiVisionProvider implements VisionProvider {
                 calibrated,
                 photoQuality,
                 probabilities,
-                calibrator.isActive() ? raw : null
+                calibrator.isActive() ? raw : null,
+                photoSubject
         );
     }
 

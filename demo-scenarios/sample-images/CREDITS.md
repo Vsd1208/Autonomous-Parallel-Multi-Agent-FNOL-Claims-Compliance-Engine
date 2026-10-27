@@ -58,3 +58,23 @@ Photos used (NHTSA photo names):
 - `fnol-set-f150-frontal`: Front: No. 009 Post-Test Front View of Test Vehicle; Rear: No. 017 Post-Test Left Rear 3-4 View; Left side: No. 011 Post-Test Left View of Test Vehicle; Right side: No. 013 Post-Test Right View of Test Vehicle; Damage close-up: No. 015 Post-Test Right Front 3-4 View; Odometer / VIN: No. 004 Manufacturer's Label
 
 All are high-speed laboratory crashes, so expect severe assessments; they do not cover minor damage.
+
+## Home (property) photo sets
+
+One folder per cause of loss, filed on the home policy `POL-HOME-334455`: `overview.jpg`, `close-up.jpg` and, where
+there is one, `source.jpg` (the source of the damage). In the claim form, **Load real photo set → Homes** fills the
+slots. All photos are public domain (U.S. government works or CC0). Resized to at most 1280 px and re-encoded, which
+also removes camera metadata. Where a set has only one original photo, `close-up.jpg` is a crop of it (noted below), so
+the close-up adds no information the overview does not already have.
+
+| Folder | Cause of loss | Photos | Source | License |
+|---|---|---|---|---|
+| `fnol-set-home-burst-pipe/` | water from a burst pipe | overview: [Rohrbruch 004](https://commons.wikimedia.org/wiki/File:Rohrbruch_004.jpg); close-up: [Rohrbruch 006](https://commons.wikimedia.org/wiki/File:Rohrbruch_006.jpg); source: [Rohrbruch 001](https://commons.wikimedia.org/wiki/File:Rohrbruch_001.jpg) (wall opened after a pipe burst, 2011) | Wikimedia Commons, by Pictureme | CC0 1.0 |
+| `fnol-set-home-tree-on-roof/` | falling trees (wind) | [FEMA 37865](https://commons.wikimedia.org/wiki/File:FEMA_-_37865_-_Two_trees_hit_house_in_Baton_Rouge.jpg), two trees fell on a home after Hurricane Gustav, Baton Rouge, LA, 2 Sep 2008; close-up is a crop | FEMA / Barry Bahler | Public domain (U.S. government work) |
+| `fnol-set-home-hurricane-roof/` | windstorm | [FEMA 259](https://commons.wikimedia.org/wiki/File:FEMA_-_259_-_Photograph_by_FEMA_News_Photo_taken_on_09-01-1992_in_Hawaii.jpg), roof blown off and top storey collapsed, Hurricane Iniki, Hawaii, 1 Sep 1992; close-up is a crop | FEMA News Photo | Public domain (U.S. government work) |
+| `fnol-set-home-wildfire/` | wildfire (total loss) | overview: [FEMA 37387](https://commons.wikimedia.org/wiki/File:FEMA_-_37387_-_FEMA_PDA_Team_assesses_Wildfire_Damage_in_California.jpg); close-up: [FEMA 37385](https://commons.wikimedia.org/wiki/File:FEMA_-_37385_-_FEMA_PDA_Team_assesses_Wildfire_Damage_in_California.jpg); a damage-assessment team at a home destroyed by wildfire, Big Sur, CA, 23 Jul 2008 | FEMA / Casey Deshong | Public domain (U.S. government work) |
+| `fnol-set-home-river-flood/` | flood (rising water) | [FEMA 34626](https://commons.wikimedia.org/wiki/File:FEMA_-_34626_-_Home_surrounded_by_water_in_Arkansas.jpg), home surrounded by flood water, Des Arc, AR, 25 Mar 2008; close-up is a crop | FEMA / Jocelyn Augustino | Public domain (U.S. government work) |
+
+The claim descriptions in the app are invented for the demo; they are not statements by the people or owners of the
+places shown. Flood is excluded from standard homeowners policies, so the flood set is expected to raise
+`POSSIBLE_FLOOD_EXCLUSION` and go to an adjuster.

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -301,6 +302,53 @@ class FNOLOrchestratorTest {
         assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
         assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("3200");
         assertThat(response.notes()).anyMatch(n -> n.contains("request more photos, send to investigation"));
+    }
+
+    @Test
+    @DisplayName("Property: a HOME claim is assessed as property damage; flood goes to an adjuster as a possible exclusion")
+    void process_homeClaimUsesPropertyAssessmentAndFlagsFlood() {
+        LocalDate start = OrchestratorFixture.POLICY_START;
+        fixture.policyCenter.add(new Policy("POL-HOME-334455", "HOME", "ACTIVE", start, start.plusYears(1),
+                "Riley Smith", "TX", "Single family property", List.of()), List.of(
+                new Coverage("DWELLING", new BigDecimal("350000"), new BigDecimal("2500"))), List.of());
+        List<String> angles = List.of("OVERVIEW", "CLOSE_UP");
+
+        // An uploaded photo on a home policy: property damage, not a bumper, so no line-of-business mismatch.
+        FNOLResponse pipe = orchestrator.process(new FNOLPayload("POL-HOME-334455", LocalDate.now().minusDays(2), "TX",
+                "A pipe burst behind the bathroom wall.", "Riley Smith", "01/01/1990", null,
+                List.of("data:image/jpeg;base64,/9j/4AAQ", "data:image/jpeg;base64,/9j/4AAQ"), "WEB", null, null,
+                new BigDecimal("3500"), angles));
+        assertThat(pipe.branchA().damageAssessment().damageType()).isEqualTo("WATER_DAMAGE");
+        assertThat(pipe.gateFlags()).isEmpty();
+
+        FNOLResponse flood = orchestrator.process(new FNOLPayload("POL-HOME-334455", LocalDate.now().minusDays(3), "TX",
+                "The river rose and water came into the house.", "Riley Smith", "01/01/1990", null,
+                List.of("mock://photo/flood-overview.jpg", "mock://photo/flood-close-up.jpg"), "WEB", null, null,
+                new BigDecimal("38000"), angles));
+        assertThat(flood.gateFlags()).contains(GateConsistencyChecker.POSSIBLE_FLOOD_EXCLUSION);
+        assertThat(flood.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(flood.notes()).anyMatch(n -> n.contains("standard homeowners policies exclude"));
+    }
+
+    @Test
+    @DisplayName("A house photo on an auto policy goes to an adjuster with a note saying what the photos show")
+    void process_photoOfWrongPropertyGoesToAdjuster() {
+        VisionProvider sees = new VisionProvider() {
+            @Override public DamageAssessment assess(FNOLPayload p) {
+                return new DamageAssessment("UNKNOWN", "MODERATE", new BigDecimal("3000"), new BigDecimal("0.90"),
+                        "CLEAR", Map.of("UNKNOWN", new BigDecimal("0.90")), null, "BUILDING");
+            }
+        };
+        fixture.vision = sees;
+        FNOLResponse response = fixture.build().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000"));
+
+        assertThat(response.gateFlags()).contains(GateConsistencyChecker.PHOTO_SUBJECT_MISMATCH);
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(response.notes()).anyMatch(n -> n.contains("the photos show a building, but the policy line is AUTO"));
+        // The mock's own photos match the policy, so ordinary claims are not flagged.
+        assertThat(orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000")).gateFlags()).isEmpty();
     }
 
     @Test
