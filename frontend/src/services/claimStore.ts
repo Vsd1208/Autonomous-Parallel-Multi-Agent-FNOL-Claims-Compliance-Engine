@@ -22,7 +22,7 @@ export const claimStore = {
       const ids = Object.keys(all);
       for (const id of ids.slice(0, Math.max(0, ids.length - MAX_CLAIMS))) delete all[id];
       window.localStorage.setItem(KEY, JSON.stringify(all));
-      window.localStorage.setItem(LAST_KEY, claim.claimId);
+      window.localStorage.removeItem(LAST_KEY);   // left behind by older builds, which showed a "last claim" tab
     } catch {
       // Storage unavailable (private mode, quota): the dashboard falls back to the API.
     }
@@ -35,13 +35,5 @@ export const claimStore = {
   updateStatus(claimId: string, status: string) {
     const claim = this.get(claimId);
     if (claim) this.save({ ...claim, status });
-  },
-
-  lastClaimId(): string | null {
-    try {
-      return window.localStorage.getItem(LAST_KEY);
-    } catch {
-      return null;
-    }
   },
 };

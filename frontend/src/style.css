@@ -129,6 +129,25 @@ a:hover { text-decoration: underline; }
 }
 .header-tabs .tab:hover { background: var(--header-hover); text-decoration: none; }
 .header-tabs .tab.active { border-bottom-color: var(--tab-accent); font-weight: 600; background: var(--header-hover); }
+/* The open claim's tab: the label opens it, the × closes it. */
+.header-tabs .claim-tab { gap: 8px; padding-right: 8px; }
+.header-tabs .claim-tab a { color: inherit; }
+.header-tabs .claim-tab a:hover { text-decoration: none; }
+.tab-close {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #c9d6e2;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tab-close:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
 .header-search { display: flex; align-items: center; }
 .header-search input {
   width: 170px;

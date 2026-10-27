@@ -5,6 +5,11 @@ import { Button, ListView, MessageBar, Panel, StatusChip, Toolbar, dateTime, hum
 import { apiClient } from '../services/apiClient';
 import { QueuePage } from '../types';
 
+/** The Desktop queue a claim in this status appears in, e.g. "Needs Decision". */
+export function queueLabel(status?: string | null): string | undefined {
+  return Object.values(VIEWS).find((v) => status && v.statuses.includes(status))?.label;
+}
+
 const VIEWS: Record<string, { label: string; statuses: string[]; hint: string }> = {
   decision: {
     label: 'Needs Decision',

@@ -1,12 +1,50 @@
-import React, { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { claimStore } from '../services/claimStore';
+import React, { useEffect, useState } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
-/** Top header with product tabs and a claim-number search, as in a claims-system workspace. */
+/** The claim an adjuster has open in this browser tab (kept for the session, until closed). */
+const OPEN_CLAIM_KEY = 'fnol:openClaimId';
+
+function storedOpenClaim(): string | null {
+  try {
+    return window.sessionStorage.getItem(OPEN_CLAIM_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeOpenClaim(claimId: string | null) {
+  try {
+    if (claimId) window.sessionStorage.setItem(OPEN_CLAIM_KEY, claimId);
+    else window.sessionStorage.removeItem(OPEN_CLAIM_KEY);
+  } catch {
+    // Storage unavailable: the tab still works until the page is reloaded.
+  }
+}
+
+/**
+ * Top header with product tabs and a claim-number search, as in a claims-system workspace. A claim tab appears
+ * when an adjuster opens a claim (from a queue or the search box), stays while they move around, is replaced by
+ * the next claim they open, and disappears when they close it. Reporting a claim does not open one.
+ */
 export function AppHeader() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [search, setSearch] = useState('');
-  const lastClaimId = claimStore.lastClaimId();
+  const [openClaim, setOpenClaim] = useState<string | null>(storedOpenClaim);
+  const routeClaim = /^\/claim\/([^/]+)/.exec(location.pathname)?.[1];
+
+  useEffect(() => {
+    if (!routeClaim) return;
+    const id = decodeURIComponent(routeClaim);
+    setOpenClaim(id);
+    storeOpenClaim(id);
+  }, [routeClaim]);
+
+  const closeClaim = () => {
+    setOpenClaim(null);
+    storeOpenClaim(null);
+    if (routeClaim) navigate('/');
+  };
 
   const goToClaim = (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,10 +63,12 @@ export function AppHeader() {
       </div>
       <nav className="header-tabs" aria-label="Main">
         <NavLink to="/" end className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>Desktop</NavLink>
-        {lastClaimId && (
-          <NavLink to={`/claim/${lastClaimId}`} className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>
-            Claim {lastClaimId}
-          </NavLink>
+        {openClaim && (
+          <span className={routeClaim ? 'tab claim-tab active' : 'tab claim-tab'}>
+            <NavLink to={`/claim/${encodeURIComponent(openClaim)}`}>Claim {openClaim}</NavLink>
+            <button type="button" className="tab-close" onClick={closeClaim}
+              aria-label={`Close claim ${openClaim}`} title="Close claim">×</button>
+          </span>
         )}
         <NavLink to="/new" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>New Claim</NavLink>
       </nav>

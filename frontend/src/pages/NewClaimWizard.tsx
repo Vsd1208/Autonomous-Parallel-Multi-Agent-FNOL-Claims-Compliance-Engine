@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { queueLabel } from './Desktop';
 import { PageTitle } from '../components/Shell';
 import { Button, DetailView, MessageBar, Panel, Toolbar, channelLabel, money } from '../components/ui';
 import { demoScenarios, recentDate } from '../demoScenarios';
@@ -54,6 +55,7 @@ export default function NewClaimWizard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [escalatedClaimId, setEscalatedClaimId] = useState('');
+  const [submitted, setSubmitted] = useState<Submitted | null>(null);
   const [stepError, setStepError] = useState('');
 
   const set = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
@@ -167,7 +169,10 @@ export default function NewClaimWizard() {
         claimedAmount: form.claimedAmount.trim() ? Number(form.claimedAmount) : undefined,
       });
       claimStore.save(response);
-      navigate(`/claim/${response.claimId}`);
+      // The reporter gets a confirmation; the claim waits in an adjuster queue and is opened from there.
+      setSubmitted({ claimId: response.claimId, status: response.status, policyNumber: form.policyNumber,
+        claimedAmount: form.claimedAmount.trim() ? Number(form.claimedAmount) : null,
+        photos: angles.filter((a) => photos[a.key]).length });
     } catch (err: any) {
       setError(err.message || 'The claim could not be submitted');
       if (err instanceof ApiError && err.claimId) setEscalatedClaimId(err.claimId);
@@ -219,6 +224,11 @@ export default function NewClaimWizard() {
       </aside>
 
       <main className="workspace-main">
+        {submitted ? (
+          <Submitted claim={submitted} onAnother={() => {
+            setSubmitted(null); setForm(emptyForm); setPhotos({}); setPhotosUnavailable(false); setStep(0);
+          }} onDesktop={() => navigate('/')} />
+        ) : (<>
         <Toolbar>
           <Button disabled={step === 0 || busy} onClick={() => { setStepError(''); setStep(step - 1); }}>‹ Back</Button>
           {!last && <Button variant="primary" onClick={next}>Next ›</Button>}
@@ -238,7 +248,7 @@ export default function NewClaimWizard() {
           <MessageBar tone="error" title="The claim was not filed">
             {error}
             {escalatedClaimId && (
-              <> It was saved for human attention as <Link to={`/claim/${escalatedClaimId}`}>{escalatedClaimId}</Link>.</>
+              <> It was saved for human attention as {escalatedClaimId} and is in the adjuster queue.</>
             )}
           </MessageBar>
         )}
@@ -383,7 +393,40 @@ export default function NewClaimWizard() {
             </MessageBar>
           </>
         )}
+        </>)}
       </main>
     </div>
+  );
+}
+
+type Submitted = { claimId: string; status: string; policyNumber: string; claimedAmount: number | null; photos: number };
+
+/**
+ * What the reporter sees after Finish: the claim number and where it went. The AI's verdict is internal and is
+ * shown only to the adjuster who opens the claim from the queue.
+ */
+function Submitted({ claim, onAnother, onDesktop }: { claim: Submitted; onAnother: () => void; onDesktop: () => void }) {
+  const queue = queueLabel(claim.status);
+  return (
+    <>
+      <PageTitle title="Claim submitted" />
+      <MessageBar tone="success" title={`Claim ${claim.claimId} has been received`}>
+        Keep this number for any contact about the claim. {queue
+          ? <>It is now in the adjuster queue <strong>{queue}</strong>; an adjuster will review it and get in touch.</>
+          : <>An adjuster will review it and get in touch.</>}
+      </MessageBar>
+      <Panel title="Summary">
+        <DetailView columns={2} rows={[
+          ['Claim number', claim.claimId],
+          ['Policy number', claim.policyNumber],
+          ['Amount claimed', claim.claimedAmount != null ? money(claim.claimedAmount) : 'Not stated'],
+          ['Photos', String(claim.photos)],
+        ]} />
+      </Panel>
+      <Toolbar>
+        <Button variant="primary" onClick={onAnother}>Report another claim</Button>
+        <Button onClick={onDesktop}>Go to Desktop</Button>
+      </Toolbar>
+    </>
   );
 }
