@@ -175,9 +175,16 @@ def main():
         lenient, strict = correctness(zone, r["label"])
         scored.append({"image": r["image"], "zone": zone, "conf": float(p.get("confidence") or 0),
                        "margin": margin(p), "ok": int(lenient), "strict": int(strict),
-                       "truth": r["label"]["primaryZone"], "latency": r.get("latency", 0)})
+                       "truth": r["label"]["primaryZone"], "latency": r.get("latency", 0),
+                       "subject": p.get("photoSubject")})
     n = len(scored)
     accuracy = statistics.mean(s["ok"] for s in scored)
+    # Every photo in the dataset is a damaged car, so the right photoSubject is always VEHICLE; anything else
+    # would raise PHOTO_SUBJECT_MISMATCH on a genuine auto claim (a false alarm).
+    with_subject = [s for s in scored if s["subject"]]
+    subject_row = (f"| Photo subject reported as VEHICLE (others are false alarms on auto claims) | "
+                   f"{sum(s['subject'] == 'VEHICLE' for s in with_subject)}/{len(with_subject)} |"
+                   if with_subject else "| Photo subject | not asked by this prompt |")
 
     lat = sorted(s["latency"] for s in scored)
     over = sum(l > APP_READ_TIMEOUT_S for l in lat)
@@ -185,6 +192,7 @@ def main():
               f"| Damaged zone named correctly (lenient) | **{accuracy:.1%}** ({sum(s['ok'] for s in scored)}/{n}) |",
               f"| Zone with the most damage named (strict) | {statistics.mean(s['strict'] for s in scored):.1%} |",
               f"| Damage seen at all (not UNKNOWN) | {sum(s['zone'] != 'UNKNOWN' for s in scored) / n:.1%} |",
+              subject_row,
               f"| Latency p50 / p95 (includes retries after HTTP 503) | {lat[n // 2]:.1f}s / {lat[max(0, int(n * 0.95) - 1)]:.1f}s |",
               f"| Calls slower than the app's {APP_READ_TIMEOUT_S}s read timeout | {over} ({over / n:.0%}) |", ""]
 

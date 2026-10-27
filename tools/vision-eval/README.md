@@ -32,18 +32,18 @@ python -P prepare.py --sample 120 --seed 7
 # 2. Ask Gemini, exactly as the app does (prompt read from GeminiVisionProvider.java).
 #    Free tier = 20 calls/day for gemini-2.5-flash, shared with the app. Run once a day; it resumes,
 #    retries failures and stops cleanly when the daily quota is used up.
-python -P evaluate.py --run v2-multiphoto --thinking-budget 0 --limit 60 --max-calls 18
+python -P evaluate.py --run v3-subject --thinking-budget 0 --limit 60 --max-calls 15
 
 # 3. Accuracy report (results/report-thinking0.md) and, once >= 50 photos are answered,
 #    the calibration map for the app
-python -P calibrate.py --run v2-multiphoto --write-app-calibration
+python -P calibrate.py --run v3-subject --write-app-calibration
 
 # 4. Rebuild the API so it picks up the map
 cd ../.. && docker compose up -d --build fnol-api
 ```
 
-The map is applied only when the app's `gemini.vision.model` and `gemini.vision.thinking-budget` match
-the ones it was measured with (the API logs a warning otherwise). Turn it off with
+The map is applied only when the app's vehicle prompt (`promptSha256`), `gemini.vision.model` and
+`gemini.vision.thinking-budget` match the ones it was measured with (the API logs a warning otherwise). Turn it off with
 `GEMINI_VISION_CALIBRATION_ENABLED=false`. Re-run the evaluation after changing the model, the
 prompt or the thinking budget.
 
@@ -52,17 +52,28 @@ prompt or the thinking budget.
 | Run | Prompt | Photos answered | Lenient / strict accuracy | Note |
 |---|---|---|---|---|
 | `thinking0` | single-photo prompt (before the standard photo set) | 25 | see `results/report-thinking0.md` | Kept for comparison; not used for the app map |
-| `v2-multiphoto` | current multi-photo prompt, photo labelled `angle: OTHER` (prompt SHA-256 `61a89427e0e132d9`) | 18 of 50 needed | 94% / 72% (`results/report-v2-multiphoto.md`) | Continue daily until 50 |
+| `v2-multiphoto` | multi-photo prompt, photo labelled `angle: OTHER` (prompt SHA-256 `61a89427e0e132d9`) | 33 | 91% / 67% (`results/report-v2-multiphoto.md`) | Stopped: the prompt now also asks for `photoSubject`. Kept for comparison |
+| `v3-subject` | current prompt: as v2, plus `photoSubject` (VEHICLE, BUILDING, OTHER_PROPERTY, NONE) (prompt SHA-256 `501b3308884a64f8`) | 0 of 50 needed | — | Run daily until 50; the report also counts how often a car photo is reported as VEHICLE |
+
+`v3-subject` restarts the count because a changed prompt can change the answers. Compare it with
+`v2-multiphoto` on the photos both runs answered to see whether the extra question moved the damage-zone
+accuracy. Every photo in the dataset is a car, so any `photoSubject` other than VEHICLE would be a false
+`PHOTO_SUBJECT_MISMATCH` on a genuine auto claim.
 
 On the 18 photos both runs answered, the current prompt was right as often or more often: lenient 17/18
-(old 16/18), strict 13/18 (old 12/18). Gemini's self-reported confidence is still uninformative (only 0.8
-or 0.9; AUC 0.47); the probability margin separates right from wrong answers (AUC 0.94).
+(old 16/18), strict 13/18 (old 12/18). After 33 photos, Gemini's self-reported confidence is still
+uninformative (only 0.8 or 0.9; AUC 0.48); the probability margin separates right from wrong answers
+(AUC 0.82).
 
 Until the map ships, the app guards against hedged answers directly: the reconciliation gate raises
 `AMBIGUOUS_DAMAGE_TYPE` (claim goes to an adjuster) when the probability margin is below
-`fnol.stp.min-probability-margin` (default 0.30). Across both runs, every answer with a margin of 0.60
-or more was right (31/31), and all 5 wrong answers that passed the 0.85 confidence factor had a margin
-below 0.30. Hedged answers that were right (6 of 11) also go to an adjuster: the safe direction.
+`fnol.stp.min-probability-margin` (default 0.30). In `v2-multiphoto`, all 7 hedged `MULTIPLE` answers had
+a margin of 0.20 or less, and 2 of them were wrong; the gate sends all 7 to an adjuster. One wrong answer
+was confident (photo 1153: `FRONT_BUMPER` at margin 0.70 for side-panel damage), so the margin gate
+does not catch everything; the claimed-amount and severity checks remain the backstop.
+
+On 33 photos the calibrated map does not yet beat Gemini's raw confidence out of sample (Brier 0.089 vs
+0.084), so even at 50 photos `calibrate.py` will only write the map if that changes.
 
 The evaluation scores one photo at a time, while a claim now sends the standard set of five. The map
 therefore calibrates single-photo answers; check it against real multi-photo claims before relying on it.
