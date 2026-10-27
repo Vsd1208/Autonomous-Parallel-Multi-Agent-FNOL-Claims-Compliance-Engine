@@ -2,7 +2,7 @@
 
 ## Database Engine
 - **Target**: PostgreSQL 16 (docker-compose image `postgres:16-alpine`)
-- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V11; Hibernate runs with `ddl-auto: validate`
+- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V13; Hibernate runs with `ddl-auto: validate`
 - **ORM**: Spring Data JPA / Hibernate 6
 - **Tests**: H2 in PostgreSQL mode with `ddl-auto: create-drop` (Flyway disabled); the migrations are exercised by `docker compose up`
 
@@ -21,6 +21,8 @@
 | V9 | `V9__add_claimed_amount_and_deductible.sql` | `claimed_amount`, `deductible` |
 | V10 | `V10__add_inspections.sql` | `inspections` table (damage inspections / appraisals) |
 | V11 | `V11__add_photo_angle.sql` | `claim_documents.angle` |
+| V12 | `V12__add_analysis_json.sql` | `claims.analysis_json` |
+| V13 | `V13__add_upload_requests.sql` | `upload_requests` table (one-time claimant photo links) |
 
 ## `claims`
 
@@ -34,6 +36,7 @@
 | `estimated_damage` | `NUMERIC(14,2)` | no, `>= 0` | Vision estimate in USD (0 for REJ- claims) |
 | `reserve` | `NUMERIC(14,2)` | no, `>= 0` | Recommended reserve (amount owed): min(claimed, AI estimate) − deductible, capped at the limit (0 for REJ- claims) |
 | `claimed_amount` | `NUMERIC(14,2)` | yes, `>= 0` | What the claimant asked for |
+| `analysis_json` | `TEXT` | yes | Full AI analysis (branch A/B results, notes, flags) for any adjuster's browser; stored **without** the redacted description text and without audit records. Not in the `/status` JSON |
 | `deductible` | `NUMERIC(14,2)` | yes | Policy deductible applied to the reserve |
 | `created_at` | `TIMESTAMPTZ` | no | |
 | `updated_at` | `TIMESTAMPTZ` | no | |
@@ -94,6 +97,13 @@ Indexes: `idx_audit_trail_claim_id`, `idx_audit_trail_claim_seq`.
 | `uploaded_at` | `TIMESTAMPTZ` | no | |
 
 Index: `idx_claim_documents_claim_id`.
+
+## `upload_requests`
+
+One row per photo request the adjuster sends. The link token (256 random bits) is **never stored**; only its
+SHA-256 (`token_sha256`), so the table cannot be used to upload. `requested_angles` is comma-separated;
+`status` is `OPEN`, `USED` (single use, `photos_received` set) or `CANCELLED`; an `OPEN` row past `expires_at`
+(7 days) is reported as `EXPIRED`.
 
 ## `inspections`
 

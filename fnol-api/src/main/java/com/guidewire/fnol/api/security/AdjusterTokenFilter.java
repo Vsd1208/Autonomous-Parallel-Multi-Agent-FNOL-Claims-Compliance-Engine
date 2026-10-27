@@ -26,8 +26,9 @@ public class AdjusterTokenFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Adjuster-Token";
 
     private static final Pattern PROTECTED = Pattern.compile(
-            "^/api/v1/(inspectors|fnol/(queue|[^/]+/(review|claimcenter-sync|audit|audit/pdf|explanation|documents"
-                    + "|documents/[^/]+/content|inspections|inspections/[^/]+/(report|cancel))))/?$");
+            "^/api/v1/(inspectors|fnol/(queue|[^/]+/(review|claimcenter-sync|audit|audit/pdf|explanation|analysis|documents"
+                    + "|documents/[^/]+/content|inspections|inspections/[^/]+/(report|cancel)|upload-requests"
+                    + "|upload-requests/[^/]+/cancel)))/?$");
 
     private final byte[] expected;
 

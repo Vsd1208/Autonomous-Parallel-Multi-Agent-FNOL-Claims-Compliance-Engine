@@ -1,11 +1,13 @@
 package com.guidewire.fnol.orchestrator;
 
+import com.guidewire.fnol.agents.VisionConfidenceCalibrator;
 import com.guidewire.fnol.common.Models.*;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -19,6 +21,12 @@ public class GateConsistencyChecker {
     public static final String SEVERITY_ESTIMATE_MISMATCH = "SEVERITY_ESTIMATE_MISMATCH";
     /** The loss after the deductible is above the matched coverage limit (the reserve is capped at the limit). */
     public static final String RESERVE_EXCEEDS_COVERAGE_LIMIT = "RESERVE_EXCEEDS_COVERAGE_LIMIT";
+    /**
+     * The AI hedged between damage types (gap between its two highest probabilities below
+     * fnol.stp.min-probability-margin). On labelled photos these were the answers that were wrong despite
+     * a high reported confidence.
+     */
+    public static final String AMBIGUOUS_DAMAGE_TYPE = "AMBIGUOUS_DAMAGE_TYPE";
     /** The claimant asks for more than the photos support; never paid without an adjuster. */
     public static final String CLAIMED_EXCEEDS_AI_ESTIMATE = "CLAIMED_EXCEEDS_AI_ESTIMATE";
     /** The damage type does not fit the policy's line of business (e.g. a bumper on a home policy). */
@@ -68,6 +76,12 @@ public class GateConsistencyChecker {
         if (("HOME".equals(line) && VEHICLE_DAMAGE.contains(damage.damageType()))
                 || ("AUTO".equals(line) && PROPERTY_DAMAGE.contains(damage.damageType()))) {
             flags.add(DAMAGE_TYPE_LINE_MISMATCH);
+        }
+
+        Map<String, BigDecimal> probabilities = damage.damageTypeProbabilities();
+        if (probabilities != null && !probabilities.isEmpty()
+                && VisionConfidenceCalibrator.margin(probabilities).compareTo(stp.getMinProbabilityMargin()) < 0) {
+            flags.add(AMBIGUOUS_DAMAGE_TYPE);
         }
 
         if (POOR_PHOTOS.contains(damage.photoQuality()) && damage.confidence().compareTo(stp.getConfidence()) >= 0) {

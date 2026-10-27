@@ -251,6 +251,7 @@ def main():
             "description": "Maps the gap between Gemini's two highest damage-type probabilities to the observed share "
                            "of correct damage-zone answers. Fitted by tools/vision-eval/calibrate.py.",
             "signal": SIGNAL, "model": rows[0]["model"], "thinkingBudget": rows[0]["thinkingBudget"],
+            "promptSha256": rows[0].get("promptSha256", "unrecorded"),
             "dataset": "Humans in the Loop - Car parts and car damages (CC0 1.0)",
             "images": n, "overallAccuracy": round(accuracy, 3), "createdAt": datetime.date.today().isoformat(),
             "leaveOneOut": {"brier_raw": round(brier(raw_pairs), 3), "brier_calibrated": round(brier(cal_pairs), 3),

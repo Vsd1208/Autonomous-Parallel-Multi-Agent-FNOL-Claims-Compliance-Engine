@@ -188,6 +188,21 @@ public class FNOLController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    // ── Full AI analysis (any adjuster's browser) ─────────────────────────────
+    @GetMapping("/fnol/{claimId}/analysis")
+    ResponseEntity<?> analysis(@PathVariable("claimId") String claimId) {
+        return claims.findById(claimId)
+                .filter(c -> c.analysisJson != null)
+                .<ResponseEntity<?>>map(c -> {
+                    try {
+                        return ResponseEntity.ok(mapper.readValue(c.analysisJson, Object.class));
+                    } catch (Exception e) {
+                        return ResponseEntity.status(500).body(Map.of("error", "Failed to parse analysis"));
+                    }
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     // ── WHY Panel (Explanation) ───────────────────────────────────────────────
     /**
      * Human Review Point 2 support: adjuster fetches the structured "WHY" advisory

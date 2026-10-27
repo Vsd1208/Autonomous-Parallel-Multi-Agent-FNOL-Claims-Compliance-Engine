@@ -3,16 +3,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import { PageTitle } from '../components/Shell';
 import { Button, DetailView, MessageBar, Panel, Toolbar, channelLabel, money } from '../components/ui';
 import { demoScenarios, recentDate } from '../demoScenarios';
-import { HOME_ANGLES, anglesFor } from '../photoAngles';
+import { AUTO_ANGLES, HOME_ANGLES, anglesFor } from '../photoAngles';
+import { SET_FILES, sampleSets } from '../sampleSets';
+import { readPhoto } from '../utils/photos';
 import { ApiError, apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
 import { FormData } from '../types';
 
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
-/** Photos are downscaled in the browser so a full set stays small (phone photos are often 3-8 MB). */
-const MAX_PHOTO_EDGE = 1600;
-
 type Photo = { uri: string; name: string; preview: string };
+
 
 const STEPS = ['Policy', 'Claimant & Reporting', 'Loss Details', 'Review & Submit'];
 
@@ -30,40 +29,6 @@ const emptyForm: FormData = {
   claimedAmount: '',
 };
 
-/**
- * Reads an uploaded damage photo as a JPEG data: URI, downscaled to MAX_PHOTO_EDGE on the longer side.
- * The API sends it to the vision model and stores it for the adjuster.
- */
-function readPhoto(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
-      reject(new Error('Photo must be a JPEG, PNG, WebP or GIF image'));
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      reject(new Error('Photo must be 20 MB or smaller'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Could not read the photo'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('Could not read the photo'));
-      img.onload = () => {
-        const scale = Math.min(1, MAX_PHOTO_EDGE / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const uri = canvas.toDataURL('image/jpeg', 0.85);
-        if (uri.length * 0.75 > MAX_PHOTO_BYTES) reject(new Error('Photo is too large even after resizing'));
-        else resolve(uri);
-      };
-      img.src = String(reader.result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
 
 function Field({ label, required, children, wide }: {
   label: string; required?: boolean; children: React.ReactNode; wide?: boolean;
@@ -83,6 +48,7 @@ export default function NewClaimWizard() {
   const [form, setForm] = useState<FormData>(emptyForm);
   const [photos, setPhotos] = useState<Record<string, Photo>>({});
   const [photosUnavailable, setPhotosUnavailable] = useState(false);
+  const [loadingSet, setLoadingSet] = useState(false);
   const angles = anglesFor(form.policyNumber);
   const missingAngles = angles.filter((a) => a.required && !photos[a.key]);
   const [busy, setBusy] = useState(false);
@@ -107,6 +73,36 @@ export default function NewClaimWizard() {
     setPhotosUnavailable(false);
     setError('');
     setStepError('');
+  };
+
+  /** Loads a real photo set (every side of one damaged car) as a claimant would upload it. */
+  const loadSampleSet = async (folder: string) => {
+    const set = sampleSets.find((s) => s.folder === folder);
+    if (!set) return;
+    setLoadingSet(true);
+    setStepError('');
+    setError('');
+    try {
+      const loaded: Record<string, Photo> = {};
+      for (const a of AUTO_ANGLES) {
+        const name = SET_FILES[a.key];
+        if (!name) continue;
+        const res = await fetch(`/${set.folder}/${name}`);
+        if (!res.ok) throw new Error(`Sample photo ${name} could not be loaded (HTTP ${res.status})`);
+        const blob = await res.blob();
+        const uri = await readPhoto(new File([blob], name, { type: blob.type || 'image/jpeg' }));
+        loaded[a.key] = { uri, name: `${set.folder}/${name}`, preview: uri };
+      }
+      setForm({ ...demoScenarios[0].data, incidentDate: recentDate(), description: set.description,
+        claimedAmount: set.claimedAmount });
+      setPhotos(loaded);
+      setPhotosUnavailable(false);
+      setStep(2);
+    } catch (err: any) {
+      setStepError(err.message || 'The sample set could not be loaded');
+    } finally {
+      setLoadingSet(false);
+    }
   };
 
   const onPhoto = (angle: string) => async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -199,6 +195,16 @@ export default function NewClaimWizard() {
               {demoScenarios.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
             </select>
           </label>
+          <label className="field">
+            <span className="field-label">Load real photo set</span>
+            <select defaultValue="" disabled={busy || loadingSet}
+              onChange={(e) => { loadSampleSet(e.target.value); e.target.value = ''; }}>
+              <option value="" disabled>{loadingSet ? 'Loading photos…' : 'Choose…'}</option>
+              {sampleSets.map((s) => <option key={s.folder} value={s.folder}>{s.label}</option>)}
+            </select>
+          </label>
+          <p className="hint">Every side of one damaged vehicle (NHTSA crash tests, public domain). Analysed by the
+            real vision model when Gemini is enabled.</p>
         </div>
       </aside>
 

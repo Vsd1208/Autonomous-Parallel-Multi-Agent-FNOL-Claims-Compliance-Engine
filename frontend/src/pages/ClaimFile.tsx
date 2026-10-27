@@ -5,6 +5,7 @@ import {
   Button, DetailView, ListView, MessageBar, Panel, StatusChip, Toolbar, channelLabel, dateTime, humanize, money,
 } from '../components/ui';
 import { EvidenceGallery, PhotoSetCheck } from '../components/Evidence';
+import { PhotoRequestList, RequestPhotos } from '../components/PhotoRequests';
 import { angleLabel, anglesFor } from '../photoAngles';
 import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionResult } from '../components/Inspection';
 import { apiClient } from '../services/apiClient';
@@ -69,9 +70,16 @@ export default function ClaimFile() {
       try {
         const record = await apiClient.getClaimStatus(claimId);
         const explanation = await apiClient.getExplanation(claimId).catch(() => null);
+        // The analysis is saved on the server, so any adjuster's browser can show it; the copy this
+        // browser kept at submission is only a fallback for claims filed before that.
+        const saved = await apiClient.getAnalysis(claimId).catch(() => null);
         if (cancelled) return;
+        const analysis = saved
+          ? { branchA: saved.branchA, branchB: saved.branchB, notes: saved.notes, policyContext: saved.policyContext }
+          : {};
         setClaim({
           ...(stored ?? {}),
+          ...analysis,
           claimId: record.claimId,
           status: record.status,
           explanation: explanation ?? stored?.explanation ?? null,
@@ -142,14 +150,15 @@ export default function ClaimFile() {
       />
       <Workspace sidebar={sidebar}>
         <SectionView section={section as Section} claim={claim} docs={docs} inspections={inspections}
-          onChanged={() => setReload((n) => n + 1)} />
+          reload={reload} onChanged={() => setReload((n) => n + 1)} />
       </Workspace>
     </>
   );
 }
 
-function SectionView({ section, claim, docs, inspections, onChanged }: {
-  section: Section; claim: DashboardClaim; docs: ClaimDocument[]; inspections: Inspection[]; onChanged: () => void;
+function SectionView({ section, claim, docs, inspections, reload, onChanged }: {
+  section: Section; claim: DashboardClaim; docs: ClaimDocument[]; inspections: Inspection[]; reload: number;
+  onChanged: () => void;
 }) {
   switch (section) {
     case 'summary': return <Summary claim={claim} docs={docs} onChanged={onChanged} />;
@@ -157,18 +166,18 @@ function SectionView({ section, claim, docs, inspections, onChanged }: {
     case 'loss': return <LossDetails claim={claim} docs={docs} />;
     case 'compliance': return <Compliance claim={claim} />;
     case 'financials': return <Financials claim={claim} />;
-    case 'documents': return <Documents docs={docs} />;
+    case 'documents': return <Documents claimId={claim.claimId} docs={docs} reload={reload} onChanged={onChanged} />;
     case 'inspection': return <InspectionSection claim={claim} inspections={inspections} onChanged={onChanged} />;
-    case 'decision': return <Decision claim={claim} inspections={inspections} onChanged={onChanged} />;
+    case 'decision': return <Decision claim={claim} inspections={inspections} docs={docs} reload={reload} onChanged={onChanged} />;
     case 'history': return <History claimId={claim.claimId} />;
   }
 }
 
 function NoBranchDetails() {
   return (
-    <MessageBar tone="info" title="Analysis details are not available here">
-      The detailed AI results are kept by the browser that submitted the claim. The saved claim, the WHY panel and the
-      audit history come from the server.
+    <MessageBar tone="info" title="Analysis details were not saved for this claim">
+      This claim was filed before the full AI analysis was stored on the server. The saved claim, the WHY panel,
+      the photos and the audit history are still available.
     </MessageBar>
   );
 }
@@ -185,6 +194,7 @@ const FLAG_TEXT: Record<string, string> = {
   CLAIMED_EXCEEDS_AI_ESTIMATE: 'The claimant asks for more than the photos support. Not approved automatically.',
   DAMAGE_TYPE_LINE_MISMATCH: "The damage does not fit the policy's line of business.",
   CONFIDENCE_PHOTO_QUALITY_MISMATCH: 'High AI confidence was reported for a poor photo.',
+  AMBIGUOUS_DAMAGE_TYPE: 'The AI could not settle on one damage type; check the photos yourself.',
   DUPLICATE_SUBMISSION: 'A duplicate FNOL was submitted for this loss; verify it.',
 };
 
@@ -472,7 +482,9 @@ function Financials({ claim }: { claim: DashboardClaim }) {
   );
 }
 
-function Documents({ docs }: { docs: ClaimDocument[] }) {
+function Documents({ claimId, docs, reload, onChanged }: {
+  claimId: string; docs: ClaimDocument[]; reload: number; onChanged: () => void;
+}) {
   return (
     <>
       <PageTitle title="Documents" subtitle="Evidence submitted with the claim. Each file's SHA-256 is recorded in the audit history." />
@@ -494,6 +506,7 @@ function Documents({ docs }: { docs: ClaimDocument[] }) {
           ))}
         </ListView>
       </Panel>
+      <PhotoRequestList claimId={claimId} reload={reload} onChanged={onChanged} />
     </>
   );
 }
@@ -517,8 +530,8 @@ function InspectionSection({ claim, inspections, onChanged }: {
   );
 }
 
-function Decision({ claim, inspections, onChanged }: {
-  claim: DashboardClaim; inspections: Inspection[]; onChanged: () => void;
+function Decision({ claim, inspections, docs, reload, onChanged }: {
+  claim: DashboardClaim; inspections: Inspection[]; docs: ClaimDocument[]; reload: number; onChanged: () => void;
 }) {
   const navigate = useNavigate();
   const latest = [...inspections].reverse().find((i) => i.status === 'COMPLETED');
@@ -538,6 +551,7 @@ function Decision({ claim, inspections, onChanged }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
+  const [requestingPhotos, setRequestingPhotos] = useState(false);
 
   useEffect(() => {
     setFinalAmount(recommended != null ? String(recommended) : '');
@@ -606,9 +620,7 @@ function Decision({ claim, inspections, onChanged }: {
         <MessageBar tone="warning" title={`Claimant asks ${money(claimed)}; the photos support ${money(estimate)}`}>
           Not approved automatically. Verify the extra amount before reserving it:
           <div className="option-row">
-            <Button disabled={busy || !adjusterId.trim()} onClick={() => submit('NEEDS_MORE_INFO',
-              `Requested more photos / a repair quote: claimed ${money(claimed)}, photos support ${money(estimate)}.`)}>
-              Request more photos</Button>
+            <Button disabled={busy} onClick={() => setRequestingPhotos(true)}>Request more photos</Button>
             <Button disabled={busy} onClick={() => navigate(`/claim/${claim.claimId}/inspection`)}>Assign inspector</Button>
             <Button disabled={busy || !adjusterId.trim()} onClick={() => submit('INVESTIGATION_REQUIRED',
               `Sent to investigation: claimed ${money(claimed)}, photos support ${money(estimate)}.`)}>
@@ -616,6 +628,16 @@ function Decision({ claim, inspections, onChanged }: {
           </div>
         </MessageBar>
       )}
+      {reviewable && !requestingPhotos && (
+        <div className="option-row">
+          <Button onClick={() => setRequestingPhotos(true)}>Request more photos from the claimant</Button>
+        </div>
+      )}
+      {reviewable && requestingPhotos && (
+        <RequestPhotos claimId={claim.claimId} docs={docs} adjusterId={adjusterId}
+          policyNumber={claim.record?.policyNumber ?? claim.branchA?.coverage.policyNumber ?? ''} onChanged={onChanged} />
+      )}
+      <PhotoRequestList claimId={claim.claimId} reload={reload} onChanged={onChanged} />
       {latest && (
         <Panel title="Inspection Result">
           <InspectionResult inspection={latest} />

@@ -101,7 +101,7 @@ public class VisionConfidenceCalibrator {
      * Top damage-type probability minus the runner-up, rounded to 2 decimals; 0 when Gemini gave no
      * probabilities (a hedged answer). Must match {@code margin()} in tools/vision-eval/calibrate.py.
      */
-    static BigDecimal margin(Map<String, BigDecimal> probabilities) {
+    public static BigDecimal margin(Map<String, BigDecimal> probabilities) {
         if (probabilities == null || probabilities.isEmpty()) {
             return BigDecimal.ZERO;
         }

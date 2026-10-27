@@ -32,6 +32,14 @@ public class ClaimEntity {
   public Instant createdAt;
   public Instant updatedAt;
 
+  /**
+   * The intake's full analysis (FNOLResponse) for adjusters on any browser, minus the redacted description
+   * text and the audit records. Not part of the /status JSON; served by GET /fnol/{id}/analysis.
+   */
+  @com.fasterxml.jackson.annotation.JsonIgnore
+  @Column(columnDefinition = "TEXT", name = "analysis_json")
+  public String analysisJson;
+
   /** Serialised ExplanationObject JSON — the "WHY" panel, persisted for adjuster retrieval. */
   @Column(columnDefinition = "TEXT", name = "explanation_json")
   public String explanationJson;
@@ -92,6 +100,23 @@ public class ClaimEntity {
     } catch (Exception ex) {
       e.explanationJson = "{\"error\":\"serialisation failed\"}";
     }
+    try {
+      e.analysisJson = MAPPER.writeValueAsString(withoutPersonalText(r));
+    } catch (Exception ex) {
+      e.analysisJson = null;   // the claim is still saved; the console falls back to the saved row
+    }
     return e;
+  }
+
+  /** The analysis as stored: no description text (even redacted) and no audit records. */
+  static FNOLResponse withoutPersonalText(FNOLResponse r) {
+    BranchBResult b = r.branchB();
+    BranchBResult safeB = b == null ? null : new BranchBResult(
+        b.pii() == null ? null : new PIIResult(null, b.pii().detectedTypes(), b.pii().piiDetected(),
+            b.pii().redactionConfidence()),
+        b.deadline(), b.subrogation(), java.util.List.of());
+    return new FNOLResponse(r.claimId(), r.status(), r.branchA(), safeB, r.policyContext(), r.explanation(),
+        r.severityGate(), r.eligibleForAdvisoryPrefill(), r.requiresHumanValidation(), r.notes(), r.inputFlags(),
+        r.ccSyncStatus(), r.gateFlags());
   }
 }

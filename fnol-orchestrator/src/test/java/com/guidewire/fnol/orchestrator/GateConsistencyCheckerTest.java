@@ -40,6 +40,26 @@ class GateConsistencyCheckerTest {
                 .isEmpty();
     }
 
+    private static BranchAResult withProbabilities(Map<String, BigDecimal> probabilities) {
+        DamageAssessment d = new DamageAssessment("MULTIPLE", "MODERATE", new BigDecimal("4200"), new BigDecimal("0.90"),
+                "CLEAR", probabilities);
+        BranchAResult base = branchA("MULTIPLE", "MODERATE", "4200", "0.90", "CLEAR", "50000");
+        return new BranchAResult(d, base.coverage(), base.reserve());
+    }
+
+    @Test
+    @DisplayName("AMBIGUOUS_DAMAGE_TYPE when the two highest damage-type probabilities are close, despite high confidence")
+    void ambiguousDamageType() {
+        assertThat(checker.check(policy("AUTO"), withProbabilities(Map.of(
+                "MULTIPLE", new BigDecimal("0.45"), "FRONT_BUMPER", new BigDecimal("0.35"), "SIDE_PANEL", new BigDecimal("0.20")))))
+                .containsExactly(AMBIGUOUS_DAMAGE_TYPE);
+        // A clear answer (gap 0.85) and an answer without probabilities raise nothing.
+        assertThat(checker.check(policy("AUTO"), withProbabilities(Map.of(
+                "MULTIPLE", new BigDecimal("0.90"), "FRONT_BUMPER", new BigDecimal("0.05")))))
+                .isEmpty();
+        assertThat(checker.check(policy("AUTO"), withProbabilities(Map.of()))).isEmpty();
+    }
+
     @Test
     @DisplayName("SEVERITY_ESTIMATE_MISMATCH when the severity label disagrees with the estimate band")
     void severityMismatch() {

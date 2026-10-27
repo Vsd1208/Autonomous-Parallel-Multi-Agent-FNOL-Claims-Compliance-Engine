@@ -36,6 +36,13 @@ public class StpProperties {
      * (0.10 = 10%). Within it, the AI estimate is still the most that is reserved automatically.
      */
     private BigDecimal claimedAmountTolerance = new BigDecimal("0.10");
+    /**
+     * Smallest gap between the two highest damage-type probabilities for the AI's answer to be relied on.
+     * Measured on labelled photos (tools/vision-eval): every answer with a gap of 0.60 or more was right, and
+     * every wrong answer that passed the confidence factor had a gap below 0.30, at a reported confidence
+     * of 0.90-0.95. Gemini's own confidence does not separate them, so this is checked separately.
+     */
+    private BigDecimal minProbabilityMargin = new BigDecimal("0.30");
 
     public BigDecimal getConfidence() { return confidence; }
     public void setConfidence(BigDecimal confidence) { this.confidence = confidence; }
@@ -54,6 +61,9 @@ public class StpProperties {
 
     public BigDecimal getPiiRedactionConfidence() { return piiRedactionConfidence; }
     public void setPiiRedactionConfidence(BigDecimal piiRedactionConfidence) { this.piiRedactionConfidence = piiRedactionConfidence; }
+
+    public BigDecimal getMinProbabilityMargin() { return minProbabilityMargin; }
+    public void setMinProbabilityMargin(BigDecimal minProbabilityMargin) { this.minProbabilityMargin = minProbabilityMargin; }
 
     public BigDecimal getClaimedAmountTolerance() { return claimedAmountTolerance; }
     public void setClaimedAmountTolerance(BigDecimal claimedAmountTolerance) { this.claimedAmountTolerance = claimedAmountTolerance; }

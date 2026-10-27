@@ -41,6 +41,7 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs
 | Claims above the AI estimate never auto-approved: adjuster can request more photos, assign an inspector, investigate or approve at the AI estimate | Done |
 | Standard photo set: front, rear, left, right and a damage close-up (home: overview and close-up), all sent to the AI together; an incomplete set is flagged `INCOMPLETE_PHOTO_SET` | Done |
 | Adjuster sets the final reserve (pre-filled with the AI or inspected recommendation; a different amount needs a reason) | Done |
+| Supplementary photos: adjuster sends a one-time, 7-day upload link; the claimant adds the requested views to the same claim, which returns to the adjuster | Done |
 | Damage inspection: adjuster assigns an inspector (field, desk or body shop); the report gives the accident-related cost, earlier damage excluded | Done |
 | PII redaction (SSN, DOB, MRN, name, phone, email) + PII guardrail | Done |
 | Statutory deadlines: acknowledge-by, decide-by, urgency flag | Done (synthetic rules) |
@@ -86,7 +87,7 @@ Severity from estimated damage: **LOW** ≤ $5,000, **MEDIUM** ≤ $20,000, **HI
 | Claim History | Claim frequency risk LOW or MEDIUM |
 | Subrogation Risk | Score < 70 |
 
-A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `CLAIMED_EXCEEDS_AI_ESTIMATE`; the last is raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
+A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`; the last is raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
 
 ## API
 
@@ -98,9 +99,12 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 | POST | `/api/v1/fnol/intake` | Submit an FNOL and receive the full analysis |
 | GET | `/api/v1/fnol/status/{claimId}` | Saved claim row (status, decision, flags, failure reason, sync status) |
 | GET 🔒 | `/api/v1/fnol/{claimId}/explanation` | Saved WHY panel |
+| GET 🔒 | `/api/v1/fnol/{claimId}/analysis` | Full AI analysis saved at intake (no description text) |
 | GET 🔒 | `/api/v1/fnol/{claimId}/documents` | Evidence on the claim (photos and references) |
 | GET 🔒 | `/api/v1/fnol/{claimId}/documents/{documentId}/content` | The stored photo |
 | POST 🔒 | `/api/v1/fnol/{claimId}/claimcenter-sync` | Retry a FAILED ClaimCenter decision sync |
+| POST/GET 🔒 | `/api/v1/fnol/{claimId}/upload-requests` | Ask the claimant for more photos (one-time link, claim → `NEEDS_MORE_INFO`) / list requests |
+| GET / POST | `/api/v1/public/upload/{token}` | Claimant upload page data / add photos (link token, no adjuster token) |
 | GET 🔒 | `/api/v1/inspectors` | Inspector roster |
 | GET/POST 🔒 | `/api/v1/fnol/{claimId}/inspections` | List / assign an inspection (claim → `INSPECTION_ASSIGNED`) |
 | POST 🔒 | `/api/v1/fnol/{claimId}/inspections/{id}/report` | Inspector's report (claim → `HUMAN_REVIEW`) |

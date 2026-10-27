@@ -438,6 +438,9 @@ public class FNOLOrchestrator {
                                 + "investigation, or approve at the AI estimate. Not approved automatically.";
                 case GateConsistencyChecker.DAMAGE_TYPE_LINE_MISMATCH ->
                         "the damage type does not fit the policy's line of business; confirm the right policy and photos.";
+                case GateConsistencyChecker.AMBIGUOUS_DAMAGE_TYPE ->
+                        "the AI could not settle on one damage type (its top answers were close); check the photos "
+                                + "yourself before relying on the damage type or estimate.";
                 case GateConsistencyChecker.CONFIDENCE_PHOTO_QUALITY_MISMATCH ->
                         "high AI confidence was reported for a poor-quality photo; do not rely on the estimate alone.";
                 default -> "review before any decision.";

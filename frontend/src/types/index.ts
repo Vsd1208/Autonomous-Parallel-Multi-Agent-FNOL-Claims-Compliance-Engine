@@ -173,6 +173,30 @@ export interface DashboardClaim {
   record?: ClaimRecord;
 }
 
+/** A one-time photo upload link sent to the claimant (GET /fnol/{id}/upload-requests). */
+export interface UploadRequest {
+  requestId: string;
+  claimId: string;
+  requestedAngles: string;
+  message: string | null;
+  requestedBy: string;
+  status: 'OPEN' | 'USED' | 'CANCELLED';
+  effectiveStatus: 'OPEN' | 'USED' | 'CANCELLED' | 'EXPIRED';
+  createdAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+  photosReceived: number | null;
+}
+
+/** What the claimant's upload page shows (GET /public/upload/{token}). */
+export interface PublicUpload {
+  claimId: string;
+  angles: string[];
+  message: string | null;
+  expiresAt: string;
+  status: 'OPEN' | 'USED' | 'CANCELLED' | 'EXPIRED';
+}
+
 /** GET /inspectors */
 export interface Inspector {
   inspectorId: string;

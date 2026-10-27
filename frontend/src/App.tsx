@@ -5,6 +5,7 @@ import { AppHeader } from './components/Shell';
 import ClaimFile from './pages/ClaimFile';
 import Desktop from './pages/Desktop';
 import NewClaimWizard from './pages/NewClaimWizard';
+import UploadPage from './pages/UploadPage';
 
 function AuditRedirect() {
   const { claimId } = useParams<{ claimId: string }>();
@@ -14,6 +15,17 @@ function AuditRedirect() {
 function App() {
   return (
     <Router>
+      <Routes>
+        {/* Claimant-facing: reached from the link the adjuster sends; no adjuster screens. */}
+        <Route path="/upload/:token" element={<UploadPage />} />
+        <Route path="*" element={<AdjusterWorkspace />} />
+      </Routes>
+    </Router>
+  );
+}
+
+function AdjusterWorkspace() {
+  return (
       <div className="app">
         <AppHeader />
         <Routes>
@@ -30,7 +42,6 @@ function App() {
           AI provides decision support only. Final decisions are made by licensed adjusters.
         </footer>
       </div>
-    </Router>
   );
 }
 

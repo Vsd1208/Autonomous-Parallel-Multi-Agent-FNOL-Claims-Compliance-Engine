@@ -6,6 +6,8 @@ import {
   ClaimRecord,
   Inspection,
   Inspector,
+  PublicUpload,
+  UploadRequest,
   ClaimResult,
   ExplanationObject,
   FormData,
@@ -67,6 +69,10 @@ export const apiClient = {
   getAuditTrail: (claimId: string) =>
     request<AuditTrail>(`/api/v1/fnol/${encodeURIComponent(claimId)}/audit`, {}, true),
 
+  /** The intake's full AI analysis as saved on the server (404 for claims filed before it was saved). */
+  getAnalysis: (claimId: string) =>
+    request<ClaimResult>(`/api/v1/fnol/${encodeURIComponent(claimId)}/analysis`, {}, true),
+
   getDocuments: (claimId: string) =>
     request<ClaimDocument[]>(`/api/v1/fnol/${encodeURIComponent(claimId)}/documents`, {}, true),
 
@@ -119,6 +125,30 @@ export const apiClient = {
     request<Inspection>(
       `/api/v1/fnol/${encodeURIComponent(claimId)}/inspections/${encodeURIComponent(inspectionId)}/cancel`,
       { method: 'POST', body: JSON.stringify({ adjusterId }) }, true),
+
+  /** Asks the claimant for more photos; returns the one-time link (shown only now). */
+  createUploadRequest: (claimId: string, body: { requestedBy: string; angles: string[]; message?: string }) =>
+    request<{ requestId: string; uploadUrl: string; expiresAt: string; angles: string[] }>(
+      `/api/v1/fnol/${encodeURIComponent(claimId)}/upload-requests`, { method: 'POST', body: JSON.stringify(body) }, true),
+
+  getUploadRequests: (claimId: string) =>
+    request<UploadRequest[]>(`/api/v1/fnol/${encodeURIComponent(claimId)}/upload-requests`, {}, true),
+
+  cancelUploadRequest: (claimId: string, requestId: string, adjusterId: string) =>
+    request<UploadRequest>(
+      `/api/v1/fnol/${encodeURIComponent(claimId)}/upload-requests/${encodeURIComponent(requestId)}/cancel`,
+      { method: 'POST', body: JSON.stringify({ adjusterId }) }, true),
+
+  /** Claimant side: no adjuster token. A used or expired link answers 410 with the same body. */
+  getPublicUpload: async (token: string): Promise<PublicUpload> => {
+    const response = await fetch(`${API_BASE_URL}/api/v1/public/upload/${encodeURIComponent(token)}`);
+    if (response.ok || response.status === 410) return response.json();
+    throw new ApiError(response.status === 404 ? 'This upload link is not valid.' : `HTTP ${response.status}`, response.status);
+  },
+
+  submitPublicUpload: (token: string, body: { evidenceUris: string[]; evidenceAngles: string[] }) =>
+    request<{ claimId: string; photosReceived: number }>(
+      `/api/v1/public/upload/${encodeURIComponent(token)}`, { method: 'POST', body: JSON.stringify(body) }),
 
   /** Pushes the recorded decision to ClaimCenter again after a failed sync. */
   retryClaimCenterSync: (claimId: string) =>

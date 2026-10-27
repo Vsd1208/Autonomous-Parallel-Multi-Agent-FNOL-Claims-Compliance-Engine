@@ -147,7 +147,7 @@ Response `200` (abridged):
 - `explanation.decision`: `STRAIGHT_THROUGH` or `ADVISORY_RECOMMENDED_ACTION`. `recommendedAction`: `APPROVE_AND_STP`, `ESCALATE_TO_HUMAN`, `ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY`.
 - `inputFlags` (Human Review Point 1): `MISSING_EVIDENCE`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`. Any flag routes to `HUMAN_REVIEW`.
 - `ccSyncStatus`: `SYNCED` if the WHY panel and evidence list were attached in ClaimCenter, `FAILED` otherwise (intake still succeeds).
-- `gateFlags` (reconciliation-gate consistency checks): `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `CLAIMED_EXCEEDS_AI_ESTIMATE`. Any flag routes to `HUMAN_REVIEW`.
+- `gateFlags` (reconciliation-gate consistency checks): `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`. Any flag routes to `HUMAN_REVIEW`.
 - `branchB.subrogation` is assessed in Branch B (third-party liability and `complianceNotes`) and finalised at the gate with Branch A's severity.
 - The ClaimCenter claim is created as `DRAFT_PENDING_REVIEW` (or `OPEN` for STP with advisory review off).
 
@@ -170,6 +170,12 @@ The saved claim row, or `404`:
 ## `GET /api/v1/fnol/{claimId}/explanation` (token)
 The saved WHY panel (`ExplanationObject`). `404` if the claim does not exist or has no explanation (REJ- claims).
 
+## `GET /api/v1/fnol/{claimId}/analysis` (token)
+The intake response as saved on the server (`branchA`, `branchB`, `policyContext`, `explanation`, `notes`, flags), so
+an adjuster on any browser sees the full analysis. `branchB.pii.redactedDescription` is `null` and `branchB.audit`
+is empty in the stored copy: the database never keeps the description, and the audit chain has its own endpoint.
+`404` for an unknown claim or one filed before the analysis was stored.
+
 ## `GET /api/v1/fnol/{claimId}/documents` (token)
 Evidence kept from the intake, oldest first; `404` for an unknown claim. Uploaded photos
 (`data:image/(jpeg|png|webp|gif);base64`, at most 5 MB, at most 5 per claim) are stored and `viewable`;
@@ -189,6 +195,20 @@ whose output hash covers the document's SHA-256, so the photo shown to the adjus
 The stored image with its original content type, `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`,
 `Content-Security-Policy: default-src 'none'; sandbox` and `Cache-Control: private, max-age=300`. `404` if the
 document does not belong to that claim or is a reference without bytes.
+
+## Supplementary photos
+
+- `POST /api/v1/fnol/{claimId}/upload-requests` (token) with `{ "requestedBy": "ADJ-001", "angles": ["REAR", "CLOSE_UP"],
+  "message": "…" }`: only while the claim awaits a decision. Moves it to `NEEDS_MORE_INFO`, audits `PhotoRequest`,
+  tells ClaimCenter (`PHOTOS_REQUESTED`) and returns `{ requestId, uploadUrl, expiresAt, angles }`. The link
+  (`{fnol.portal.base-url}/upload/{token}`) is returned only here; it works once and expires after 7 days.
+- `GET /api/v1/fnol/{claimId}/upload-requests` (token), `POST …/upload-requests/{requestId}/cancel` (token).
+- `GET /api/v1/public/upload/{token}`: `{ claimId, angles, message, expiresAt, status }`, no personal data;
+  `404` unknown token, `410` used / expired / cancelled.
+- `POST /api/v1/public/upload/{token}` with `{ "evidenceUris": ["data:image/jpeg;base64,…"], "evidenceAngles": ["REAR"] }`:
+  1–6 uploaded images only (no URLs), at most 5 MB each. Stores them with their angles (`EvidenceStore`, audited),
+  closes the link, moves the claim from `NEEDS_MORE_INFO` back to `HUMAN_REVIEW`, audits `SupplementaryEvidence`
+  and tells ClaimCenter (`PHOTOS_RECEIVED`). `410` if the link is not active or the claim was already decided.
 
 ## Inspections (token)
 

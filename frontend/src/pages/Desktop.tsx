@@ -41,8 +41,20 @@ export default function Desktop() {
   const [page, setPage] = useState(0);
   const [data, setData] = useState<QueuePage | null>(null);
   const [error, setError] = useState('');
+  const [counts, setCounts] = useState<Record<string, number>>({});
 
   useEffect(() => setPage(0), [view]);
+
+  // A count on every queue, so a claim never seems to disappear when it is not in the current one.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(Object.entries(VIEWS).map(([key, v]) =>
+      apiClient.getQueue(v.statuses, 0, 1).then((p) => [key, p.totalElements] as const).catch(() => [key, -1] as const)))
+      .then((pairs) => !cancelled && setCounts(Object.fromEntries(pairs.filter(([, n]) => n >= 0))));
+    return () => {
+      cancelled = true;
+    };
+  }, [view]);
 
   useEffect(() => {
     setData(null);
@@ -61,7 +73,7 @@ export default function Desktop() {
         to: key === 'decision' ? '/' : `/queue/${key}`,
         label: v.label,
         end: true,
-        badge: key === view && data ? data.totalElements : undefined,
+        badge: key === view && data ? data.totalElements : counts[key] || undefined,
       }))}
     />
   );

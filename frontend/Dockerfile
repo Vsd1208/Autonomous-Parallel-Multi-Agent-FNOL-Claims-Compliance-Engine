@@ -3,6 +3,8 @@ WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
 COPY frontend .
+# Sample photos, served as static files (vite.config.ts publicDir = ../demo-scenarios/sample-images)
+COPY demo-scenarios/sample-images /demo-scenarios/sample-images
 ARG VITE_API_BASE_URL=http://localhost:8080
 ARG VITE_ADJUSTER_TOKEN=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL

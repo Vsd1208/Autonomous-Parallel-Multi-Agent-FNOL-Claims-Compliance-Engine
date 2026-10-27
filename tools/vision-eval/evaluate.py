@@ -1,7 +1,9 @@
 """Run Gemini on the sampled images exactly as the app calls it, and record the answers.
 
-The prompt is read from GeminiVisionProvider.java and the generation settings match the app
-(JSON output, temperature 0, thinking budget), so results reflect production behaviour.
+The prompt is read from GeminiVisionProvider.java and the request matches the app (the photo is
+labelled "Photo 1 — angle: OTHER", as the app labels a photo of unknown angle; JSON output,
+temperature 0, thinking budget), so results reflect production behaviour. Each record carries the
+prompt's SHA-256, and a run never mixes prompts: after the prompt changes, start a new --run.
 The API key comes from the GEMINI_API_KEY environment variable or the repo's .env file; it is
 sent only to Google and never printed or written to disk.
 
@@ -13,6 +15,7 @@ The app shares the key's quota: use --max-calls to leave some calls for the app.
 """
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -46,11 +49,16 @@ def api_key():
     raise SystemExit("GEMINI_API_KEY not set and not found in .env")
 
 
-def call(key, model, prompt, image_bytes, mime, budget, timeout):
+def prompt_sha(prompt):
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
+
+
+def call(key, model, prompt, image_bytes, mime, budget, timeout, angle="OTHER"):
     config = {"responseMimeType": "application/json", "temperature": 0}
     if "2.5" in model:
         config["thinkingConfig"] = {"thinkingBudget": budget}
     body = {"contents": [{"parts": [{"text": prompt},
+                                    {"text": f"Photo 1 — angle: {angle}"},
                                     {"inline_data": {"mime_type": mime,
                                                      "data": base64.b64encode(image_bytes).decode()}}]}],
             "generationConfig": config}
@@ -111,6 +119,10 @@ def main():
         with open(out_path, encoding="utf-8") as f:
             kept = [json.loads(l) for l in f if l.strip()]
         kept = [r for r in kept if "prediction" in r]
+        other = {r.get("promptSha256", "unrecorded") for r in kept} - {prompt_sha(prompt)}
+        if other:
+            raise SystemExit(f"results/{args.run}.jsonl was made with a different prompt ({', '.join(sorted(other))}); "
+                             "the app's prompt has changed since. Use a new --run name.")
         with open(out_path, "w", encoding="utf-8") as f:
             f.writelines(json.dumps(r) + "\n" for r in kept)
     done = {r["image"] for r in kept}
@@ -132,7 +144,8 @@ def run(todo, labels, key, prompt, args, out_path, gap):
     for i, name in enumerate(todo, 1):
         path = os.path.join(DATA, "hitl", labels[name]["path"])
         mime = "image/png" if name.lower().endswith(".png") else "image/jpeg"
-        record = {"image": name, "model": args.model, "thinkingBudget": args.thinking_budget}
+        record = {"image": name, "model": args.model, "thinkingBudget": args.thinking_budget,
+                  "promptSha256": prompt_sha(prompt)}
         started = time.time()
         for attempt in range(4):
             try:
