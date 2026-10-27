@@ -11,7 +11,7 @@ export const AUTO_ANGLES: PhotoAngle[] = [
 ];
 
 export const HOME_ANGLES: PhotoAngle[] = [
-  { key: 'OVERVIEW', label: 'Room overview', hint: 'The whole affected area', required: true },
+  { key: 'OVERVIEW', label: 'Overview', hint: 'The whole affected room, or that side of the house', required: true },
   { key: 'CLOSE_UP', label: 'Damage close-up', hint: 'The damage itself', required: true },
   { key: 'OTHER', label: 'Source of damage', hint: 'e.g. the burst pipe (optional)', required: false },
 ];

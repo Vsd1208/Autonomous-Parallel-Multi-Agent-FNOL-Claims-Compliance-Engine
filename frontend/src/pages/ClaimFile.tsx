@@ -135,8 +135,7 @@ export default function ClaimFile() {
     />
   );
 
-  return (
-    <>
+  const bar = (
       <InfoBar
         items={[
           ['Claim', <strong key="c">{claim.claimId}</strong>],
@@ -148,11 +147,13 @@ export default function ClaimFile() {
           ['ClaimCenter', <StatusChip key="cc" value={claim.ccSyncStatus} />],
         ]}
       />
-      <Workspace sidebar={sidebar}>
-        <SectionView section={section as Section} claim={claim} docs={docs} inspections={inspections}
-          reload={reload} onChanged={() => setReload((n) => n + 1)} />
-      </Workspace>
-    </>
+  );
+
+  return (
+    <Workspace sidebar={sidebar} bar={bar}>
+      <SectionView section={section as Section} claim={claim} docs={docs} inspections={inspections}
+        reload={reload} onChanged={() => setReload((n) => n + 1)} />
+    </Workspace>
   );
 }
 
@@ -193,6 +194,8 @@ const FLAG_TEXT: Record<string, string> = {
   RESERVE_EXCEEDS_COVERAGE_LIMIT: 'The loss after the deductible is above the coverage limit; the reserve is capped.',
   CLAIMED_EXCEEDS_AI_ESTIMATE: 'The claimant asks for more than the photos support. Not approved automatically.',
   DAMAGE_TYPE_LINE_MISMATCH: "The damage does not fit the policy's line of business.",
+  PHOTO_SUBJECT_MISMATCH: 'The photos do not show what the policy insures (e.g. a house on an auto policy).',
+  POSSIBLE_FLOOD_EXCLUSION: 'The photos show flood, which standard homeowners policies exclude. Confirm the cause of loss.',
   CONFIDENCE_PHOTO_QUALITY_MISMATCH: 'High AI confidence was reported for a poor photo.',
   AMBIGUOUS_DAMAGE_TYPE: 'The AI could not settle on one damage type; check the photos yourself.',
   DUPLICATE_SUBMISSION: 'A duplicate FNOL was submitted for this loss; verify it.',
@@ -357,6 +360,7 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
               ? `${Number(d.confidence).toFixed(2)} (model said ${Number(d.rawConfidence).toFixed(2)})`
               : Number(d.confidence).toFixed(2)],
             ['Photo quality', d.photoQuality ? humanize(d.photoQuality) : null],
+            ['Photos show', d.photoSubject ? humanize(d.photoSubject) : null],
           ]} />
         </Panel>
         <Panel title="Coverage">

@@ -88,11 +88,15 @@ export function InfoBar({ items }: { items: [string, React.ReactNode][] }) {
   );
 }
 
-export function Workspace({ sidebar, children }: { sidebar: React.ReactNode; children: React.ReactNode }) {
+/** Dark left navigation, then the content column: an optional info bar above the page. */
+export function Workspace({ sidebar, bar, children }: { sidebar: React.ReactNode; bar?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="workspace">
       {sidebar}
-      <main className="workspace-main">{children}</main>
+      <div className="workspace-col">
+        {bar}
+        <main className="workspace-main">{children}</main>
+      </div>
     </div>
   );
 }

@@ -6,6 +6,8 @@ export interface DamageAssessment {
   photoQuality?: string;
   damageTypeProbabilities?: Record<string, number>;
   rawConfidence?: number | null;
+  /** What the photos show, as the AI saw it: VEHICLE, BUILDING, OTHER_PROPERTY or NONE. */
+  photoSubject?: string | null;
 }
 
 export interface Coverage {

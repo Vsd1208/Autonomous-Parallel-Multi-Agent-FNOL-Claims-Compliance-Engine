@@ -4,7 +4,7 @@ import { PageTitle } from '../components/Shell';
 import { Button, DetailView, MessageBar, Panel, Toolbar, channelLabel, money } from '../components/ui';
 import { demoScenarios, recentDate } from '../demoScenarios';
 import { AUTO_ANGLES, HOME_ANGLES, anglesFor } from '../photoAngles';
-import { SET_FILES, sampleSets } from '../sampleSets';
+import { HOME_SET_FILES, SET_FILES, homeSampleSets, sampleSets, vehicleSampleSets } from '../sampleSets';
 import { readPhoto } from '../utils/photos';
 import { ApiError, apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
@@ -83,17 +83,22 @@ export default function NewClaimWizard() {
     setStepError('');
     setError('');
     try {
+      const home = set.line === 'HOME';
       const loaded: Record<string, Photo> = {};
-      for (const a of AUTO_ANGLES) {
-        const name = SET_FILES[a.key];
+      for (const a of home ? HOME_ANGLES : AUTO_ANGLES) {
+        const name = (home ? HOME_SET_FILES : SET_FILES)[a.key];
         if (!name) continue;
         const res = await fetch(`/${set.folder}/${name}`);
-        if (!res.ok) throw new Error(`Sample photo ${name} could not be loaded (HTTP ${res.status})`);
+        // A missing file comes back as the app's HTML page, so check the type too.
+        const found = res.ok && (res.headers.get('content-type') ?? '').startsWith('image/');
+        if (!found && !a.required) continue;   // e.g. a home set without a photo of the source
+        if (!found) throw new Error(`Sample photo ${name} could not be loaded (HTTP ${res.status})`);
         const blob = await res.blob();
         const uri = await readPhoto(new File([blob], name, { type: blob.type || 'image/jpeg' }));
         loaded[a.key] = { uri, name: `${set.folder}/${name}`, preview: uri };
       }
-      setForm({ ...demoScenarios[0].data, incidentDate: recentDate(), description: set.description,
+      const base = (home && demoScenarios.find((s) => s.data.policyNumber.startsWith('POL-HOME'))) || demoScenarios[0];
+      setForm({ ...base.data, incidentDate: recentDate(), description: set.description,
         claimedAmount: set.claimedAmount });
       setPhotos(loaded);
       setPhotosUnavailable(false);
@@ -200,11 +205,16 @@ export default function NewClaimWizard() {
             <select defaultValue="" disabled={busy || loadingSet}
               onChange={(e) => { loadSampleSet(e.target.value); e.target.value = ''; }}>
               <option value="" disabled>{loadingSet ? 'Loading photos…' : 'Choose…'}</option>
-              {sampleSets.map((s) => <option key={s.folder} value={s.folder}>{s.label}</option>)}
+              <optgroup label="Vehicles (auto policy)">
+                {vehicleSampleSets.map((s) => <option key={s.folder} value={s.folder}>{s.label}</option>)}
+              </optgroup>
+              <optgroup label="Homes (homeowners policy)">
+                {homeSampleSets.map((s) => <option key={s.folder} value={s.folder}>{s.label}</option>)}
+              </optgroup>
             </select>
           </label>
-          <p className="hint">Every side of one damaged vehicle (NHTSA crash tests, public domain). Analysed by the
-            real vision model when Gemini is enabled.</p>
+          <p className="hint">Real damage photos: every side of a crashed vehicle (NHTSA), or a damaged home by cause of
+            loss (FEMA and public-domain photos). Analysed by the real vision model when Gemini is enabled.</p>
         </div>
       </aside>
 
