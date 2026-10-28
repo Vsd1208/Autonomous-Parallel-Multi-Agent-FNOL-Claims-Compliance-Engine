@@ -2,6 +2,7 @@ import {
   AdjusterReviewRequest,
   AdjusterReviewResponse,
   AuditTrail,
+  CcClaim,
   ClaimDocument,
   ClaimRecord,
   Inspection,
@@ -72,6 +73,10 @@ export const apiClient = {
   /** The intake's full AI analysis as saved on the server (404 for claims filed before it was saved). */
   getAnalysis: (claimId: string) =>
     request<ClaimResult>(`/api/v1/fnol/${encodeURIComponent(claimId)}/analysis`, {}, true),
+
+  /** The claim as ClaimCenter holds it: exposures with reserves, activities, notes, documents. */
+  getClaimCenterView: (claimId: string) =>
+    request<CcClaim>(`/api/v1/fnol/${encodeURIComponent(claimId)}/claimcenter`, {}, true),
 
   getDocuments: (claimId: string) =>
     request<ClaimDocument[]>(`/api/v1/fnol/${encodeURIComponent(claimId)}/documents`, {}, true),

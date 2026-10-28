@@ -203,6 +203,25 @@ public class FNOLController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    // ── The claim as ClaimCenter holds it ────────────────────────────────────
+    /**
+     * What landed in ClaimCenter for this claim: status, exposures with their reserves, the adjuster's activities,
+     * notes, documents and review actions. 502 when ClaimCenter cannot be reached.
+     */
+    @GetMapping("/fnol/{claimId}/claimcenter")
+    ResponseEntity<?> claimCenterView(@PathVariable("claimId") String claimId) {
+        if (!claims.existsById(claimId)) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return ResponseEntity.ok(claimCenter.getClaim(claimId));
+        } catch (RuntimeException e) {
+            log.warn("[FNOL] ClaimCenter view failed for claimId={}: {}", claimId, e.getMessage());
+            return ResponseEntity.status(502).body(Map.of("error", "CLAIMCENTER_UNAVAILABLE",
+                    "message", "ClaimCenter could not be reached; try again shortly."));
+        }
+    }
+
     // ── WHY Panel (Explanation) ───────────────────────────────────────────────
     /**
      * Human Review Point 2 support: adjuster fetches the structured "WHY" advisory

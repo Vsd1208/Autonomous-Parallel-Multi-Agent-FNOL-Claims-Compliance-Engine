@@ -53,12 +53,19 @@ prompt or the thinking budget.
 |---|---|---|---|---|
 | `thinking0` | single-photo prompt (before the standard photo set) | 25 | see `results/report-thinking0.md` | Kept for comparison; not used for the app map |
 | `v2-multiphoto` | multi-photo prompt, photo labelled `angle: OTHER` (prompt SHA-256 `61a89427e0e132d9`) | 33 | 91% / 67% (`results/report-v2-multiphoto.md`) | Stopped: the prompt now also asks for `photoSubject`. Kept for comparison |
-| `v3-subject` | current prompt: as v2, plus `photoSubject` (VEHICLE, BUILDING, OTHER_PROPERTY, NONE) (prompt SHA-256 `501b3308884a64f8`) | 0 of 50 needed | — | Run daily until 50; the report also counts how often a car photo is reported as VEHICLE |
+| `v3-subject` | current prompt: as v2, plus `photoSubject` (VEHICLE, BUILDING, OTHER_PROPERTY, NONE) (prompt SHA-256 `501b3308884a64f8`) | 15 of 50 needed | 80% / 60% (`results/report-v3-subject.md`) | Run daily until 50; car photos reported as VEHICLE: 15/15 |
 
 `v3-subject` restarts the count because a changed prompt can change the answers. Compare it with
 `v2-multiphoto` on the photos both runs answered to see whether the extra question moved the damage-zone
 accuracy. Every photo in the dataset is a car, so any `photoSubject` other than VEHICLE would be a false
 `PHOTO_SUBJECT_MISMATCH` on a genuine auto claim.
+
+First 15 photos (the same photos in both runs): asking for `photoSubject` made Gemini hedge more. `MULTIPLE`
+answers rose from 2 to 5, lenient accuracy fell from 14/15 to 12/15 and strict from 11/15 to 9/15. All three
+wrong answers were hedged (margin 0.20 or less), so `AMBIGUOUS_DAMAGE_TYPE` sends them to an adjuster: none
+would be auto-approved, but 5 claims instead of 2 need a person. 15 photos is too few to call this a real
+effect; the 50-photo run decides whether the question stays as it is. Every photo was reported as VEHICLE
+(no false subject alarms).
 
 On the 18 photos both runs answered, the current prompt was right as often or more often: lenient 17/18
 (old 16/18), strict 13/18 (old 12/18). After 33 photos, Gemini's self-reported confidence is still
@@ -77,6 +84,72 @@ On 33 photos the calibrated map does not yet beat Gemini's raw confidence out of
 
 The evaluation scores one photo at a time, while a claim now sends the standard set of five. The map
 therefore calibrates single-photo answers; check it against real multi-photo claims before relying on it.
+
+## Gate ablation (no API calls)
+
+`gate_ablation.py` replays the recorded answers through the app's vision-related checks, adding one at a time,
+and counts the wrong answers that would still reach auto-approval and the right answers sent to an adjuster:
+
+```bash
+python -P gate_ablation.py --run v2-multiphoto --run v3-subject      # writes results/gate-ablation.md
+```
+
+| Run | Checks | Auto-approvable | Wrong answers let through (lenient / strict) | Right answers sent to adjuster |
+|---|---|---|---|---|
+| `v2-multiphoto` (33) | confidence factor only | 32 | 3 / 10 | 1 |
+| | + `AMBIGUOUS_DAMAGE_TYPE` | 25 | 1 / 3 | 6 |
+| `v3-subject` (15) | confidence factor only | 15 | 3 / 6 | 0 |
+| | + `AMBIGUOUS_DAMAGE_TYPE` (+ severity, + subject) | 10 | 0 / 1 | 2 |
+
+The margin check removes most wrong answers that the confidence factor lets through, at the cost of sending
+some right answers to an adjuster. The one wrong answer no vision check stops (photo 1153, a confident wrong
+zone) is why the claimed-amount check, coverage and the severity gate stay in front of any payment. The
+severity and subject checks stop no further wrong answer on these car photos: they target other failures
+(inconsistent estimates, the wrong kind of property).
+
+## Trust score (calibrated AI confidence)
+
+Gemini's self-reported confidence is about 0.9 for nearly every answer, so it cannot tell the app which answers to
+trust. `trust_score.py` learns the probability that Gemini's damaged area is right from the signals that do separate
+right from wrong answers: the probability margin, the second-opinion model's agreement (`tools/second-opinion`,
+out-of-fold) and whether Gemini named a specific area. Logistic regression, scored leave-one-image-out:
+
+```bash
+python -P trust_score.py --run v2-multiphoto --run v3-subject      # study, results/report-trust-score.md
+python -P trust_score.py --run v3-subject --write-app               # app file, once the shipping rules pass
+```
+
+48 answers on 33 photos (provisional):
+
+| Confidence used | Separation (AUC) | Brier | Passing 0.85: answers / wrong |
+|---|---|---|---|
+| Gemini's self-reported confidence | 0.50 | 0.110 | 47 of 48 / 6 |
+| Trust score (margin + second opinion) | **0.73** | 0.099 | 36 of 48 / **1** |
+
+At the app's 0.85 confidence factor, Gemini's own number lets 6 wrong answers through; the trust score lets 1 through
+and sends 12 answers to an adjuster instead. Gemini's raw number has the lower calibration error only because it says
+0.9 for everything and about 88% of answers are right; it does not rank answers at all.
+
+The app's `TrustScorer` replaces Gemini's confidence with the trust score (keeping Gemini's value in `rawConfidence`)
+only when `fnol-agents/src/main/resources/trust-score.json` was written from a single run with the current vehicle
+prompt, model and thinking budget, on at least 50 images, and beats Gemini's raw confidence on the Brier score. Not
+shipped yet (33 images, two prompts). Home claims keep Gemini's confidence: the model is trained on car photos.
+
+## Home (property) evaluation
+
+The property prompt is evaluated on public-domain FEMA photos, labelled by cause of loss (FLOOD, FIRE_SMOKE,
+WIND_STORM, FALLEN_TREE) from the photographer's caption and hand-reviewed (photos without visible damage removed,
+tree-on-house photos captioned as tornado damage relabelled):
+
+```bash
+python -P prepare_home.py --per-cause 15                               # 53 photos after review, no API calls
+python -P evaluate.py --line home --run home-v1 --limit 60 --max-calls 15
+python -P home_report.py --run home-v1                                 # writes results/report-home-v1.md
+```
+
+The report shows cause-of-loss accuracy, how many flood photos raise `POSSIBLE_FLOOD_EXCLUSION`, false flood
+warnings, and how many photos are reported as BUILDING. Not run yet (prepared on 2026-10-28; it shares the daily
+quota with the car run). Burst-pipe water damage has no FEMA captions to label from, so it is not covered.
 
 ## Calibration method
 

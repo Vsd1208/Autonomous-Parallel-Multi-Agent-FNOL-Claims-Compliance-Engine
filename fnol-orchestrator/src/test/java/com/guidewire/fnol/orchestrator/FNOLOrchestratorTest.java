@@ -1,5 +1,6 @@
 package com.guidewire.fnol.orchestrator;
 
+import com.guidewire.fnol.agents.SecondOpinionAgent;
 import com.guidewire.fnol.agents.VisionProvider;
 import com.guidewire.fnol.common.Models.*;
 import com.guidewire.fnol.common.ProcessingTimeoutException;
@@ -347,6 +348,68 @@ class FNOLOrchestratorTest {
         assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
         assertThat(response.notes()).anyMatch(n -> n.contains("the photos show a building, but the policy line is AUTO"));
         // The mock's own photos match the policy, so ordinary claims are not flagged.
+        assertThat(orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000")).gateFlags()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ClaimCenter gets an exposure with the reserve, the AI advisory note and one activity per flag, due by the statutory date")
+    void process_populatesClaimCenterLikeAnAdjusterWorksIt() {
+        FNOLResponse flagged = orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "9000"));
+        String id = flagged.claimId();
+
+        assertThat(fixture.claimCenter.exposures.get(id)).singleElement().satisfies(e -> {
+            assertThat(e.exposureType()).isEqualTo("VehicleDamage");
+            assertThat(e.coverageType()).isEqualTo("COLLISION");
+            assertThat(e.reserve()).isEqualByComparingTo(flagged.branchA().reserve().recommendedReserve());
+        });
+        assertThat(fixture.claimCenter.notes.get(id)).singleElement().satisfies(n -> {
+            assertThat(n.topic()).isEqualTo("AI advisory");
+            assertThat(n.body()).contains("CLAIMED_EXCEEDS_AI_ESTIMATE").contains("the adjuster decides")
+                    .doesNotContain("Scraped a pole");   // the claimant's description stays out of ClaimCenter notes
+        });
+        assertThat(fixture.claimCenter.activities.get(id)).singleElement().satisfies(a -> {
+            assertThat(a.subject()).isEqualTo("Review AI flag: claimed exceeds ai estimate");
+            assertThat(a.description()).contains("request more photos, send to investigation");
+            assertThat(a.dueDate()).isEqualTo(flagged.branchB().deadline().acknowledgeBy());
+            assertThat(a.assignedTo()).isEqualTo(FNOLOrchestrator.FNOL_QUEUE);
+        });
+
+        // An STP-eligible claim gets one activity: confirm the advisory.
+        FNOLResponse clean = orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000"));
+        assertThat(clean.status()).isEqualTo("PENDING_ADVISORY_REVIEW");
+        assertThat(fixture.claimCenter.activities.get(clean.claimId())).extracting(CcActivity::subject)
+                .containsExactly("Confirm AI advisory (straight-through eligible)");
+        assertThat(FNOLOrchestrator.exposureType("HOME", "DWELLING")).isEqualTo("Dwelling");
+    }
+
+    @Test
+    @DisplayName("Second opinion: asked in Branch A; disagreement sends the claim to an adjuster with both models' answers")
+    void process_secondOpinionDisagreementGoesToAdjuster() {
+        SecondOpinion disagrees = new SecondOpinion("second-opinion v1",
+                Map.of("FRONT_BUMPER", new BigDecimal("0.13"), "SIDE_PANEL", new BigDecimal("0.84"),
+                        "REAR_BUMPER", new BigDecimal("0.02"), "WINDSHIELD", new BigDecimal("0.01")),
+                Map.of("VEHICLE", new BigDecimal("0.97")));
+        FNOLOrchestrator withModel = fixture.build();
+        withModel.setSecondOpinion(new SecondOpinionAgent("http://vision-ml:8090", null, null) {
+            @Override
+            public CompletableFuture<SecondOpinion> start(FNOLPayload payload, String line) {
+                assertThat(line).isEqualTo("AUTO");
+                return CompletableFuture.completedFuture(disagrees);
+            }
+        });
+
+        FNOLResponse response = withModel.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000"));
+
+        assertThat(response.branchA().secondOpinion()).isEqualTo(disagrees);
+        assertThat(response.gateFlags()).containsExactly(GateConsistencyChecker.MODEL_DISAGREEMENT);
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(response.notes()).anyMatch(n -> n.contains("Gemini says FRONT_BUMPER")
+                && n.contains("gives that only 13.0%") && n.contains("favours SIDE_PANEL (84%)"));
+        // Without the model the same claim is STP-eligible.
         assertThat(orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
                 "Scraped a pole in a parking garage.", "3000")).gateFlags()).isEmpty();
     }

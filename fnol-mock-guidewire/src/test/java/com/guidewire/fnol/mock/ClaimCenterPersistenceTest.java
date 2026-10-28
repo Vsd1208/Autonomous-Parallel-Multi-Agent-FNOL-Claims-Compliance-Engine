@@ -55,4 +55,49 @@ class ClaimCenterPersistenceTest {
                 new BigDecimal("100"), new BigDecimal("115"), "DRAFT_PENDING_REVIEW")).claimId();
         assertThat(next).isEqualTo("CLM-2026-000002");
     }
+
+    private ClaimCenterController controller() {
+        DriverManagerDataSource db = new DriverManagerDataSource(
+                "jdbc:h2:mem:cc-" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", "");
+        new ResourceDatabasePopulator(new ClassPathResource("claimcenter-schema.sql")).execute(db);
+        return new ClaimCenterController(new ClaimCenterStore(new JdbcTemplate(db), mapper), 1);
+    }
+
+    @Test
+    @DisplayName("Exposures, activities and notes: an interim step keeps activities open; the final decision completes them and settles the reserve")
+    void exposuresActivitiesAndNotesFollowTheDecision() throws Exception {
+        ClaimCenterController cc = controller();
+        String id = cc.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 8, 16), "CA",
+                new BigDecimal("4200"), new BigDecimal("3200"), "DRAFT_PENDING_REVIEW")).claimId();
+        CcExposure exposure = cc.addExposure(id, new CcExposure(null, "VehicleDamage", "COLLISION",
+                new BigDecimal("3200"), "claimcost", null));
+        cc.addActivity(id, new CcActivity(null, "Review AI flag: claimed exceeds ai estimate", "why", "high",
+                LocalDate.of(2026, 9, 1), "FNOL adjuster queue", null, null));
+        cc.addNote(id, new CcNote(null, "AI advisory", "AI advisory: escalate to human", "body", null));
+        assertThat(exposure.exposureId()).startsWith("EXP-");
+        assertThat(exposure.status()).isEqualTo("open");
+
+        cc.update(id, new ClaimUpdateRequest("PENDING_INFORMATION", "need photos", "NEEDS_MORE_INFO", "ADJ-001", null));
+        assertThat(cc.activities(id)).extracting(CcActivity::status).containsExactly("open");
+
+        Claim approved = cc.update(id, new ClaimUpdateRequest("OPEN", null, "APPROVED_BY_ADJUSTER", "ADJ-001",
+                new BigDecimal("2800")));
+        assertThat(approved.activities()).singleElement().satisfies(a -> {
+            assertThat(a.status()).isEqualTo("complete");
+            assertThat(a.completedBy()).isEqualTo("ADJ-001");
+        });
+        assertThat(approved.exposures()).singleElement().satisfies(e -> assertThat(e.reserve()).isEqualByComparingTo("2800"));
+        assertThat(approved.claimNotes()).extracting(CcNote::topic).containsExactly("AI advisory");
+        assertThat(cc.documents(id)).isEmpty();
+
+        // A denial zeroes and closes the exposure.
+        String denied = cc.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 8, 18), "CA",
+                new BigDecimal("4200"), new BigDecimal("3200"), "DRAFT_PENDING_REVIEW")).claimId();
+        cc.addExposure(denied, new CcExposure(null, "VehicleDamage", "COLLISION", new BigDecimal("3200"), null, null));
+        assertThat(cc.update(denied, new ClaimUpdateRequest("DENIED", "no cover", "REJECTED_BY_ADJUSTER", "ADJ-001", null))
+                .exposures()).singleElement().satisfies(e -> {
+                    assertThat(e.reserve()).isEqualByComparingTo("0");
+                    assertThat(e.status()).isEqualTo("closed");
+                });
+    }
 }

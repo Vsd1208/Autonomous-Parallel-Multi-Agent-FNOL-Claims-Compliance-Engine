@@ -129,6 +129,7 @@ public class EvidenceStore {
             doc.content = bytes;
             doc.sizeBytes = bytes.length;
             doc.sha256 = sha256(bytes);
+            doc.phash = PerceptualHash.of(bytes);   // for the PHOTO_REUSED check on later claims
             doc.name = "damage-photo-" + index + "." + EXTENSION.get(mime);
             return doc;
         }

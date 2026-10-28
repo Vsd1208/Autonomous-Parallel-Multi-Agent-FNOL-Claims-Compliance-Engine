@@ -59,6 +59,28 @@ The FNOL application NEVER directly interacts with the mock services or mock cla
     Mock PolicyCenter                           Mock ClaimCenter
 ```
 
+## What the engine files in ClaimCenter
+
+The AI does not keep its own claim: it files the claim in ClaimCenter and fills it the way an adjuster works with it.
+ClaimCenter stays the system of record. The mock ClaimCenter stores each object on a path shaped like the Cloud API
+claim resources:
+
+| ClaimCenter object | Mock path | What the engine puts there |
+|---|---|---|
+| Claim | `POST /cc/claims` | Policy, loss date, state, AI estimate; `DRAFT_PENDING_REVIEW` until a person decides (`OPEN` only for unreviewed STP) |
+| Exposure | `POST /cc/rest/claim/v1/claims/{id}/exposures` | One exposure for the matched coverage (e.g. `VehicleDamage` / COLLISION, `Dwelling` / DWELLING) carrying the reserve line (cost type `claimcost`). ClaimCenter holds reserves on exposures, not on the claim |
+| Activity | `POST /cc/rest/claim/v1/claims/{id}/activities` | One per AI review flag ("Review AI flag: claimed exceeds ai estimate", with the reason), or "Confirm AI advisory" for an STP-eligible claim; due by the statutory acknowledgement date; urgent when severity is HIGH; assigned to the FNOL adjuster queue |
+| Note | `POST /cc/rest/claim/v1/claims/{id}/notes` | The AI advisory: summary, every review note, "advisory only: the adjuster decides". The claimant's description is not copied (PII stays out) |
+| Documents | `POST /cc/claims/{id}/attachments`, `GET /cc/rest/claim/v1/claims/{id}/documents` | The WHY panel and the evidence list |
+
+When the adjuster decides, the update to the claim completes the open review activities (completed by the adjuster),
+sets the exposure reserve to the adjuster's final reserve, or zeroes and closes it on a denial. Interim steps
+(requesting photos, assigning an inspector) leave the activities open. The console's **In ClaimCenter** page shows all
+of this for a claim (`GET /api/v1/fnol/{id}/claimcenter`, adjusters only).
+
+In a real deployment the same calls go to ClaimCenter's Cloud API, and a ClaimCenter app event on claim creation (for
+FNOL taken in ClaimCenter or a customer portal) would trigger the engine instead of the engine creating the claim.
+
 ## Production Replacement Path
 
 When connecting to an authentic Guidewire Cloud environment, the replacement is seamless and isolated to the adapter layer:

@@ -96,13 +96,63 @@ public final class Models {
             BigDecimal reserve,
             String notes,
             List<ClaimAttachment> attachments,
-            List<ClaimReviewAction> reviewActions
+            List<ClaimReviewAction> reviewActions,
+            List<CcExposure> exposures,
+            List<CcActivity> activities,
+            List<CcNote> claimNotes
     ) {
         public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
                      BigDecimal estimatedDamage, BigDecimal reserve) {
             this(claimId, status, policyNumber, incidentDate, state, estimatedDamage, reserve, null, List.of(), List.of());
         }
+
+        public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
+                     BigDecimal estimatedDamage, BigDecimal reserve, String notes, List<ClaimAttachment> attachments,
+                     List<ClaimReviewAction> reviewActions) {
+            this(claimId, status, policyNumber, incidentDate, state, estimatedDamage, reserve, notes, attachments,
+                    reviewActions, List.of(), List.of(), List.of());
+        }
     }
+
+    /*
+     * ClaimCenter objects the FNOL engine creates on a claim, shaped after ClaimCenter's entities (and the Cloud API
+     * claim resources: exposures, activities, notes, documents). The ids, status and timestamps are set by
+     * ClaimCenter; the engine sends them as null.
+     */
+
+    /**
+     * What is claimed under which coverage, carrying the reserve line. ClaimCenter holds reserves on exposures,
+     * not on the claim.
+     */
+    public record CcExposure(
+            String exposureId,
+            String exposureType,      // e.g. VehicleDamage, Dwelling
+            String coverageType,      // the policy coverage that pays, e.g. COLLISION, DWELLING
+            BigDecimal reserve,       // open reserve on the exposure (cost type claimcost)
+            String costType,          // claimcost
+            String status             // open | closed
+    ) {}
+
+    /** A task for a person, e.g. "Review AI flag: claimed amount above estimate", due by the statutory deadline. */
+    public record CcActivity(
+            String activityId,
+            String subject,
+            String description,
+            String priority,          // urgent | high | normal
+            LocalDate dueDate,
+            String assignedTo,        // user or queue
+            String status,            // open | complete
+            String completedBy
+    ) {}
+
+    /** A claim note, e.g. the AI advisory's explanation. */
+    public record CcNote(
+            String noteId,
+            String topic,             // e.g. general, AI advisory
+            String subject,
+            String body,
+            Instant createdAt
+    ) {}
 
     /**
      * ClaimCenter update after an adjuster decision (PUT /cc/claims/{id}). Each update is also
@@ -251,8 +301,29 @@ public final class Models {
     public record BranchAResult(
             DamageAssessment damageAssessment,
             PolicyValidationResult coverage,
-            ReserveResult reserve
-    ) {}
+            ReserveResult reserve,
+            SecondOpinion secondOpinion        // null when the second-opinion model is off, unreachable or had no photo
+    ) {
+        public BranchAResult(DamageAssessment damageAssessment, PolicyValidationResult coverage, ReserveResult reserve) {
+            this(damageAssessment, coverage, reserve, null);
+        }
+    }
+
+    /**
+     * A second, independently trained vision model's view of the same photos (fnol-vision-ml): probabilities for the
+     * damaged area (AUTO) or cause of loss (HOME), and for what the photos show. Used to catch Gemini's confident
+     * mistakes (gate flag MODEL_DISAGREEMENT); it never decides on its own.
+     */
+    public record SecondOpinion(
+            String model,
+            Map<String, BigDecimal> damageProbabilities,
+            Map<String, BigDecimal> subjectProbabilities
+    ) {
+        /** Probability the second opinion gives a damage type, or null when the type is not one of its classes. */
+        public BigDecimal probabilityOf(String damageType) {
+            return damageProbabilities == null ? null : damageProbabilities.get(damageType);
+        }
+    }
 
     public record BranchBResult(
             PIIResult pii,

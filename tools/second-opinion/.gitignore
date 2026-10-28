@@ -1,0 +1,2 @@
+# Cached CLIP embeddings (rebuilt by build_model.py)
+results/*.npy

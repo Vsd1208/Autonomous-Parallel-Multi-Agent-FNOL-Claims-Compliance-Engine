@@ -43,6 +43,12 @@ public class GateConsistencyChecker {
     public static final String PHOTO_SUBJECT_MISMATCH = "PHOTO_SUBJECT_MISMATCH";
     /** The photo subject each line of business insures. */
     static final Map<String, String> EXPECTED_SUBJECT = Map.of("AUTO", "VEHICLE", "HOME", "BUILDING");
+    /**
+     * The second-opinion model (independently trained, fnol-vision-ml) gives Gemini's damage type a probability below
+     * fnol.stp.second-opinion-min-probability. On labelled car photos this caught the confident wrong answer that no
+     * other vision check stops (tools/second-opinion/results/disagreement.md).
+     */
+    public static final String MODEL_DISAGREEMENT = "MODEL_DISAGREEMENT";
     /** High vision confidence reported for a photo it rated blurry or unusable. */
     public static final String CONFIDENCE_PHOTO_QUALITY_MISMATCH = "CONFIDENCE_PHOTO_QUALITY_MISMATCH";
 
@@ -94,6 +100,11 @@ public class GateConsistencyChecker {
         String expectedSubject = EXPECTED_SUBJECT.get(line);
         if (damage.photoSubject() != null && expectedSubject != null && !expectedSubject.equals(damage.photoSubject())) {
             flags.add(PHOTO_SUBJECT_MISMATCH);
+        }
+        SecondOpinion second = branchA.secondOpinion();
+        BigDecimal agreement = second == null ? null : second.probabilityOf(damage.damageType());
+        if (agreement != null && agreement.compareTo(stp.getSecondOpinionMinProbability()) < 0) {
+            flags.add(MODEL_DISAGREEMENT);
         }
         if ("HOME".equals(line) && "FLOOD".equals(damage.damageType())) {
             flags.add(POSSIBLE_FLOOD_EXCLUSION);

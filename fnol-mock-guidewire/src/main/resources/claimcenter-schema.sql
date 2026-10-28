@@ -37,3 +37,41 @@ CREATE TABLE IF NOT EXISTS claimcenter.attachments (
 
 CREATE INDEX IF NOT EXISTS idx_cc_review_actions_claim ON claimcenter.review_actions (claim_id);
 CREATE INDEX IF NOT EXISTS idx_cc_attachments_claim ON claimcenter.attachments (claim_id);
+
+-- Claim child objects, shaped after ClaimCenter's entities (Cloud API claim resources).
+CREATE TABLE IF NOT EXISTS claimcenter.exposures (
+    exposure_id      VARCHAR(40)    PRIMARY KEY,
+    claim_id         VARCHAR(32)    NOT NULL REFERENCES claimcenter.claims (claim_id),
+    exposure_type    VARCHAR(40),
+    coverage_type    VARCHAR(40),
+    reserve          NUMERIC(14, 2),
+    cost_type        VARCHAR(40),
+    status           VARCHAR(16)    NOT NULL,
+    created_at       TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS claimcenter.activities (
+    activity_id      VARCHAR(40)    PRIMARY KEY,
+    claim_id         VARCHAR(32)    NOT NULL REFERENCES claimcenter.claims (claim_id),
+    subject          VARCHAR(255)   NOT NULL,
+    description      TEXT,
+    priority         VARCHAR(16),
+    due_date         DATE,
+    assigned_to      VARCHAR(64),
+    status           VARCHAR(16)    NOT NULL,
+    completed_by     VARCHAR(64),
+    created_at       TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS claimcenter.notes (
+    note_id          VARCHAR(40)    PRIMARY KEY,
+    claim_id         VARCHAR(32)    NOT NULL REFERENCES claimcenter.claims (claim_id),
+    topic            VARCHAR(64),
+    subject          VARCHAR(255),
+    body             TEXT,
+    created_at       TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cc_exposures_claim ON claimcenter.exposures (claim_id);
+CREATE INDEX IF NOT EXISTS idx_cc_activities_claim ON claimcenter.activities (claim_id);
+CREATE INDEX IF NOT EXISTS idx_cc_notes_claim ON claimcenter.notes (claim_id);

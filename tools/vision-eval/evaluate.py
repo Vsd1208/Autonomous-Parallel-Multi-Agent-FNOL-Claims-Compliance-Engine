@@ -8,6 +8,7 @@ The API key comes from the GEMINI_API_KEY environment variable or the repo's .en
 sent only to Google and never printed or written to disk.
 
 Usage:  python -P evaluate.py --run thinking0 --thinking-budget 0 --limit 60 --max-calls 15
+        python -P evaluate.py --line home --run home-v1 --limit 60 --max-calls 15   (after prepare_home.py)
 Writes: results/<run>.jsonl (one line per image). Re-running resumes: images already answered are
 skipped and images that failed are retried. When Google's daily quota is used up the run stops
 cleanly, so a free-tier key can finish the sample over several days (run it once a day).
@@ -33,9 +34,18 @@ PROVIDER = os.path.join(REPO, "fnol-agents", "src", "main", "java", "com", "guid
 URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
-def app_prompt():
+# Per line of business: the app prompt constant, the dataset folder (labels.jsonl, sample.txt) and where the
+# label paths are relative to, and the angle the single photo is labelled with (as the app would label it).
+LINES = {
+    "auto": {"prompt": "DAMAGE_ASSESSMENT_PROMPT", "data": DATA, "images": os.path.join(DATA, "hitl"), "angle": "OTHER"},
+    "home": {"prompt": "PROPERTY_ASSESSMENT_PROMPT", "data": os.path.join(DATA, "home"), "images": os.path.join(DATA, "home"),
+             "angle": "OVERVIEW"},
+}
+
+
+def app_prompt(constant="DAMAGE_ASSESSMENT_PROMPT"):
     src = open(PROVIDER, encoding="utf-8").read().replace("\r\n", "\n")
-    block = re.search(r'DAMAGE_ASSESSMENT_PROMPT\s*=\s*"""\n(.*?)"""', src, re.S).group(1)
+    block = re.search(constant + r'\s*=\s*"""\n(.*?)"""', src, re.S).group(1)
     return textwrap.dedent(block)   # Java text blocks strip the common indentation the same way
 
 
@@ -99,15 +109,18 @@ def main():
     ap.add_argument("--timeout", type=int, default=60)
     ap.add_argument("--limit", type=int, default=0, help="only the first N sample images (0 = all)")
     ap.add_argument("--max-calls", type=int, default=0, help="stop after N API calls this run (0 = no cap)")
+    ap.add_argument("--line", choices=sorted(LINES), default="auto",
+                    help="auto: car photos, vehicle prompt; home: property photos (prepare_home.py), property prompt")
     args = ap.parse_args()
+    line = LINES[args.line]
 
-    key, prompt = api_key(), app_prompt()
+    key, prompt = api_key(), app_prompt(line["prompt"])
     labels = {}
-    with open(os.path.join(DATA, "labels.jsonl"), encoding="utf-8") as f:
+    with open(os.path.join(line["data"], "labels.jsonl"), encoding="utf-8") as f:
         for line in f:
             lab = json.loads(line)
             labels[lab["image"]] = lab
-    sample = [s for s in open(os.path.join(DATA, "sample.txt"), encoding="utf-8").read().split("\n") if s]
+    sample = [s for s in open(os.path.join(line["data"], "sample.txt"), encoding="utf-8").read().split("\n") if s]
     if args.limit:
         sample = sample[:args.limit]
 
@@ -133,23 +146,24 @@ def main():
         todo = todo[:args.max_calls]
     print(f"{len(done)} done, {len(todo)} to do this run, ~{len(todo) * gap / 60:.0f} min at {args.rpm} rpm")
     try:
-        run(todo, labels, key, prompt, args, out_path, gap)
+        run(todo, labels, key, prompt, args, out_path, gap, line)
     except DailyQuotaExhausted as e:
         print(f"Stopped: daily quota used up ({e}). Run again tomorrow to continue; nothing was lost.")
     answered = sum(1 for l in open(out_path, encoding="utf-8") if l.strip()) if os.path.exists(out_path) else 0
     print(f"{answered}/{len(sample)} images answered so far.")
 
 
-def run(todo, labels, key, prompt, args, out_path, gap):
+def run(todo, labels, key, prompt, args, out_path, gap, line):
     for i, name in enumerate(todo, 1):
-        path = os.path.join(DATA, "hitl", labels[name]["path"])
+        path = os.path.join(line["images"], labels[name]["path"])
         mime = "image/png" if name.lower().endswith(".png") else "image/jpeg"
         record = {"image": name, "model": args.model, "thinkingBudget": args.thinking_budget,
-                  "promptSha256": prompt_sha(prompt)}
+                  "promptSha256": prompt_sha(prompt), "line": args.line}
         started = time.time()
         for attempt in range(4):
             try:
-                resp = call(key, args.model, prompt, open(path, "rb").read(), mime, args.thinking_budget, args.timeout)
+                resp = call(key, args.model, prompt, open(path, "rb").read(), mime, args.thinking_budget, args.timeout,
+                            line["angle"])
                 record.update(prediction=parse(resp), latency=round(time.time() - started, 2),
                               usage=resp.get("usageMetadata", {}))
                 break

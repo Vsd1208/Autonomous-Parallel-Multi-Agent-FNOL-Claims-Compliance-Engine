@@ -87,7 +87,7 @@ Severity from estimated damage: **LOW** ≤ $5,000, **MEDIUM** ≤ $20,000, **HI
 | Claim History | Claim frequency risk LOW or MEDIUM |
 | Subrogation Risk | Score < 70 |
 
-A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`; the last is raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
+A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `PHOTO_REUSED`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `MODEL_DISAGREEMENT`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`; the last is raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
 
 ## API
 
@@ -144,7 +144,7 @@ Copy `.env.example` to `.env`, set `GEMINI_API_KEY`, `FNOL_ADJUSTER_TOKEN` and, 
 ### Tests and builds
 
 ```bash
-mvn -q test                                   # backend: 228 tests
+mvn -q test                                   # backend: 242 tests
 cd frontend && npm install && npm run build    # console
 ```
 
@@ -195,6 +195,8 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `VITE_API_BASE_URL` | `http://localhost:8080` | API address for the console |
 
 ## Vision evaluation
+
+`tools/second-opinion/` trains the second-opinion vision model (CLIP embeddings + logistic regression on CC0 car-damage photos; zero-shot heads for photo subject and home cause of loss) served by `fnol-vision-ml`; when it disagrees with Gemini the claim goes to an adjuster (`MODEL_DISAGREEMENT`). See [tools/second-opinion/README.md](tools/second-opinion/README.md).
 
 `tools/vision-eval/` measures Gemini's damage-zone accuracy on a public-domain (CC0) labelled car-damage dataset and trains a calibration map for its confidence score. See [tools/vision-eval/README.md](tools/vision-eval/README.md).
 

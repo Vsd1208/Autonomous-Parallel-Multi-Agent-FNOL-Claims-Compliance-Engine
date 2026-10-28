@@ -44,6 +44,12 @@ public class StpProperties {
      */
     private BigDecimal minProbabilityMargin = new BigDecimal("0.30");
 
+    /**
+     * MODEL_DISAGREEMENT when the second-opinion model gives Gemini's damage type less than this. 0.15 caught the one
+     * confident wrong answer in the car evaluation while flagging 2 of 35 right answers (out-of-fold, small sample).
+     */
+    private BigDecimal secondOpinionMinProbability = new BigDecimal("0.15");
+
     public BigDecimal getConfidence() { return confidence; }
     public void setConfidence(BigDecimal confidence) { this.confidence = confidence; }
 
@@ -61,6 +67,9 @@ public class StpProperties {
 
     public BigDecimal getPiiRedactionConfidence() { return piiRedactionConfidence; }
     public void setPiiRedactionConfidence(BigDecimal piiRedactionConfidence) { this.piiRedactionConfidence = piiRedactionConfidence; }
+
+    public BigDecimal getSecondOpinionMinProbability() { return secondOpinionMinProbability; }
+    public void setSecondOpinionMinProbability(BigDecimal v) { this.secondOpinionMinProbability = v; }
 
     public BigDecimal getMinProbabilityMargin() { return minProbabilityMargin; }
     public void setMinProbabilityMargin(BigDecimal minProbabilityMargin) { this.minProbabilityMargin = minProbabilityMargin; }

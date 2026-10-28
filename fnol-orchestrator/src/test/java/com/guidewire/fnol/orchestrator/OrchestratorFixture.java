@@ -137,5 +137,27 @@ final class OrchestratorFixture {
             if (attachmentsFail) throw new IllegalStateException("ClaimCenter unavailable");
             attachments.computeIfAbsent(claimId, id -> Collections.synchronizedList(new ArrayList<>())).add(attachment);
         }
+
+        final Map<String, List<CcExposure>> exposures = new ConcurrentHashMap<>();
+        final Map<String, List<CcActivity>> activities = new ConcurrentHashMap<>();
+        final Map<String, List<CcNote>> notes = new ConcurrentHashMap<>();
+
+        @Override
+        public CcExposure addExposure(String claimId, CcExposure exposure) {
+            exposures.computeIfAbsent(claimId, id -> Collections.synchronizedList(new ArrayList<>())).add(exposure);
+            return exposure;
+        }
+
+        @Override
+        public CcActivity addActivity(String claimId, CcActivity activity) {
+            activities.computeIfAbsent(claimId, id -> Collections.synchronizedList(new ArrayList<>())).add(activity);
+            return activity;
+        }
+
+        @Override
+        public CcNote addNote(String claimId, CcNote note) {
+            notes.computeIfAbsent(claimId, id -> Collections.synchronizedList(new ArrayList<>())).add(note);
+            return note;
+        }
     }
 }

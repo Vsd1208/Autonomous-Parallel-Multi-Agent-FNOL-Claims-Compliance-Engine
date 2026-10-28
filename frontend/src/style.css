@@ -562,3 +562,8 @@ a:hover { text-decoration: underline; }
 .link-row input { flex: 1; min-width: 0; font-family: var(--mono, monospace); font-size: 12px; }
 .check-row { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 10px; }
 .check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+
+/* ── ClaimCenter view ──────────────────────────────────── */
+.cc-note { padding: 8px 0; border-bottom: 1px solid var(--border-light); }
+.cc-note:last-child { border-bottom: 0; }
+.cc-note p { margin: 4px 0 0; white-space: pre-wrap; }

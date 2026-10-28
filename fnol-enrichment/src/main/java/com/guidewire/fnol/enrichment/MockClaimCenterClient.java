@@ -38,4 +38,22 @@ public class MockClaimCenterClient implements ClaimCenterClient {
     public void attachDocument(String claimId, ClaimAttachment attachment) {
         rest.postForLocation(baseUrl + "/cc/claims/{claimId}/attachments", attachment, claimId);
     }
+
+    // Claim child objects, on paths shaped like the ClaimCenter Cloud API claim resources.
+    private static final String CLAIM_API = "/cc/rest/claim/v1/claims/{claimId}";
+
+    @Override
+    public CcExposure addExposure(String claimId, CcExposure exposure) {
+        return rest.postForObject(baseUrl + CLAIM_API + "/exposures", exposure, CcExposure.class, claimId);
+    }
+
+    @Override
+    public CcActivity addActivity(String claimId, CcActivity activity) {
+        return rest.postForObject(baseUrl + CLAIM_API + "/activities", activity, CcActivity.class, claimId);
+    }
+
+    @Override
+    public CcNote addNote(String claimId, CcNote note) {
+        return rest.postForObject(baseUrl + CLAIM_API + "/notes", note, CcNote.class, claimId);
+    }
 }

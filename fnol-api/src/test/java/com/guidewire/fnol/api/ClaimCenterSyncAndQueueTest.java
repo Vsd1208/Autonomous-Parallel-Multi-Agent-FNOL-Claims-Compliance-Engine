@@ -6,6 +6,9 @@ import com.guidewire.fnol.api.persistence.ClaimEntity;
 import com.guidewire.fnol.api.persistence.ClaimRepository;
 import com.guidewire.fnol.common.Models.AdjusterReviewRequest;
 import com.guidewire.fnol.common.Models.ClaimUpdateRequest;
+import com.guidewire.fnol.common.Models.Claim;
+import com.guidewire.fnol.common.Models.CcActivity;
+import com.guidewire.fnol.common.Models.CcExposure;
 import com.guidewire.fnol.enrichment.ClaimCenterClient;
 import com.guidewire.fnol.enrichment.PolicyCenterClient;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +25,7 @@ import org.springframework.web.client.ResourceAccessException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +35,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** P11: the adjuster decision reaches ClaimCenter without making it a point of failure. P12: adjuster queue. */
@@ -97,6 +102,30 @@ class ClaimCenterSyncAndQueueTest {
         assertThat(claims.findById(claimId).orElseThrow().ccSyncStatus).isEqualTo("SYNCED");
         mockMvc.perform(post("/api/v1/fnol/" + claimId + "/claimcenter-sync").header("X-Adjuster-Token", TOKEN))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("GET /claimcenter shows the claim as ClaimCenter holds it (adjusters only); 502 when ClaimCenter is down")
+    void claimCenterViewIsProxied() throws Exception {
+        String claimId = saveClaim("CLM-Q-", "HUMAN_REVIEW", Instant.now());
+        when(claimCenterClient.getClaim(claimId)).thenReturn(new Claim(claimId, "DRAFT_PENDING_REVIEW", "POL-AUTO-112233",
+                null, "CA", new BigDecimal("4200"), new BigDecimal("3200"), null, List.of(), List.of(),
+                List.of(new CcExposure("EXP-1", "VehicleDamage", "COLLISION", new BigDecimal("3200"), "claimcost", "open")),
+                List.of(new CcActivity("ACT-1", "Review AI flag: claimed exceeds ai estimate", "why", "high", null,
+                        "FNOL adjuster queue", "open", null)),
+                List.of()));
+
+        mockMvc.perform(get("/api/v1/fnol/" + claimId + "/claimcenter")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/fnol/" + claimId + "/claimcenter").header("X-Adjuster-Token", TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.exposures[0].reserve").value(3200))
+                .andExpect(jsonPath("$.activities[0].status").value("open"));
+
+        when(claimCenterClient.getClaim(claimId)).thenThrow(new ResourceAccessException("ClaimCenter down"));
+        mockMvc.perform(get("/api/v1/fnol/" + claimId + "/claimcenter").header("X-Adjuster-Token", TOKEN))
+                .andExpect(status().isBadGateway());
+        mockMvc.perform(get("/api/v1/fnol/NOPE-1/claimcenter").header("X-Adjuster-Token", TOKEN))
+                .andExpect(status().isNotFound());
     }
 
     @Test

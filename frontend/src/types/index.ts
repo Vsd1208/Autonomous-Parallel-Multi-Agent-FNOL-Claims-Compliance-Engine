@@ -37,6 +37,14 @@ export interface BranchAResult {
   damageAssessment: DamageAssessment;
   coverage: Coverage;
   reserve: Reserve;
+  /** Independently trained vision model's view of the same photos; null when it was not available. */
+  secondOpinion?: SecondOpinion | null;
+}
+
+export interface SecondOpinion {
+  model: string;
+  damageProbabilities: Record<string, number>;
+  subjectProbabilities: Record<string, number>;
 }
 
 export interface PiiInfo {
@@ -302,4 +310,45 @@ export interface FormData {
   channel: 'WEB' | 'MOBILE' | 'PHONE' | 'API';
   /** Amount the claimant asks for, as typed (whole dollars). */
   claimedAmount: string;
+}
+
+/** GET /fnol/{id}/claimcenter: the claim as ClaimCenter holds it. */
+export interface CcExposure {
+  exposureId: string;
+  exposureType: string;
+  coverageType: string;
+  reserve: number | null;
+  costType: string;
+  status: string;
+}
+
+export interface CcActivity {
+  activityId: string;
+  subject: string;
+  description: string | null;
+  priority: string;
+  dueDate: string | null;
+  assignedTo: string | null;
+  status: string;
+  completedBy: string | null;
+}
+
+export interface CcNote {
+  noteId: string;
+  topic: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface CcClaim {
+  claimId: string;
+  status: string;
+  policyNumber: string;
+  reserve: number | null;
+  attachments: { name: string; contentType: string }[];
+  reviewActions: { at: string; action: string | null; status: string; adjusterId: string | null }[];
+  exposures: CcExposure[];
+  activities: CcActivity[];
+  claimNotes: CcNote[];
 }

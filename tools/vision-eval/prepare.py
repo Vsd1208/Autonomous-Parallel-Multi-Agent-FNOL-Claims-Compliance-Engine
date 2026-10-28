@@ -108,7 +108,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", type=int, default=120, help="images to download for the Gemini run")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--download-all", action="store_true",
+                    help="only download every labelled image (for training tools/second-opinion); "
+                         "labels.jsonl and sample.txt are left unchanged, so evaluation runs stay valid")
     args = ap.parse_args()
+
+    if args.download_all:
+        from huggingface_hub import snapshot_download
+        with open(os.path.join(DATA, "labels.jsonl"), encoding="utf-8") as f:
+            paths = [json.loads(line)["path"] for line in f]
+        snapshot_download(REPO_ID, repo_type="dataset", local_dir=HITL, allow_patterns=paths)
+        missing = [p for p in paths if not os.path.exists(os.path.join(HITL, p))]
+        print(f"{len(paths)} labelled images; missing: {len(missing)}")
+        return
 
     parts, damage = load_annotations()
     paired = sorted(set(parts) & set(damage))

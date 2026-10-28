@@ -109,6 +109,59 @@ class ClaimCenterController {
         store.attach(claimId, attachment);
         return attachment;
     }
+
+    // ── Claim child objects, on paths shaped like the ClaimCenter Cloud API claim resources ──
+
+    @PostMapping("/cc/rest/claim/v1/claims/{claimId}/exposures")
+    @ResponseStatus(HttpStatus.CREATED)
+    CcExposure addExposure(@PathVariable("claimId") String claimId, @RequestBody CcExposure exposure) {
+        requireClaim(claimId);
+        return store.addExposure(claimId, exposure);
+    }
+
+    @GetMapping("/cc/rest/claim/v1/claims/{claimId}/exposures")
+    List<CcExposure> exposures(@PathVariable("claimId") String claimId) {
+        requireClaim(claimId);
+        return store.exposures(claimId);
+    }
+
+    @PostMapping("/cc/rest/claim/v1/claims/{claimId}/activities")
+    @ResponseStatus(HttpStatus.CREATED)
+    CcActivity addActivity(@PathVariable("claimId") String claimId, @RequestBody CcActivity activity) {
+        requireClaim(claimId);
+        return store.addActivity(claimId, activity);
+    }
+
+    @GetMapping("/cc/rest/claim/v1/claims/{claimId}/activities")
+    List<CcActivity> activities(@PathVariable("claimId") String claimId) {
+        requireClaim(claimId);
+        return store.activities(claimId);
+    }
+
+    @PostMapping("/cc/rest/claim/v1/claims/{claimId}/notes")
+    @ResponseStatus(HttpStatus.CREATED)
+    CcNote addNote(@PathVariable("claimId") String claimId, @RequestBody CcNote note) {
+        requireClaim(claimId);
+        return store.addNote(claimId, note);
+    }
+
+    @GetMapping("/cc/rest/claim/v1/claims/{claimId}/notes")
+    List<CcNote> notes(@PathVariable("claimId") String claimId) {
+        requireClaim(claimId);
+        return store.notes(claimId);
+    }
+
+    @GetMapping("/cc/rest/claim/v1/claims/{claimId}/documents")
+    List<ClaimAttachment> documents(@PathVariable("claimId") String claimId) {
+        requireClaim(claimId);
+        return store.documents(claimId);
+    }
+
+    private void requireClaim(String claimId) {
+        if (!store.exists(claimId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Synthetic claim not found");
+        }
+    }
 }
 
 /**

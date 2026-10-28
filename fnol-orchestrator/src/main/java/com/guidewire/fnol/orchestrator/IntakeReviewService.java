@@ -27,6 +27,8 @@ public class IntakeReviewService {
     public static final String HIGH_CLAIM_FREQUENCY = "HIGH_CLAIM_FREQUENCY";
     /** Photos were sent, but not the standard set: every side of the vehicle plus a close-up of the damage. */
     public static final String INCOMPLETE_PHOTO_SET = "INCOMPLETE_PHOTO_SET";
+    /** A photo was already submitted on another claim (same file, or resized/recompressed): a fraud indicator. */
+    public static final String PHOTO_REUSED = "PHOTO_REUSED";
 
     /** Standard photo set for a vehicle claim: all four sides show the extent and any earlier damage. */
     public static final List<String> AUTO_PHOTO_SET = List.of("FRONT", "REAR", "LEFT", "RIGHT", "CLOSE_UP");

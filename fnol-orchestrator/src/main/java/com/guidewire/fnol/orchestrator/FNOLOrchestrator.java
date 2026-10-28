@@ -12,9 +12,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 
 /**
@@ -59,6 +62,12 @@ public class FNOLOrchestrator {
 
     // ── Branch A — Operational AI agents ──
     private final VisionDamageAgent vision;
+    /** Photos stored on earlier claims, for the PHOTO_REUSED check; none unless the application provides it. */
+    private PhotoHistory photoHistory = PhotoHistory.NONE;
+    /** Calibrated AI confidence (tools/vision-eval/trust_score.py); passes confidence through unless configured. */
+    private TrustScorer trustScorer = TrustScorer.none();
+    /** Independent vision model (fnol-vision-ml), asked in parallel with Gemini; disabled unless configured. */
+    private SecondOpinionAgent secondOpinion = SecondOpinionAgent.disabled();
     private final PolicyValidatorAgent policy;
     private final ReserveCalculatorAgent reserve;
 
@@ -166,7 +175,13 @@ public class FNOLOrchestrator {
         Policy policyRecord = lookUpPolicy(payload.policyNumber());
 
         // ── Human Review Point 1: intake review flags ─────────────────────────────────
-        List<String> inputFlags = intakeReview.review(payload, policyRecord, policyContext);
+        List<String> inputFlags = new ArrayList<>(intakeReview.review(payload, policyRecord, policyContext));
+        // Fraud indicator: a photo already submitted on another claim (same file, or resized/recompressed)
+        List<String> reusedFrom = photoHistory.claimsWithSamePhotos(payload);
+        if (!reusedFrom.isEmpty()) {
+            inputFlags.add(IntakeReviewService.PHOTO_REUSED);
+        }
+        inputFlags = List.copyOf(inputFlags);
         boolean highRiskEscalation = "HIGH".equalsIgnoreCase(policyContext.claimFrequencyRisk());
         if (!inputFlags.isEmpty()) {
             log.warn("[FNOL] Intake review flags {} — human validation required: policy={}",
@@ -226,7 +241,8 @@ public class FNOLOrchestrator {
         log.info("[FNOL] Dual-branch completed in {}ms — policy={}", elapsed, payload.policyNumber());
 
         // ── Stage 5: Reconciliation Safety Gate ──────────────────────────────────────
-        return reconcile(payload, policyRecord, branchA, branchB, policyContext, inputFlags, elapsed, highRiskEscalation);
+        return reconcile(payload, policyRecord, branchA, branchB, policyContext, inputFlags, elapsed, highRiskEscalation,
+                reusedFrom);
     }
 
     private Policy lookUpPolicy(String policyNumber) {
@@ -240,6 +256,18 @@ public class FNOLOrchestrator {
             throw new CoverageNotEligibleException("Policy " + policyNumber + " was not found in PolicyCenter");
         }
         return found;
+    }
+
+    /** Explains MODEL_DISAGREEMENT with both models' answers. */
+    static String modelDisagreementNote(BranchAResult branchA) {
+        String type = branchA.damageAssessment().damageType();
+        SecondOpinion so = branchA.secondOpinion();
+        String top = so.damageProbabilities().entrySet().stream().max(Map.Entry.comparingByValue())
+                .map(e -> e.getKey() + " (" + e.getValue().movePointRight(2).setScale(0, java.math.RoundingMode.HALF_UP) + "%)")
+                .orElse("—");
+        return "Gemini says " + type + ", but the independently trained second-opinion model gives that only "
+                + so.probabilityOf(type).movePointRight(2).setScale(1, java.math.RoundingMode.HALF_UP)
+                + "% and favours " + top + "; check the photos before relying on the damage type or estimate.";
     }
 
     /** Explains PHOTO_SUBJECT_MISMATCH: what the photos show versus what the policy insures. */
@@ -276,8 +304,28 @@ public class FNOLOrchestrator {
     //  Analyzes loss photos → extracts damage severity → passes structured parameters
     //  to Guidewire's deterministic rules engine for coverage verification and reserve.
     // ─────────────────────────────────────────────────────────────────────────────────
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setPhotoHistory(PhotoHistory photoHistory) {
+        this.photoHistory = photoHistory;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setTrustScorer(TrustScorer trustScorer) {
+        this.trustScorer = trustScorer;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSecondOpinion(SecondOpinionAgent secondOpinion) {
+        this.secondOpinion = secondOpinion;
+    }
+
+    /** How long Branch A waits for the second opinion after Gemini and coverage are done. */
+    static final long SECOND_OPINION_WAIT_MS = 2500;
+
     private BranchAResult runOperationalAI(FNOLPayload payload, String lineOfBusiness) {
         log.debug("[Branch A — Operational AI] Starting — policy={}", payload.policyNumber());
+        // Step A0: ask the second-opinion model now, so it runs while Gemini works
+        CompletableFuture<SecondOpinion> second = secondOpinion.start(payload, lineOfBusiness);
 
         // Step A1: Vision analysis — loss photos → structured damage JSON (type, severity, confidence);
         // vehicle damage areas for AUTO, cause of loss for HOME
@@ -293,7 +341,20 @@ public class FNOLOrchestrator {
         ReserveResult res = reserve.calculate(damage, coverage, payload.claimedAmount());
         log.debug("[Branch A — Operational AI] Completed — reserve={}", res.recommendedReserve());
 
-        return new BranchAResult(damage, coverage, res);
+        // Step A4: collect the second opinion; a slow or failed one is dropped, never waited for past the deadline
+        SecondOpinion opinion;
+        try {
+            opinion = second.get(SECOND_OPINION_WAIT_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            opinion = null;
+        } catch (ExecutionException | TimeoutException e) {
+            log.warn("[Branch A] Second opinion not ready in {} ms — continuing without it", SECOND_OPINION_WAIT_MS);
+            opinion = null;
+        }
+        // Step A5: replace Gemini's self-reported confidence (nearly constant) with the calibrated trust score
+        damage = trustScorer.apply(damage, opinion, lineOfBusiness);
+        return new BranchAResult(damage, coverage, res, opinion);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────
@@ -335,7 +396,8 @@ public class FNOLOrchestrator {
             PolicyHistoryContext policyContext,
             List<String> inputFlags,
             long elapsedMs,
-            boolean highRiskEscalation
+            boolean highRiskEscalation,
+            List<String> reusedFrom
     ) {
         log.info("[FNOL] Entering Reconciliation Safety Gate — policy={}", payload.policyNumber());
 
@@ -395,27 +457,6 @@ public class FNOLOrchestrator {
         ));
         String claimId = created.claimId();
         log.info("[FNOL] Claim pre-populated in ClaimCenter — claimId={}, ccStatus={}", claimId, initialCcStatus);
-        String ccSyncStatus = attachAdvisoryAndEvidence(claimId, explanation, payload);
-
-        // Gate Step 6: Audit trail — one SHA-256 hashed record per agent plus the gate decision.
-        // Inputs are hashed from the sanitized intake only, never the raw payload (SSN, DOB, name).
-        SanitizedIntake intake = SanitizedIntake.of(payload, branchB.pii().redactedDescription());
-        List<AuditRecord> records = List.of(
-                audit.record(claimId, "VisionDamageAgent",      intake,                     branchA.damageAssessment(), "SUCCESS"),
-                audit.record(claimId, "PolicyValidatorAgent",   payload.policyNumber(),     branchA.coverage(),         "SUCCESS"),
-                audit.record(claimId, "ReserveCalculatorAgent", branchA.damageAssessment(), branchA.reserve(),          "SUCCESS"),
-                audit.record(claimId, "PiiRedactionAgent",      intake,                     branchB.pii(),              "SUCCESS"),
-                audit.record(claimId, "StatutoryDeadlineAgent", intake,                     branchB.deadline(),         "SUCCESS"),
-                audit.record(claimId, "SubrogationScorerAgent", intake,                     subrogation,                "SUCCESS"),
-                audit.record(claimId, "ReconciliationGate",     explanation,
-                        "status=" + status + ";requiresHumanValidation=" + requiresHumanValidation
-                                + ";inputFlags=" + inputFlags + ";gateFlags=" + gateFlags, status)
-        );
-
-        BranchBResult branchBWithAudit = new BranchBResult(
-                branchB.pii(), branchB.deadline(), subrogation, records
-        );
-
         String adjusterAdvisory = switch (status) {
             case "STRAIGHT_THROUGH_PROCESSING" -> "Claim meets all STP criteria. Auto-filed. No adjuster action required.";
             case "PENDING_ADVISORY_REVIEW" -> "Claim meets all STP criteria and is pre-populated in ClaimCenter as a draft. "
@@ -428,25 +469,31 @@ public class FNOLOrchestrator {
                 explanation.decision(), status, inputFlags, gateFlags, payload.policyNumber(), claimId);
 
         List<String> notes = new ArrayList<>();
+        Map<String, String> flagReasons = new LinkedHashMap<>();   // flag → note text, for ClaimCenter activities
         if (highRiskEscalation) {
             notes.add("⚠ HIGH-RISK POLICY: This claim has been flagged for mandatory human validation " +
                       "due to elevated claim frequency risk. Auto-STP is disabled.");
         }
         if (inputFlags.contains(IntakeReviewService.MISSING_EVIDENCE)) {
-            notes.add("MISSING EVIDENCE: no photos or documents were submitted. Request evidence from the claimant "
+            addFlagNote(notes, flagReasons, IntakeReviewService.MISSING_EVIDENCE, "MISSING EVIDENCE: no photos or documents were submitted. Request evidence from the claimant "
                     + "before relying on the damage estimate.");
         }
         if (inputFlags.contains(IntakeReviewService.INCOMPLETE_PHOTO_SET)) {
-            notes.add("INCOMPLETE PHOTO SET: missing " + String.join(", ",
+            addFlagNote(notes, flagReasons, IntakeReviewService.INCOMPLETE_PHOTO_SET, "INCOMPLETE PHOTO SET: missing " + String.join(", ",
                     IntakeReviewService.missingPhotoAngles(payload, policyRecord))
                     + ". Request the missing photos: every side shows the full extent and any earlier damage.");
         }
+        if (inputFlags.contains(IntakeReviewService.PHOTO_REUSED)) {
+            addFlagNote(notes, flagReasons, IntakeReviewService.PHOTO_REUSED, "PHOTO REUSED: at least one photo matches a "
+                    + "photo already submitted on claim " + String.join(", ", reusedFrom) + " (same picture, possibly "
+                    + "resized). Compare the claims and confirm the photos show this loss before any payment.");
+        }
         if (inputFlags.contains(IntakeReviewService.INCIDENT_OUTSIDE_POLICY_PERIOD)) {
-            notes.add("INCIDENT OUTSIDE POLICY PERIOD: the incident date is not within the policy term. "
+            addFlagNote(notes, flagReasons, IntakeReviewService.INCIDENT_OUTSIDE_POLICY_PERIOD, "INCIDENT OUTSIDE POLICY PERIOD: the incident date is not within the policy term. "
                     + "Confirm coverage dates before any decision.");
         }
         for (String flag : gateFlags) {
-            notes.add("CONSISTENCY CHECK " + flag + ": " + switch (flag) {
+            addFlagNote(notes, flagReasons, flag, "CONSISTENCY CHECK " + flag + ": " + switch (flag) {
                 case GateConsistencyChecker.SEVERITY_ESTIMATE_MISMATCH ->
                         "the damage severity label does not match the estimated amount; verify the estimate.";
                 case GateConsistencyChecker.RESERVE_EXCEEDS_COVERAGE_LIMIT ->
@@ -459,6 +506,7 @@ public class FNOLOrchestrator {
                         "the damage type does not fit the policy's line of business; confirm the right policy and photos.";
                 case GateConsistencyChecker.PHOTO_SUBJECT_MISMATCH -> photoSubjectNote(
                         branchA.damageAssessment().photoSubject(), policyRecord.policyType());
+                case GateConsistencyChecker.MODEL_DISAGREEMENT -> modelDisagreementNote(branchA);
                 case GateConsistencyChecker.POSSIBLE_FLOOD_EXCLUSION ->
                         "the photos show flood (rising surface water), which standard homeowners policies exclude; "
                                 + "confirm the cause of loss and check for a separate flood policy before any payment.";
@@ -480,8 +528,30 @@ public class FNOLOrchestrator {
             notes.add("DEADLINE " + branchB.deadline().urgencyFlag() + ": acknowledge by "
                     + branchB.deadline().acknowledgeBy() + " (synthetic prototype rule).");
         }
+        String ccSyncStatus = populateClaimCenter(claimId, status, explanation, payload, policyRecord, branchA,
+                branchB.deadline(), reviewFlags, flagReasons, notes);
+
+        // Gate Step 6: Audit trail — one SHA-256 hashed record per agent plus the gate decision.
+        // Inputs are hashed from the sanitized intake only, never the raw payload (SSN, DOB, name).
+        SanitizedIntake intake = SanitizedIntake.of(payload, branchB.pii().redactedDescription());
+        List<AuditRecord> records = List.of(
+                audit.record(claimId, "VisionDamageAgent",      intake,                     branchA.damageAssessment(), "SUCCESS"),
+                audit.record(claimId, "PolicyValidatorAgent",   payload.policyNumber(),     branchA.coverage(),         "SUCCESS"),
+                audit.record(claimId, "ReserveCalculatorAgent", branchA.damageAssessment(), branchA.reserve(),          "SUCCESS"),
+                audit.record(claimId, "PiiRedactionAgent",      intake,                     branchB.pii(),              "SUCCESS"),
+                audit.record(claimId, "StatutoryDeadlineAgent", intake,                     branchB.deadline(),         "SUCCESS"),
+                audit.record(claimId, "SubrogationScorerAgent", intake,                     subrogation,                "SUCCESS"),
+                audit.record(claimId, "ReconciliationGate",     explanation,
+                        "status=" + status + ";requiresHumanValidation=" + requiresHumanValidation
+                                + ";inputFlags=" + inputFlags + ";gateFlags=" + gateFlags, status)
+        );
+
+        BranchBResult branchBWithAudit = new BranchBResult(
+                branchB.pii(), branchB.deadline(), subrogation, records
+        );
+
         if ("FAILED".equals(ccSyncStatus)) {
-            notes.add("ClaimCenter attachment of the advisory or evidence failed; it is marked for retry.");
+            notes.add("ClaimCenter could not be fully populated (exposure, activities, note or documents); it is marked for retry.");
         }
         notes.add(adjusterAdvisory);
         notes.add("AI-assisted ADVISORY copilot only; human claim handlers retain final authority.");
@@ -507,22 +577,67 @@ public class FNOLOrchestrator {
         );
     }
 
+    /** Adds a note for a review flag and remembers it as the reason for that flag's ClaimCenter activity. */
+    private static void addFlagNote(List<String> notes, Map<String, String> flagReasons, String flag, String note) {
+        notes.add(note);
+        flagReasons.put(flag, note);
+    }
+
+    /** Queue the FNOL engine's ClaimCenter activities are assigned to (assignment rules route them on from there). */
+    static final String FNOL_QUEUE = "FNOL adjuster queue";
+
     /**
-     * Attaches the WHY panel and the evidence list to the pre-filed ClaimCenter claim. Best effort:
-     * the claim already exists, so a failure here is logged and reported as FAILED for a retry
-     * rather than failing the intake.
+     * Fills the pre-filed ClaimCenter claim the way an adjuster works with it: an exposure carrying the reserve line
+     * under the matched coverage, a note with the AI advisory, one activity per review flag (or one to confirm an
+     * STP-eligible advisory) due by the statutory acknowledgement date, and the WHY panel and evidence list as
+     * documents. Best effort: the claim already exists, so a failure here is logged and reported as FAILED for a
+     * retry rather than failing the intake.
      */
-    private String attachAdvisoryAndEvidence(String claimId, ExplanationObject explanation, FNOLPayload payload) {
+    private String populateClaimCenter(String claimId, String status, ExplanationObject explanation, FNOLPayload payload,
+                                       Policy policy, BranchAResult branchA, DeadlineResult deadline,
+                                       List<String> reviewFlags, Map<String, String> flagReasons, List<String> notes) {
         try {
+            String coverage = branchA.coverage().coverageType();
+            cc.addExposure(claimId, new CcExposure(null, exposureType(policy.policyType(), coverage), coverage,
+                    branchA.reserve().recommendedReserve(), "claimcost", null));
+
+            cc.addNote(claimId, new CcNote(null, "AI advisory",
+                    "AI advisory: " + explanation.recommendedAction().replace('_', ' ').toLowerCase(),
+                    explanation.summary() + "\n\n" + String.join("\n", notes)
+                            + "\n\nAdvisory only: the adjuster decides.", null));
+
+            String priority = "HIGH".equals(explanation.severityGate()) ? "urgent" : "high";
+            LocalDate due = deadline.acknowledgeBy();
+            for (String flag : reviewFlags) {
+                cc.addActivity(claimId, new CcActivity(null, "Review AI flag: " + flag.replace('_', ' ').toLowerCase(),
+                        flagReasons.getOrDefault(flag, "Raised at intake review; check before any decision."),
+                        priority, due, FNOL_QUEUE, null, null));
+            }
+            if (reviewFlags.isEmpty() && "PENDING_ADVISORY_REVIEW".equals(status)) {
+                cc.addActivity(claimId, new CcActivity(null, "Confirm AI advisory (straight-through eligible)",
+                        explanation.summary(), "normal", due, FNOL_QUEUE, null, null));
+            } else if (reviewFlags.isEmpty() && "HUMAN_REVIEW".equals(status)) {
+                cc.addActivity(claimId, new CcActivity(null, "Review claim escalated by the AI",
+                        explanation.summary(), priority, due, FNOL_QUEUE, null, null));
+            }
+
             cc.attachDocument(claimId, new ClaimAttachment("ai-advisory-why-panel.json", "application/json", explanation));
             cc.attachDocument(claimId, new ClaimAttachment("evidence-uris.json", "application/json",
                     java.util.Map.of("evidenceUris", summarizeEvidence(payload.evidenceUris()))));
             return "SYNCED";
         } catch (RuntimeException e) {
-            log.warn("[FNOL] ClaimCenter attachment failed for claimId={} — marked FAILED for retry: {}",
+            log.warn("[FNOL] ClaimCenter population failed for claimId={} — marked FAILED for retry: {}",
                     claimId, e.getMessage());
             return "FAILED";
         }
+    }
+
+    /** ClaimCenter exposure type for the matched coverage. */
+    static String exposureType(String lineOfBusiness, String coverageType) {
+        if ("HOME".equals(lineOfBusiness)) {
+            return "PERSONAL_PROPERTY".equals(coverageType) ? "PersonalProperty" : "Dwelling";
+        }
+        return "VehicleDamage";
     }
 
     /** Inline images are summarised (type and size) rather than copied into ClaimCenter twice. */

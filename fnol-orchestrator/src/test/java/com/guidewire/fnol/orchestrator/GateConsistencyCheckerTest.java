@@ -116,6 +116,26 @@ class GateConsistencyCheckerTest {
                 .containsExactly(PHOTO_SUBJECT_MISMATCH);
     }
 
+    private static BranchAResult withSecondOpinion(String type, Map<String, BigDecimal> second) {
+        BranchAResult base = branchA(type, "MODERATE", "4200", "0.90", "CLEAR", "50000");
+        return new BranchAResult(base.damageAssessment(), base.coverage(), base.reserve(),
+                second == null ? null : new SecondOpinion("second-opinion v1", second, Map.of()));
+    }
+
+    @Test
+    @DisplayName("MODEL_DISAGREEMENT when the second-opinion model gives Gemini's damage type less than 0.15")
+    void modelDisagreement() {
+        assertThat(checker.check(policy("AUTO"), withSecondOpinion("FRONT_BUMPER", Map.of(
+                "FRONT_BUMPER", new BigDecimal("0.13"), "SIDE_PANEL", new BigDecimal("0.80")))))
+                .containsExactly(MODEL_DISAGREEMENT);
+        // Agreement, no second opinion, or a type the second opinion does not know: no flag.
+        assertThat(checker.check(policy("AUTO"), withSecondOpinion("FRONT_BUMPER", Map.of(
+                "FRONT_BUMPER", new BigDecimal("0.55"))))).isEmpty();
+        assertThat(checker.check(policy("AUTO"), withSecondOpinion("FRONT_BUMPER", null))).isEmpty();
+        assertThat(checker.check(policy("AUTO"), withSecondOpinion("ROOF", Map.of(
+                "FRONT_BUMPER", new BigDecimal("0.90"))))).isEmpty();
+    }
+
     @Test
     @DisplayName("POSSIBLE_FLOOD_EXCLUSION for flood on a home policy; a burst pipe (WATER_DAMAGE) is not flood")
     void floodOnHomePolicy() {

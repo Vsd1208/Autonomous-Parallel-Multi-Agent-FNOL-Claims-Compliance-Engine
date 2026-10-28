@@ -145,9 +145,9 @@ Response `200` (abridged):
 
 - `branchB.audit` holds seven records: `VisionDamageAgent`, `PolicyValidatorAgent`, `ReserveCalculatorAgent`, `PiiRedactionAgent`, `StatutoryDeadlineAgent`, `SubrogationScorerAgent`, `ReconciliationGate` (status = claim status).
 - `explanation.decision`: `STRAIGHT_THROUGH` or `ADVISORY_RECOMMENDED_ACTION`. `recommendedAction`: `APPROVE_AND_STP`, `ESCALATE_TO_HUMAN`, `ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY`.
-- `inputFlags` (Human Review Point 1): `MISSING_EVIDENCE`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`. Any flag routes to `HUMAN_REVIEW`.
+- `inputFlags` (Human Review Point 1): `MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `PHOTO_REUSED` (a photo matches one on another claim: same SHA-256, or a perceptual hash within 5 bits), `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`. Any flag routes to `HUMAN_REVIEW`.
 - `ccSyncStatus`: `SYNCED` if the WHY panel and evidence list were attached in ClaimCenter, `FAILED` otherwise (intake still succeeds).
-- `gateFlags` (reconciliation-gate consistency checks): `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`. Any flag routes to `HUMAN_REVIEW`.
+- `gateFlags` (reconciliation-gate consistency checks): `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `MODEL_DISAGREEMENT`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`. Any flag routes to `HUMAN_REVIEW`.
 - `branchB.subrogation` is assessed in Branch B (third-party liability and `complianceNotes`) and finalised at the gate with Branch A's severity.
 - The ClaimCenter claim is created as `DRAFT_PENDING_REVIEW` (or `OPEN` for STP with advisory review off).
 
@@ -175,6 +175,12 @@ The intake response as saved on the server (`branchA`, `branchB`, `policyContext
 an adjuster on any browser sees the full analysis. `branchB.pii.redactedDescription` is `null` and `branchB.audit`
 is empty in the stored copy: the database never keeps the description, and the audit chain has its own endpoint.
 `404` for an unknown claim or one filed before the analysis was stored.
+
+## `GET /api/v1/fnol/{claimId}/claimcenter` (token)
+The claim as ClaimCenter holds it: `status`, `exposures` (`exposureType`, `coverageType`, `reserve`, `costType`,
+`status`), `activities` (`subject`, `description`, `priority`, `dueDate`, `assignedTo`, `status` open|complete,
+`completedBy`), `claimNotes`, `attachments` (documents) and `reviewActions`. `404` for an unknown claim, `502`
+`CLAIMCENTER_UNAVAILABLE` when ClaimCenter cannot be reached. See `docs/guidewire-integration.md`.
 
 ## `GET /api/v1/fnol/{claimId}/documents` (token)
 Evidence kept from the intake, oldest first; `404` for an unknown claim. Uploaded photos

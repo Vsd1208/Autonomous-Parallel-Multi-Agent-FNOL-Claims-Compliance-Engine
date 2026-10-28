@@ -31,6 +31,10 @@ public class ClaimDocumentEntity {
     @Column(length = 64)
     public String sha256;
 
+    /** Perceptual hash of an uploaded photo (dHash, 16 hex), used to recognise a reused photo on a later claim. */
+    @Column(length = 16)
+    public String phash;
+
     /** Which view of the loss this photo shows: FRONT, REAR, LEFT, RIGHT, CLOSE_UP, ODOMETER_VIN, OVERVIEW or OTHER. */
     @Column(length = 16)
     public String angle;

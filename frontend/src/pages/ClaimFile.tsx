@@ -10,7 +10,7 @@ import { angleLabel, anglesFor } from '../photoAngles';
 import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionResult } from '../components/Inspection';
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
-import { AdjusterDecision, AuditTrail, ClaimDocument, DashboardClaim, Inspection } from '../types';
+import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, Inspection, SecondOpinion } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 
@@ -22,6 +22,7 @@ const SECTIONS = [
   ['financials', 'Financials'],
   ['documents', 'Documents'],
   ['inspection', 'Inspection'],
+  ['claimcenter', 'In ClaimCenter'],
   ['decision', 'Decision'],
   ['history', 'History'],
 ] as const;
@@ -171,6 +172,7 @@ function SectionView({ section, claim, docs, inspections, reload, onChanged }: {
     case 'inspection': return <InspectionSection claim={claim} inspections={inspections} onChanged={onChanged} />;
     case 'decision': return <Decision claim={claim} inspections={inspections} docs={docs} reload={reload} onChanged={onChanged} />;
     case 'history': return <History claimId={claim.claimId} />;
+    case 'claimcenter': return <InClaimCenter claimId={claim.claimId} reload={reload} />;
   }
 }
 
@@ -194,6 +196,8 @@ const FLAG_TEXT: Record<string, string> = {
   RESERVE_EXCEEDS_COVERAGE_LIMIT: 'The loss after the deductible is above the coverage limit; the reserve is capped.',
   CLAIMED_EXCEEDS_AI_ESTIMATE: 'The claimant asks for more than the photos support. Not approved automatically.',
   DAMAGE_TYPE_LINE_MISMATCH: "The damage does not fit the policy's line of business.",
+  MODEL_DISAGREEMENT: 'The independently trained second-opinion model disagrees with Gemini about the damage.',
+  PHOTO_REUSED: 'A photo matches one already submitted on another claim (possibly resized).',
   PHOTO_SUBJECT_MISMATCH: 'The photos do not show what the policy insures (e.g. a house on an auto policy).',
   POSSIBLE_FLOOD_EXCLUSION: 'The photos show flood, which standard homeowners policies exclude. Confirm the cause of loss.',
   CONFIDENCE_PHOTO_QUALITY_MISMATCH: 'High AI confidence was reported for a poor photo.',
@@ -388,7 +392,44 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
           </ListView>
         </Panel>
       )}
+      <SecondOpinionPanel geminiType={d.damageType} second={a.secondOpinion} />
     </>
+  );
+}
+
+/** The independently trained model's view of the same photos, next to Gemini's answer. */
+function SecondOpinionPanel({ geminiType, second }: { geminiType: string; second?: SecondOpinion | null }) {
+  if (!second) {
+    return (
+      <Panel title="Second Opinion (trained model)">
+        <p className="muted">Not available for this claim: the model was off or unreachable, or there was no uploaded photo.</p>
+      </Panel>
+    );
+  }
+  const ranked = Object.entries(second.damageProbabilities).sort((x, y) => y[1] - x[1]);
+  const agreement = second.damageProbabilities[geminiType];
+  const subject = Object.entries(second.subjectProbabilities).sort((x, y) => y[1] - x[1])[0];
+  return (
+    <Panel title="Second Opinion (trained model)" flush>
+      <div className="panel-body">
+        <DetailView columns={2} rows={[
+          ['Gemini says', humanize(geminiType)],
+          ['Second opinion gives that', agreement != null ? `${(agreement * 100).toFixed(1)}%` : 'Not one of its classes'],
+          ['Second opinion favours', ranked.length ? `${humanize(ranked[0][0])} (${Math.round(ranked[0][1] * 100)}%)` : '—'],
+          ['Photos show', subject ? `${humanize(subject[0])} (${Math.round(subject[1] * 100)}%)` : '—'],
+        ]} />
+        <p className="hint">{second.model}. Trained separately from Gemini; below 15% for Gemini's answer the claim goes to an adjuster.</p>
+      </div>
+      <ListView head={['Second opinion', 'Probability', '']}>
+        {ranked.map(([type, p]) => (
+          <tr key={type}>
+            <td>{humanize(type)}</td>
+            <td className="num">{Math.round(p * 100)}%</td>
+            <td className="bar-cell"><span className="bar" style={{ width: `${Math.round(p * 100)}%` }} /></td>
+          </tr>
+        ))}
+      </ListView>
+    </Panel>
   );
 }
 
@@ -701,6 +742,87 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
           ]} />
         </Panel>
       )}
+    </>
+  );
+}
+
+/**
+ * What the AI filed in ClaimCenter, in ClaimCenter's own terms: the exposure that carries the reserve, the
+ * adjuster's activities (one per AI flag, due by the statutory date), the advisory note and the documents.
+ */
+function InClaimCenter({ claimId, reload }: { claimId: string; reload: number }) {
+  const [cc, setCc] = useState<CcClaim | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setCc(null);
+    setError('');
+    apiClient.getClaimCenterView(claimId).then(setCc).catch((err) => setError(err.message || 'ClaimCenter unavailable'));
+  }, [claimId, reload]);
+
+  const open = cc?.activities.filter((a) => a.status === 'open').length ?? 0;
+  return (
+    <>
+      <PageTitle title="In ClaimCenter"
+        subtitle="What the AI filed on the ClaimCenter claim. ClaimCenter stays the system of record; the adjuster works it there." />
+      {error && <MessageBar tone="error" title="ClaimCenter view unavailable">{error}</MessageBar>}
+      {cc && (
+        <Panel title="Claim">
+          <DetailView columns={2} rows={[
+            ['ClaimCenter status', <StatusChip key="s" value={cc.status} />],
+            ['Policy', cc.policyNumber],
+            ['Open activities', String(open)],
+            ['Total open reserve', money(cc.exposures.filter((e) => e.status === 'open')
+              .reduce((sum, e) => sum + Number(e.reserve ?? 0), 0))],
+          ]} />
+        </Panel>
+      )}
+      <Panel title={`Exposures (${cc ? cc.exposures.length : '…'})`} flush>
+        <ListView head={['Exposure', 'Type', 'Coverage', 'Cost type', 'Reserve', 'Status']}
+          empty={cc ? 'No exposures (filed before exposures were created)' : 'Loading…'}>
+          {cc?.exposures.map((e) => (
+            <tr key={e.exposureId}>
+              <td className="mono">{e.exposureId}</td>
+              <td>{humanize(e.exposureType.replace(/([a-z])([A-Z])/g, '$1_$2'))}</td>
+              <td>{humanize(e.coverageType)}</td>
+              <td>{e.costType}</td>
+              <td className="num">{money(e.reserve)}</td>
+              <td><StatusChip value={e.status.toUpperCase()} /></td>
+            </tr>
+          ))}
+        </ListView>
+      </Panel>
+      <Panel title={`Activities (${cc ? cc.activities.length : '…'})`} flush>
+        <ListView head={['Subject', 'Priority', 'Due', 'Assigned to', 'Status']}
+          empty={cc ? 'No activities' : 'Loading…'}>
+          {cc?.activities.map((a) => (
+            <tr key={a.activityId}>
+              <td className="wrap"><strong>{a.subject}</strong>{a.description && <div className="muted">{a.description}</div>}</td>
+              <td>{humanize(a.priority)}</td>
+              <td>{a.dueDate ?? '—'}</td>
+              <td>{a.assignedTo ?? '—'}</td>
+              <td>{a.status === 'complete' ? `Complete${a.completedBy ? ` (${a.completedBy})` : ''}` : 'Open'}</td>
+            </tr>
+          ))}
+        </ListView>
+      </Panel>
+      <Panel title={`Notes (${cc ? cc.claimNotes.length : '…'})`}>
+        {cc && !cc.claimNotes.length && <p className="muted">No notes</p>}
+        {cc?.claimNotes.map((n) => (
+          <div key={n.noteId} className="cc-note">
+            <div className="field-label">{n.topic} · {dateTime(n.createdAt)}</div>
+            <strong>{n.subject}</strong>
+            <p>{n.body}</p>
+          </div>
+        ))}
+      </Panel>
+      <Panel title={`Documents (${cc ? cc.attachments.length : '…'})`} flush>
+        <ListView head={['Name', 'Type']} empty={cc ? 'No documents' : 'Loading…'}>
+          {cc?.attachments.map((d, i) => (
+            <tr key={i}><td>{d.name}</td><td>{d.contentType}</td></tr>
+          ))}
+        </ListView>
+      </Panel>
     </>
   );
 }
