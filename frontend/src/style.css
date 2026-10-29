@@ -567,3 +567,32 @@ a:hover { text-decoration: underline; }
 .cc-note { padding: 8px 0; border-bottom: 1px solid var(--border-light); }
 .cc-note:last-child { border-bottom: 0; }
 .cc-note p { margin: 4px 0 0; white-space: pre-wrap; }
+
+/* ── AI Governance ─────────────────────────────────────── */
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.stat { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px 16px; background: var(--panel); }
+.stat-label { color: var(--label); font-size: 13px; }
+.stat-value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.stat-note { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.detail-view.cols-1 { grid-template-columns: 1fr; }
+
+/* ── How this claim was decided ────────────────────────── */
+.trail { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.trail-part { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+.trail-part h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 14px; }
+.trail-part ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.trail-part p { margin: 0; }
+.trail-note { margin-top: 10px !important; color: var(--muted); font-size: 12.5px; }
+.trail-tag { padding: 1px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 700; border: 1px solid; }
+.trail-tag.ml { color: var(--info); background: var(--info-bg); border-color: var(--info-border); }
+.trail-tag.rules { color: var(--label); background: #eef1f4; border-color: var(--border); }
+.trail-tag.human { color: var(--success); background: var(--success-bg); border-color: var(--success-border); }
+@media (max-width: 900px) { .trail { grid-template-columns: 1fr; } }
+
+/* ── Compliance and fairness ───────────────────────────── */
+.letter { margin: 0; padding: 12px 14px; background: var(--row-alt); border: 1px solid var(--border-light);
+  border-radius: var(--radius); font-family: var(--font); font-size: 13.5px; white-space: pre-wrap; }
+.fair-block + .fair-block { border-top: 1px solid var(--border-light); }
+.fair-head { padding: 10px 12px 2px; font-weight: 600; font-size: 13px; color: var(--label); }
+.fair-method { padding: 0 12px 12px; }
+.text-critical { color: var(--error); font-weight: 600; }

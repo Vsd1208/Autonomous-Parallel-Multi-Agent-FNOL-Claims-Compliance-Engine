@@ -8,6 +8,8 @@ export interface DamageAssessment {
   rawConfidence?: number | null;
   /** What the photos show, as the AI saw it: VEHICLE, BUILDING, OTHER_PROPERTY or NONE. */
   photoSubject?: string | null;
+  /** What left the system for the external model. */
+  privacy?: { photosSent: number; photosWithheld: number; facesBlurred: number; platesBlurred: number; redacted: boolean } | null;
 }
 
 export interface Coverage {
@@ -62,6 +64,14 @@ export interface Deadline {
   acknowledgeBy?: string;
   decisionBy?: string;
   urgencyFlag?: 'OK' | 'WARNING' | 'CRITICAL' | string;
+  acknowledgeCitation?: string | null;
+  decisionCitation?: string | null;
+  /** How the decision deadline was set, or why there is none (clock not started, no fixed period). */
+  decisionNote?: string | null;
+  rulesVersion?: string | null;
+  /** Last day to start a recovery action against an at-fault party. */
+  recoverBy?: string | null;
+  recoveryCitation?: string | null;
 }
 
 export interface Subrogation {
@@ -69,6 +79,8 @@ export interface Subrogation {
   recommendedAction: string;
   factors: Record<string, number>;
   complianceNotes?: string[];
+  /** The other party's details from the description: otherVehiclePlate, otherInsurer, policeReportNumber. */
+  thirdParty?: Record<string, string>;
 }
 
 export interface AuditEvent {
@@ -284,6 +296,8 @@ export interface AdjusterReviewRequest {
   notes: string;
   adjustedReserve?: number;
   overrideReason?: string;
+  /** The damaged area / cause of loss the adjuster confirmed (feeds the AI feedback loop). */
+  confirmedDamageType?: string;
 }
 
 export interface AdjusterReviewResponse {
@@ -346,9 +360,35 @@ export interface CcClaim {
   status: string;
   policyNumber: string;
   reserve: number | null;
-  attachments: { name: string; contentType: string }[];
+  attachments: { name: string; contentType: string; body?: unknown }[];
   reviewActions: { at: string; action: string | null; status: string; adjusterId: string | null }[];
   exposures: CcExposure[];
   activities: CcActivity[];
   claimNotes: CcNote[];
+}
+
+/** GET /ai/metrics: AI governance figures. */
+export interface AiMetrics {
+  claims: { filed: number; withAiAnalysis: number; straightThroughEligible: number; sentToAdjuster: number };
+  flags: Record<string, number>;
+  leakage: { claimsAskingAboveEstimate: number; amountNotReserved: number };
+  agreement: {
+    decisions: number; damageTypeConfirmed: number; damageTypeAgreed: number;
+    straightThroughEligibleDecided: number; straightThroughEligibleApproved: number;
+    reserveChanged: number; meanReserveChange: number; byDecision: Record<string, number>;
+  };
+  privacy: { photosSent: number; photosWithheld: number; facesBlurred: number; platesBlurred: number; claimsRedacted: number };
+  drift: { week: string; claims: number; meanMargin: number | null; meanConfidence: number | null;
+    hedgedShare: number | null; secondOpinionLowShare: number | null }[];
+  deadlines: { claimsWithRule: number; acknowledgedOnTime: number; acknowledgedLate: number; notAcknowledged: number;
+    claimsWithoutRule: number; openDecisionsOverdue: number; openDecisionsDueWithin3Days: number;
+    openWithoutDecisionClock: number };
+  fairness: Record<'state' | 'channel' | 'lineOfBusiness', FairnessRow[]> & { method: string };
+}
+
+export interface FairnessRow {
+  group: string; claims: number; straightThroughRate: number | null; decisions: number; approvalRate: number | null;
+  reserveChangedRate: number | null; reserveToClaimed: number | null;
+  straightThroughDisparity: number | null; straightThroughStatus: 'OK' | 'REVIEW' | 'TOO_FEW';
+  approvalDisparity: number | null; approvalStatus: 'OK' | 'REVIEW' | 'TOO_FEW';
 }

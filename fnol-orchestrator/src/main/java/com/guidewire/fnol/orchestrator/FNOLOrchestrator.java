@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.*;
 
 /**
@@ -196,13 +197,20 @@ public class FNOLOrchestrator {
         // branch thread (CompletableFuture.cancel does not), so a hung call frees its thread.
         Future<BranchAResult> futureA;
         Future<BranchBResult> futureB;
+        // Each branch times itself: the legal branch runs alongside the operational one, so it adds no waiting.
+        java.util.concurrent.atomic.AtomicLong operationalMs = new java.util.concurrent.atomic.AtomicLong();
+        java.util.concurrent.atomic.AtomicLong legalMs = new java.util.concurrent.atomic.AtomicLong();
+        // The decision clock of most states starts at a complete proof of loss: not yet when photos are missing.
+        boolean proofOfLossComplete = !inputFlags.contains(IntakeReviewService.MISSING_EVIDENCE)
+                && !inputFlags.contains(IntakeReviewService.INCOMPLETE_PHOTO_SET);
         try {
-            futureA = executor.submit(() -> runOperationalAI(payload, policyRecord.policyType()));
+            futureA = executor.submit(() -> timed(operationalMs, () -> runOperationalAI(payload, policyRecord.policyType())));
         } catch (RejectedExecutionException e) {
             throw capacityExceeded(payload, e);
         }
         try {
-            futureB = executor.submit(() -> runLegalAI(payload));
+            futureB = executor.submit(() -> timed(legalMs,
+                    () -> runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete)));
         } catch (RejectedExecutionException e) {
             futureA.cancel(true);
             throw capacityExceeded(payload, e);
@@ -238,11 +246,12 @@ public class FNOLOrchestrator {
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
-        log.info("[FNOL] Dual-branch completed in {}ms — policy={}", elapsed, payload.policyNumber());
+        log.info("[FNOL] Dual-branch completed in {}ms (operational {}ms, legal {}ms, in parallel) — policy={}",
+                elapsed, operationalMs.get(), legalMs.get(), payload.policyNumber());
 
         // ── Stage 5: Reconciliation Safety Gate ──────────────────────────────────────
         return reconcile(payload, policyRecord, branchA, branchB, policyContext, inputFlags, elapsed, highRiskEscalation,
-                reusedFrom);
+                reusedFrom, operationalMs.get(), legalMs.get());
     }
 
     private Policy lookUpPolicy(String policyNumber) {
@@ -286,6 +295,16 @@ public class FNOLOrchestrator {
         }
         return "the photos show " + seen + ", but the policy line is " + lineOfBusiness + "; confirm the policy number "
                 + "and the photos before any decision.";
+    }
+
+    /** Runs a branch and records how long it took, also when it fails. */
+    private static <T> T timed(java.util.concurrent.atomic.AtomicLong ms, Callable<T> branch) throws Exception {
+        long started = System.nanoTime();
+        try {
+            return branch.call();
+        } finally {
+            ms.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+        }
     }
 
     private static long remainingNanos(long deadline) {
@@ -363,7 +382,7 @@ public class FNOLOrchestrator {
     //  fully independent of Branch A. The subrogation score is finalised at the gate,
     //  once Branch A's damage severity is known.
     // ─────────────────────────────────────────────────────────────────────────────────
-    private BranchBResult runLegalAI(FNOLPayload payload) {
+    private BranchBResult runLegalAI(FNOLPayload payload, String lineOfBusiness, boolean proofOfLossComplete) {
         log.debug("[Branch B — Legal AI] Starting — policy={}", payload.policyNumber());
 
         // Step B1: PII redaction — SSN, DOB, MRN, name, phone, email masking before any persistence
@@ -371,8 +390,8 @@ public class FNOLOrchestrator {
         piiGuard.validate(piiResult);           // hard stop: raw PII must not reach DB
         log.debug("[Branch B] PII redaction complete — detected={}", piiResult.piiDetected());
 
-        // Step B2: State-specific statutory deadlines (synthetic prototype rules)
-        DeadlineResult deadlineResult = deadline.execute(payload);
+        // Step B2: State regulatory deadlines from the cited rule set (claim-regulations.json)
+        DeadlineResult deadlineResult = deadline.execute(payload, lineOfBusiness, proofOfLossComplete);
         log.debug("[Branch B] Deadlines — state={}, acknowledgeBy={}, urgency={}",
                 deadlineResult.state(), deadlineResult.acknowledgeBy(), deadlineResult.urgencyFlag());
 
@@ -397,7 +416,9 @@ public class FNOLOrchestrator {
             List<String> inputFlags,
             long elapsedMs,
             boolean highRiskEscalation,
-            List<String> reusedFrom
+            List<String> reusedFrom,
+            long operationalMs,
+            long legalMs
     ) {
         log.info("[FNOL] Entering Reconciliation Safety Gate — policy={}", payload.policyNumber());
 
@@ -524,12 +545,22 @@ public class FNOLOrchestrator {
                     + branchA.damageAssessment().estimatedDamage() + "; the claimed amount is used, less the $"
                     + r.deductible() + " deductible = reserve $" + r.recommendedReserve() + ".");
         }
-        if (!"OK".equals(branchB.deadline().urgencyFlag())) {
-            notes.add("DEADLINE " + branchB.deadline().urgencyFlag() + ": acknowledge by "
-                    + branchB.deadline().acknowledgeBy() + " (synthetic prototype rule).");
+        notes.add(deadlineNote(branchB.deadline()));
+        if (inputFlags.contains(IntakeReviewService.ATTORNEY_REPRESENTED)) {
+            addFlagNote(notes, flagReasons, IntakeReviewService.ATTORNEY_REPRESENTED, "ATTORNEY REPRESENTED: the "
+                    + "claimant mentions legal counsel. Communicate through the attorney, not the claimant directly, and "
+                    + "assign the claim to an adjuster for represented claims. Not eligible for straight-through processing.");
+        }
+        boolean recovery = recoveryLikely(subrogation);
+        if (recovery && branchB.deadline().recoverBy() != null) {
+            notes.add("RECOVERY: another party may be liable. Start any recovery action before "
+                    + branchB.deadline().recoverBy() + " (" + branchB.deadline().recoveryCitation() + ")"
+                    + (subrogation.thirdParty() == null || subrogation.thirdParty().isEmpty() ? "."
+                            : "; details from the description: " + subrogation.thirdParty().keySet() + "."));
         }
         String ccSyncStatus = populateClaimCenter(claimId, status, explanation, payload, policyRecord, branchA,
-                branchB.deadline(), reviewFlags, flagReasons, notes);
+                branchB.deadline(), reviewFlags, flagReasons, notes, subrogation, recovery,
+                IntakeReviewService.missingPhotoAngles(payload, policyRecord));
 
         // Gate Step 6: Audit trail — one SHA-256 hashed record per agent plus the gate decision.
         // Inputs are hashed from the sanitized intake only, never the raw payload (SSN, DOB, name).
@@ -558,7 +589,9 @@ public class FNOLOrchestrator {
         notes.add("Pre-population recommended for LOW-severity eligible claim types only.");
         notes.add("Coverage verified against synthetic line-of-business coverage rules.");
         notes.add("Subrogation score is deterministic and explained by contributing factors.");
-        notes.add("Processing time: " + elapsedMs + "ms (async dual-branch parallel execution)");
+        notes.add("Processing time: " + elapsedMs + "ms in total. Operational branch (photos, coverage, reserve) "
+                + operationalMs + "ms and legal branch (PII, deadlines, subrogation) " + legalMs
+                + "ms ran in parallel, so the legal checks added no waiting.");
 
         return new FNOLResponse(
                 claimId,
@@ -585,6 +618,36 @@ public class FNOLOrchestrator {
 
     /** Queue the FNOL engine's ClaimCenter activities are assigned to (assignment rules route them on from there). */
     static final String FNOL_QUEUE = "FNOL adjuster queue";
+    /** Represented claims go to adjusters used to working with claimants' attorneys. */
+    static final String LITIGATION_QUEUE = "Litigation and represented claims";
+    static final String SUBROGATION_QUEUE = "Subrogation unit";
+    public static final String ACKNOWLEDGEMENT_LETTER = "acknowledgement-letter.txt";
+
+    /** One line stating the regulatory deadlines and the rules behind them. */
+    static String deadlineNote(DeadlineResult d) {
+        if (d.acknowledgeBy() == null) {
+            return "DEADLINES: " + d.disclaimer();
+        }
+        if (d.rulesVersion() == null) {   // a placeholder rule provider without citations
+            return "DEADLINES (" + d.state() + "): acknowledge by " + d.acknowledgeBy()
+                    + (d.decisionBy() != null ? ", decide by " + d.decisionBy() : "") + " (placeholder rule: "
+                    + d.disclaimer() + ")";
+        }
+        String decision = d.decisionBy() != null
+                ? "accept or deny by " + d.decisionBy() + " (" + d.decisionCitation() + ")"
+                : d.decisionNote();
+        return "DEADLINES (" + d.state() + ", rules " + d.rulesVersion() + "): acknowledge by " + d.acknowledgeBy()
+                + " (" + d.acknowledgeCitation() + "); " + decision
+                + ("OK".equals(d.urgencyFlag()) ? "" : " [" + d.urgencyFlag() + "]")
+                + ". Prototype rule set: confirm with Compliance.";
+    }
+
+    /** Another party may be liable: the subrogation score says so, or the description names them. */
+    static boolean recoveryLikely(SubrogationResult s) {
+        return "INVESTIGATE".equals(s.recommendedAction())
+                || s.factors().getOrDefault("thirdPartyMention", 0) >= 35
+                || (s.thirdParty() != null && !s.thirdParty().isEmpty());
+    }
 
     /**
      * Fills the pre-filed ClaimCenter claim the way an adjuster works with it: an exposure carrying the reserve line
@@ -595,7 +658,8 @@ public class FNOLOrchestrator {
      */
     private String populateClaimCenter(String claimId, String status, ExplanationObject explanation, FNOLPayload payload,
                                        Policy policy, BranchAResult branchA, DeadlineResult deadline,
-                                       List<String> reviewFlags, Map<String, String> flagReasons, List<String> notes) {
+                                       List<String> reviewFlags, Map<String, String> flagReasons, List<String> notes,
+                                       SubrogationResult subrogation, boolean recovery, List<String> missingAngles) {
         try {
             String coverage = branchA.coverage().coverageType();
             cc.addExposure(claimId, new CcExposure(null, exposureType(policy.policyType(), coverage), coverage,
@@ -611,7 +675,19 @@ public class FNOLOrchestrator {
             for (String flag : reviewFlags) {
                 cc.addActivity(claimId, new CcActivity(null, "Review AI flag: " + flag.replace('_', ' ').toLowerCase(),
                         flagReasons.getOrDefault(flag, "Raised at intake review; check before any decision."),
-                        priority, due, FNOL_QUEUE, null, null));
+                        priority, due, IntakeReviewService.ATTORNEY_REPRESENTED.equals(flag) ? LITIGATION_QUEUE : FNOL_QUEUE,
+                        null, null));
+            }
+            if (deadline.decisionBy() != null) {
+                cc.addActivity(claimId, new CcActivity(null, "Accept or deny the claim (regulatory deadline)",
+                        deadline.decisionNote() + " " + Objects.toString(deadline.decisionCitation(), ""), "high",
+                        deadline.decisionBy(), FNOL_QUEUE, null, null));
+            }
+            if (recovery && deadline.recoverBy() != null) {
+                cc.addActivity(claimId, new CcActivity(null, "Subrogation: start recovery from the at-fault party",
+                        "Limitation deadline " + deadline.recoverBy() + " (" + deadline.recoveryCitation() + "). "
+                                + String.join(" ", subrogation.complianceNotes()),
+                        "normal", deadline.recoverBy(), SUBROGATION_QUEUE, null, null));
             }
             if (reviewFlags.isEmpty() && "PENDING_ADVISORY_REVIEW".equals(status)) {
                 cc.addActivity(claimId, new CcActivity(null, "Confirm AI advisory (straight-through eligible)",
@@ -622,6 +698,10 @@ public class FNOLOrchestrator {
             }
 
             cc.attachDocument(claimId, new ClaimAttachment("ai-advisory-why-panel.json", "application/json", explanation));
+            // The written acknowledgement the regulations require, generated from a template (not by AI).
+            cc.attachDocument(claimId, new ClaimAttachment(ACKNOWLEDGEMENT_LETTER, "text/plain",
+                    AcknowledgementLetter.write(claimId, payload, deadline, missingAngles,
+                            reviewFlags.contains(IntakeReviewService.ATTORNEY_REPRESENTED), LocalDate.now())));
             cc.attachDocument(claimId, new ClaimAttachment("evidence-uris.json", "application/json",
                     java.util.Map.of("evidenceUris", summarizeEvidence(payload.evidenceUris()))));
             return "SYNCED";

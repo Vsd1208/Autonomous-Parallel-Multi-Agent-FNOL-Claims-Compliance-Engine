@@ -45,6 +45,13 @@ public class FNOLController {
     private final AuditPdfGenerator pdfGenerator;
     private final AuditTrailAgent auditAgent;
     private final ClaimCenterClient claimCenter;
+    /** Records each decision next to the AI's view (feedback loop); optional so the controller works without it. */
+    private AiGovernanceService governance;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setGovernance(AiGovernanceService governance) {
+        this.governance = governance;
+    }
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     /** Request attribute carrying the REJ-... ID of a failed intake into the error response. */
@@ -406,6 +413,11 @@ public class FNOLController {
         updated.ccSyncStatus = syncDecisionToClaimCenter(updated, decision, request.adjusterId(), request.notes(),
                 request.adjustedReserve());
         claims.save(updated);
+        // Feedback loop: the decision next to what the AI said (metrics and new labelled data).
+        if (governance != null) {
+            governance.recordDecision(updated, decision, request.adjusterId(), request.adjustedReserve(),
+                    request.confirmedDamageType());
+        }
         return ResponseEntity.ok(new AdjusterReviewResponse(
                 updated.claimId,
                 updated.status,

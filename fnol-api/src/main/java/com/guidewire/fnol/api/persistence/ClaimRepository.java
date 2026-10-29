@@ -68,6 +68,11 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, String> {
                    @Param("to") String to,
                    @Param("at") Instant at);
 
+    /** Sets the regulatory decision deadline only if none is set yet (the clock starts once). */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update ClaimEntity c set c.decisionDue = :due where c.claimId = :claimId and c.decisionDue is null")
+    int startDecisionClock(@Param("claimId") String claimId, @Param("due") java.time.LocalDate due);
+
     /** Adjuster queue: claims in the given statuses, oldest first. */
     Page<ClaimEntity> findByStatusInOrderByCreatedAtAsc(Collection<String> statuses, Pageable pageable);
 

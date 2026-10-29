@@ -12,7 +12,7 @@ import java.util.Map;
  * Prototype statutory deadlines. Every day count below is a PLACEHOLDER, not a real state
  * regulation; Compliance must confirm real rules before production use.
  */
-@Component
+/** Placeholder rules for tests; the application uses {@link CitedDeadlineRuleProvider}. */
 public class SyntheticDeadlineRuleProvider implements DeadlineRuleProvider {
 
     /** Days from the incident to acknowledge the claim (placeholder). */

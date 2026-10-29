@@ -195,23 +195,37 @@ public final class Models {
             String photoQuality,                          // "CLEAR" | "BLURRY" | "PARTIAL" | "UNUSABLE" | "UNKNOWN"
             Map<String, BigDecimal> damageTypeProbabilities, // e.g. {"FRONT_BUMPER": 0.87, "SIDE_PANEL": 0.09, ...}
             BigDecimal rawConfidence,                     // the model's own confidence when `confidence` is calibrated
-            String photoSubject                           // what the photos show: "VEHICLE" | "BUILDING" | "OTHER_PROPERTY" | "NONE"; null = not reported
+            String photoSubject,                          // what the photos show: "VEHICLE" | "BUILDING" | "OTHER_PROPERTY" | "NONE"; null = not reported
+            PhotoPrivacy privacy                          // what left the system for the external model; null = nothing was sent
     ) {
         public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
                                 String photoQuality, Map<String, BigDecimal> damageTypeProbabilities) {
-            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, null, null);
+            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, null, null, null);
         }
 
         public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
                                 String photoQuality, Map<String, BigDecimal> damageTypeProbabilities,
                                 BigDecimal rawConfidence) {
-            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, rawConfidence, null);
+            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, rawConfidence, null, null);
+        }
+
+        public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
+                                String photoQuality, Map<String, BigDecimal> damageTypeProbabilities,
+                                BigDecimal rawConfidence, String photoSubject) {
+            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, rawConfidence,
+                    photoSubject, null);
         }
 
         /** The same assessment with the photo subject the vision model reported. */
         public DamageAssessment withPhotoSubject(String subject) {
             return new DamageAssessment(damageType, severity, estimatedDamage, confidence, photoQuality,
-                    damageTypeProbabilities, rawConfidence, subject);
+                    damageTypeProbabilities, rawConfidence, subject, privacy);
+        }
+
+        /** The same assessment with a record of what was sent to the external model. */
+        public DamageAssessment withPrivacy(PhotoPrivacy p) {
+            return new DamageAssessment(damageType, severity, estimatedDamage, confidence, photoQuality,
+                    damageTypeProbabilities, rawConfidence, photoSubject, p);
         }
 
         /**
@@ -261,18 +275,36 @@ public final class Models {
             String ruleSource,
             String disclaimer,
             LocalDate acknowledgeBy,
-            LocalDate decisionBy,
-            String urgencyFlag          // OK | WARNING (acknowledgeBy within 3 days) | CRITICAL (past due)
-    ) {}
+            LocalDate decisionBy,       // null when no fixed period applies, or the clock has not started
+            String urgencyFlag,         // OK | WARNING (acknowledgeBy within 3 days) | CRITICAL (past due)
+            String acknowledgeCitation, // the regulation behind acknowledgeBy, e.g. "Cal. Code Regs. tit. 10, § 2695.5(e)"
+            String decisionCitation,
+            String decisionNote,        // how decisionBy was set, or why there is none
+            String rulesVersion,        // version of the rule set used (claim-regulations.json)
+            LocalDate recoverBy,        // last day to start a recovery action against an at-fault party (subrogation)
+            String recoveryCitation
+    ) {
+        public DeadlineResult(String state, LocalDate deadline, String ruleSource, String disclaimer,
+                              LocalDate acknowledgeBy, LocalDate decisionBy, String urgencyFlag) {
+            this(state, deadline, ruleSource, disclaimer, acknowledgeBy, decisionBy, urgencyFlag,
+                    null, null, null, null, null, null);
+        }
+    }
 
     public record SubrogationResult(
             int score,
             String recommendedAction,          // INVESTIGATE | MONITOR; PENDING_SEVERITY in Branch B
             Map<String, Integer> factors,
-            List<String> complianceNotes       // liability and recovery notes for the adjuster (prototype guidance)
+            List<String> complianceNotes,      // liability and recovery notes for the adjuster (prototype guidance)
+            Map<String, String> thirdParty     // what the description says about the other party: plate, insurer, police report
     ) {
         public SubrogationResult(int score, String recommendedAction, Map<String, Integer> factors) {
-            this(score, recommendedAction, factors, List.of());
+            this(score, recommendedAction, factors, List.of(), Map.of());
+        }
+
+        public SubrogationResult(int score, String recommendedAction, Map<String, Integer> factors,
+                                 List<String> complianceNotes) {
+            this(score, recommendedAction, factors, complianceNotes, Map.of());
         }
     }
 
@@ -297,6 +329,12 @@ public final class Models {
             String outputHash,
             String status
     ) {}
+
+    /**
+     * What happened to the claim photos before they went to the external vision model: how many were sent, how many
+     * were withheld (e.g. the odometer / VIN photo), and how many faces and licence plates were blurred first.
+     */
+    public record PhotoPrivacy(int photosSent, int photosWithheld, int facesBlurred, int platesBlurred, boolean redacted) {}
 
     public record BranchAResult(
             DamageAssessment damageAssessment,
@@ -385,10 +423,16 @@ public final class Models {
             @NotBlank String adjusterId,
             String notes,
             @PositiveOrZero BigDecimal adjustedReserve,
-            @Size(max = 500) String overrideReason
+            @Size(max = 500) String overrideReason,
+            @Size(max = 40) String confirmedDamageType   // optional: the damaged area / cause the adjuster confirmed
     ) {
         public AdjusterReviewRequest(String decision, String adjusterId, String notes) {
-            this(decision, adjusterId, notes, null, null);
+            this(decision, adjusterId, notes, null, null, null);
+        }
+
+        public AdjusterReviewRequest(String decision, String adjusterId, String notes, BigDecimal adjustedReserve,
+                                     String overrideReason) {
+            this(decision, adjusterId, notes, adjustedReserve, overrideReason, null);
         }
     }
 

@@ -6,6 +6,7 @@ import com.guidewire.fnol.agents.EvidenceImageLoader.EvidenceRejectedException;
 import com.guidewire.fnol.agents.EvidenceImageLoader.ImageData;
 import com.guidewire.fnol.common.Models.DamageAssessment;
 import com.guidewire.fnol.common.Models.FNOLPayload;
+import com.guidewire.fnol.common.Models.PhotoPrivacy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -129,6 +130,8 @@ public class GeminiVisionProvider implements VisionProvider {
 
     /** Photos per Gemini request (the standard set is five) and their combined size (inline limit is 20 MB). */
     static final int MAX_IMAGES = 6;
+    /** Photo angles never sent to Gemini (identifying, no damage to assess). */
+    static final java.util.Set<String> NOT_SENT_ANGLES = java.util.Set.of("ODOMETER_VIN");
     static final long MAX_TOTAL_BYTES = 15L * 1024 * 1024;
 
     @Value("${gemini.api-key:}")
@@ -148,21 +151,36 @@ public class GeminiVisionProvider implements VisionProvider {
     private final ObjectMapper objectMapper;
     private final EvidenceImageLoader evidenceLoader;
     private final VisionConfidenceCalibrator calibrator;
+    private final PhotoRedactor redactor;
 
     @Autowired
     public GeminiVisionProvider(@Qualifier(GeminiVisionConfig.GEMINI_REST_TEMPLATE) RestTemplate restTemplate,
                                 ObjectMapper objectMapper,
                                 EvidenceImageLoader evidenceLoader,
-                                VisionConfidenceCalibrator calibrator) {
+                                VisionConfidenceCalibrator calibrator,
+                                PhotoRedactor redactor) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
         this.evidenceLoader = evidenceLoader;
         this.calibrator = calibrator;
+        this.redactor = redactor;
     }
 
     /** Without confidence calibration (Gemini's confidence is used as reported). */
     public GeminiVisionProvider(RestTemplate restTemplate, ObjectMapper objectMapper, EvidenceImageLoader evidenceLoader) {
-        this(restTemplate, objectMapper, evidenceLoader, VisionConfidenceCalibrator.none());
+        this(restTemplate, objectMapper, evidenceLoader, VisionConfidenceCalibrator.none(), PhotoRedactor.disabled());
+    }
+
+    /** With calibration and no redaction (tests). */
+    public GeminiVisionProvider(RestTemplate restTemplate, ObjectMapper objectMapper, EvidenceImageLoader evidenceLoader,
+                                VisionConfidenceCalibrator calibrator) {
+        this(restTemplate, objectMapper, evidenceLoader, calibrator, PhotoRedactor.disabled());
+    }
+
+    /** With a given redactor and no calibration (tests). */
+    public GeminiVisionProvider(RestTemplate restTemplate, ObjectMapper objectMapper, EvidenceImageLoader evidenceLoader,
+                                PhotoRedactor redactor) {
+        this(restTemplate, objectMapper, evidenceLoader, VisionConfidenceCalibrator.none(), redactor);
     }
 
     @Override
@@ -180,11 +198,19 @@ public class GeminiVisionProvider implements VisionProvider {
         }
 
         // Every usable photo, labelled with its angle, up to MAX_IMAGES and MAX_TOTAL_BYTES per request.
-        List<Map<String, Object>> imageParts = new java.util.ArrayList<>();
+        List<String> labels = new java.util.ArrayList<>();
+        List<String> images = new java.util.ArrayList<>();      // data URIs
         long totalBytes = 0;
-        for (int i = 0; i < uris.size() && imageParts.size() / 2 < MAX_IMAGES; i++) {
+        int withheld = 0;
+        for (int i = 0; i < uris.size() && images.size() < MAX_IMAGES; i++) {
             String uri = uris.get(i);
             if (uri == null || uri.isBlank()) continue;
+            // Data minimisation: the odometer / VIN photo identifies the vehicle and its owner and shows no damage,
+            // so it stays with the insurer and is never sent to the external model.
+            if (NOT_SENT_ANGLES.contains(payload.angleOf(i))) {
+                withheld++;
+                continue;
+            }
             try {
                 ImageData image = evidenceLoader.load(uri);
                 long bytes = (long) image.base64().length() * 3 / 4;
@@ -193,19 +219,38 @@ public class GeminiVisionProvider implements VisionProvider {
                     continue;
                 }
                 totalBytes += bytes;
-                imageParts.add(Map.of("text", "Photo " + (i + 1) + " — angle: " + payload.angleOf(i)));
-                imageParts.add(Map.of("inline_data", Map.of("mime_type", image.mimeType(), "data", image.base64())));
+                labels.add("Photo " + (i + 1) + " — angle: " + payload.angleOf(i));
+                images.add("data:" + image.mimeType() + ";base64," + image.base64());
             } catch (EvidenceRejectedException e) {
                 log.warn("[GeminiVision] Evidence refused ({}): {}", EvidenceImageLoader.describe(uri), e.getMessage());
             }
         }
-        if (imageParts.isEmpty()) {
+        if (images.isEmpty()) {
             return fallback("EVIDENCE_REJECTED");
         }
 
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("[GeminiVision] gemini.api-key is not set — using fallback assessment.");
             return fallback("NO_API_KEY");
+        }
+
+        // Privacy: faces and licence plates are blurred before any photo leaves; never sent unblurred when required.
+        PhotoRedactor.Redacted redacted;
+        try {
+            redacted = redactor.redact(images, lineOfBusiness);
+        } catch (PhotoRedactor.RedactionUnavailableException e) {
+            log.warn("[GeminiVision] {} — photos not sent to Gemini; the claim goes to an adjuster.", e.getMessage());
+            return fallback("REDACTION_UNAVAILABLE");
+        }
+        PhotoPrivacy privacy = new PhotoPrivacy(images.size(), withheld, redacted.faces(), redacted.plates(),
+                redactor.isEnabled());
+        List<Map<String, Object>> imageParts = new java.util.ArrayList<>();
+        for (int i = 0; i < images.size(); i++) {
+            String dataUri = redacted.imageDataUris().get(i);
+            int comma = dataUri.indexOf(',');
+            String mime = dataUri.substring(5, dataUri.indexOf(';'));
+            imageParts.add(Map.of("text", labels.get(i)));
+            imageParts.add(Map.of("inline_data", Map.of("mime_type", mime, "data", dataUri.substring(comma + 1))));
         }
 
         log.info("[GeminiVision] Sending {} photo(s) to Gemini {} — source={}", imageParts.size() / 2, model,
@@ -227,7 +272,7 @@ public class GeminiVisionProvider implements VisionProvider {
             ResponseEntity<String> response = restTemplate.postForEntity(GEMINI_API_URL.formatted(model), request, String.class);
             // The calibration map was measured on the vehicle prompt only; property answers keep Gemini's confidence.
             return parseGeminiResponse(response.getBody(),
-                    prompt == DAMAGE_ASSESSMENT_PROMPT ? calibrator : VisionConfidenceCalibrator.none());
+                    prompt == DAMAGE_ASSESSMENT_PROMPT ? calibrator : VisionConfidenceCalibrator.none()).withPrivacy(privacy);
 
         } catch (RestClientException e) {
             log.error("[GeminiVision] Gemini API call failed — using fallback assessment. Cause: {}", e.getClass().getSimpleName());

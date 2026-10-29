@@ -16,19 +16,22 @@ Wrong answers (lenient) and the checks that stop them:
 - Car damages 305.png: answered MULTIPLE, true WINDSHIELD, confidence 0.9, margin 0.00 -> AMBIGUOUS_DAMAGE_TYPE
 - Car damages 1153.png: answered FRONT_BUMPER, true SIDE_PANEL, confidence 0.9, margin 0.70 -> **not stopped by any vision check**
 
-## Run `v3-subject` (15 photos, 3 wrong answers, lenient)
+## Run `v3-subject` (32 photos, 6 wrong answers, lenient)
 
 | Checks applied | Auto-approvable | Wrong answers let through (lenient / strict) | Right answers sent to adjuster |
 |---|---|---|---|
-| Confidence factor only (>= 0.85) | 15/15 | 3 / 6 | 0 |
-| + AMBIGUOUS_DAMAGE_TYPE (margin >= 0.30) | 10/15 | 0 / 1 | 2 |
-| + SEVERITY_ESTIMATE_MISMATCH | 10/15 | 0 / 1 | 2 |
-| + PHOTO_SUBJECT_MISMATCH (subject = VEHICLE) | 10/15 | 0 / 1 | 2 |
+| Confidence factor only (>= 0.85) | 32/32 | 6 / 14 | 0 |
+| + AMBIGUOUS_DAMAGE_TYPE (margin >= 0.30) | 21/32 | 1 / 3 | 6 |
+| + SEVERITY_ESTIMATE_MISMATCH | 21/32 | 1 / 3 | 6 |
+| + PHOTO_SUBJECT_MISMATCH (subject = VEHICLE) | 21/32 | 1 / 3 | 6 |
 
-Photo subject reported: VEHICLE 15 (every photo is a car).
+Photo subject reported: VEHICLE 32 (every photo is a car).
 
 Wrong answers (lenient) and the checks that stop them:
 
 - Car damages 764.png: answered MULTIPLE, true SIDE_PANEL, confidence 0.9, margin 0.00 -> AMBIGUOUS_DAMAGE_TYPE
 - Car damages 1177.png: answered MULTIPLE, true FRONT_BUMPER, confidence 0.9, margin 0.20 -> AMBIGUOUS_DAMAGE_TYPE
 - Car damages 762.png: answered MULTIPLE, true REAR_BUMPER, confidence 0.9, margin 0.00 -> AMBIGUOUS_DAMAGE_TYPE
+- Car damages 707.png: answered MULTIPLE, true SIDE_PANEL, confidence 0.9, margin 0.05 -> AMBIGUOUS_DAMAGE_TYPE
+- Car damages 305.png: answered MULTIPLE, true WINDSHIELD, confidence 0.9, margin 0.10 -> AMBIGUOUS_DAMAGE_TYPE
+- Car damages 1153.png: answered FRONT_BUMPER, true SIDE_PANEL, confidence 0.9, margin 0.70 -> **not stopped by any vision check**

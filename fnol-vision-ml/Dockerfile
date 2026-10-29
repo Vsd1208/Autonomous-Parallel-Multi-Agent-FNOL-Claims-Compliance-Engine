@@ -9,7 +9,11 @@ RUN pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 \
 # Encoder weights: LAION CLIP ViT-B/32 (MIT licence). Only safetensors and config files, never pickle files.
 RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('laion/CLIP-ViT-B-32-laion2B-s34B-b79K', local_dir='/models/clip', allow_patterns=['model.safetensors', '*.json', '*.txt'])"
 
+# Privacy redaction: OpenCV (Apache-2.0) with the YuNet face detector (MIT, redaction/*.onnx) and its plate cascade.
+RUN pip install opencv-python-headless==4.10.0.84
+
 COPY model/ /app/model/
+COPY redaction/ /app/redaction/
 COPY app.py /app/app.py
 
 RUN useradd --create-home --uid 10001 vision && chown -R vision /app /models

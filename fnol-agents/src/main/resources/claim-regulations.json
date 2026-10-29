@@ -1,0 +1,67 @@
+{
+  "version": "2026-10-29",
+  "disclaimer": "Prototype rule set compiled from the cited regulations and secondary sources on 2026-10-29. Not legal advice: an insurance-law specialist must confirm each rule, and rules change. Business days exclude Saturdays and Sundays only, not public holidays.",
+  "states": {
+    "CA": {
+      "acknowledge": {"days": 15, "dayType": "CALENDAR", "trigger": "NOTICE",
+        "citation": "Cal. Code Regs. tit. 10, § 2695.5(e)",
+        "summary": "Acknowledge notice of claim, provide forms and begin investigating within 15 calendar days.",
+        "source": "https://www.law.cornell.edu/regulations/california/10-CCR-2695.5", "verification": "regulation text"},
+      "decide": {"days": 40, "dayType": "CALENDAR", "trigger": "PROOF_OF_LOSS",
+        "citation": "Cal. Code Regs. tit. 10, § 2695.7(b)",
+        "summary": "Accept or deny within 40 calendar days of receiving proof of claim; if more time is needed, give written reasons (and updates every 30 days, § 2695.7(c)(1)).",
+        "source": "https://www.law.cornell.edu/regulations/california/10-CCR-2695.7", "verification": "regulation text"},
+      "recovery": {"years": 3, "citation": "Cal. Code Civ. Proc. § 338(c)",
+        "summary": "Action for injury to property: 3 years.", "verification": "background knowledge, not verified against the statute"}
+    },
+    "NY": {
+      "acknowledge": {"days": 15, "dayType": "BUSINESS", "trigger": "NOTICE",
+        "citation": "11 NYCRR 216.4(a)",
+        "summary": "Acknowledge receipt of notice of claim within 15 business days.",
+        "source": "https://regulations.justia.com/states/new-york/title-11/chapter-ix/part-216/section-216-4/", "verification": "regulation text"},
+      "decide": {"days": 15, "dayType": "BUSINESS", "trigger": "PROOF_OF_LOSS",
+        "citation": "11 NYCRR 216.6(c)",
+        "summary": "Advise acceptance or rejection in writing within 15 business days after receiving a properly executed proof of loss and all requested items, or notify that more time is needed.",
+        "source": "https://regulations.justia.com/states/new-york/title-11/chapter-ix/part-216/section-216-6", "verification": "secondary sources quoting the regulation"},
+      "recovery": {"years": 3, "citation": "N.Y. C.P.L.R. 214(4)",
+        "summary": "Action to recover damages for injury to property: 3 years.", "verification": "background knowledge, not verified against the statute"}
+    },
+    "TX": {
+      "acknowledge": {"days": 15, "dayType": "CALENDAR", "trigger": "NOTICE",
+        "citation": "Tex. Ins. Code § 542.055",
+        "summary": "Acknowledge the claim, begin investigating and request needed items within 15 days of notice.",
+        "source": "https://texas.public.law/statutes/tex._ins._code_section_542.055", "verification": "statute text"},
+      "decide": {"days": 15, "dayType": "BUSINESS", "trigger": "PROOF_OF_LOSS",
+        "citation": "Tex. Ins. Code § 542.056",
+        "summary": "Accept or reject in writing within 15 business days of receiving all items required to secure final proof of loss; if more time is needed, decide within 45 days of giving notice of that.",
+        "source": "https://texas.public.law/statutes/tex._ins._code_section_542.056", "verification": "statute text"},
+      "recovery": {"years": 2, "citation": "Tex. Civ. Prac. & Rem. Code § 16.003",
+        "summary": "Action for injury to the property of another: 2 years.", "verification": "secondary sources"}
+    },
+    "FL": {
+      "acknowledge": {"days": 7, "dayType": "CALENDAR", "trigger": "NOTICE",
+        "citation": "Fla. Stat. § 627.70131(1)(a)",
+        "summary": "Review and acknowledge receipt of a claim communication within 7 calendar days.",
+        "source": "https://www.flsenate.gov/Laws/Statutes/2024/627.70131", "verification": "statute text (2024)"},
+      "decide": {"days": 60, "dayType": "CALENDAR", "trigger": "NOTICE", "lines": ["HOME"],
+        "citation": "Fla. Stat. § 627.70131(7)(a)",
+        "summary": "Pay or deny a residential property claim within 60 days of notice of the claim.",
+        "source": "https://www.flsenate.gov/Laws/Statutes/2024/627.70131", "verification": "statute text (2024)"},
+      "recovery": {"years": 2, "citation": "Fla. Stat. § 95.11(4)(a) (as amended by HB 837, 2023)",
+        "summary": "Negligence actions accruing after 24 Mar 2023: 2 years. § 95.11(3)(g) still states 4 years for injury to personal property; the shorter period is used so the recovery right is not lost.",
+        "verification": "secondary sources; conflicting provisions"}
+    },
+    "IL": {
+      "acknowledge": {"days": 15, "dayType": "BUSINESS", "trigger": "NOTICE",
+        "citation": "50 Ill. Adm. Code 919.40; 215 ILCS 5/154.6(b)",
+        "summary": "Acknowledge pertinent communications with reasonable promptness: at most 15 working days.",
+        "source": "https://ilga.gov/ftp/JCAR/AdminCode/050/050009190000400R.html", "verification": "secondary sources quoting the regulation"},
+      "decide": {"days": null, "trigger": "PROOF_OF_LOSS",
+        "citation": "50 Ill. Adm. Code 919.50(a)",
+        "summary": "Affirm or deny liability within a reasonable time (no fixed number of days); offer payment within 30 days of affirming liability for undisputed amounts.",
+        "verification": "secondary sources quoting the regulation"},
+      "recovery": {"years": 5, "citation": "735 ILCS 5/13-205",
+        "summary": "Action to recover damages for injury to property: 5 years.", "verification": "background knowledge, not verified against the statute"}
+    }
+  }
+}

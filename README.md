@@ -87,7 +87,7 @@ Severity from estimated damage: **LOW** ≤ $5,000, **MEDIUM** ≤ $20,000, **HI
 | Claim History | Claim frequency risk LOW or MEDIUM |
 | Subrogation Risk | Score < 70 |
 
-A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `PHOTO_REUSED`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `MODEL_DISAGREEMENT`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`; the last is raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
+A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `PHOTO_REUSED`, `ATTORNEY_REPRESENTED`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `MODEL_DISAGREEMENT`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`; the last is raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
 
 ## API
 
@@ -144,7 +144,7 @@ Copy `.env.example` to `.env`, set `GEMINI_API_KEY`, `FNOL_ADJUSTER_TOKEN` and, 
 ### Tests and builds
 
 ```bash
-mvn -q test                                   # backend: 242 tests
+mvn -q test                                   # backend: 249 tests
 cd frontend && npm install && npm run build    # console
 ```
 
@@ -195,6 +195,17 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `VITE_API_BASE_URL` | `http://localhost:8080` | API address for the console |
 
 ## Vision evaluation
+
+**How each claim was decided.** Every claim's Summary shows three parts side by side: what machine learning
+estimated (Gemini, the second-opinion model, and what was blurred or withheld before photos left), what the rules
+decided from it with the claim's own numbers (coverage, the reserve formula, statutory deadlines, the route and its
+flags), and what the licensed adjuster decided (who, when, final reserve and reason). ML never pays, denies or closes a
+claim. The notes also give each branch's time: the legal branch runs in parallel with the operational one, so it adds
+no waiting (e.g. operational 3.9 s with Gemini, legal about 1 ms).
+
+**Legal and compliance checks** (rule-based, in parallel with the damage assessment): a regulatory claim clock from a cited, versioned rule set (acknowledge from notice, decide from a complete proof of loss, business days where the rule says), a written acknowledgement letter filed on the ClaimCenter claim, subrogation with the other party's details and a recovery-deadline activity, attorney-representation routing, and unfair-discrimination testing on the AI Governance page. Rules, sources and how well each was verified: [docs/legal-compliance.md](docs/legal-compliance.md). Not legal advice.
+
+**AI governance.** Model cards for every AI component, with measured results and limits: [docs/model-cards.md](docs/model-cards.md). The console's **AI Governance** page (`GET /api/v1/ai/metrics`) shows routing, flags, leakage kept from over-payment, adjuster agreement (each decision is recorded next to the AI's view, `GET /api/v1/ai/feedback`), what left the system for the external model, and weekly drift. Before any photo goes to Gemini, faces and licence plates are blurred by `fnol-vision-ml` and the odometer / VIN photo is withheld; if blurring is unavailable no photo is sent (`fnol.redaction.required`).
 
 `tools/second-opinion/` trains the second-opinion vision model (CLIP embeddings + logistic regression on CC0 car-damage photos; zero-shot heads for photo subject and home cause of loss) served by `fnol-vision-ml`; when it disagrees with Gemini the claim goes to an adjuster (`MODEL_DISAGREEMENT`). See [tools/second-opinion/README.md](tools/second-opinion/README.md).
 

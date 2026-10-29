@@ -112,15 +112,15 @@ def main():
     ap.add_argument("--line", choices=sorted(LINES), default="auto",
                     help="auto: car photos, vehicle prompt; home: property photos (prepare_home.py), property prompt")
     args = ap.parse_args()
-    line = LINES[args.line]
+    cfg = LINES[args.line]
 
-    key, prompt = api_key(), app_prompt(line["prompt"])
+    key, prompt = api_key(), app_prompt(cfg["prompt"])
     labels = {}
-    with open(os.path.join(line["data"], "labels.jsonl"), encoding="utf-8") as f:
+    with open(os.path.join(cfg["data"], "labels.jsonl"), encoding="utf-8") as f:
         for line in f:
             lab = json.loads(line)
             labels[lab["image"]] = lab
-    sample = [s for s in open(os.path.join(line["data"], "sample.txt"), encoding="utf-8").read().split("\n") if s]
+    sample = [s for s in open(os.path.join(cfg["data"], "sample.txt"), encoding="utf-8").read().split("\n") if s]
     if args.limit:
         sample = sample[:args.limit]
 
@@ -146,16 +146,16 @@ def main():
         todo = todo[:args.max_calls]
     print(f"{len(done)} done, {len(todo)} to do this run, ~{len(todo) * gap / 60:.0f} min at {args.rpm} rpm")
     try:
-        run(todo, labels, key, prompt, args, out_path, gap, line)
+        run(todo, labels, key, prompt, args, out_path, gap, cfg)
     except DailyQuotaExhausted as e:
         print(f"Stopped: daily quota used up ({e}). Run again tomorrow to continue; nothing was lost.")
     answered = sum(1 for l in open(out_path, encoding="utf-8") if l.strip()) if os.path.exists(out_path) else 0
     print(f"{answered}/{len(sample)} images answered so far.")
 
 
-def run(todo, labels, key, prompt, args, out_path, gap, line):
+def run(todo, labels, key, prompt, args, out_path, gap, cfg):
     for i, name in enumerate(todo, 1):
-        path = os.path.join(line["images"], labels[name]["path"])
+        path = os.path.join(cfg["images"], labels[name]["path"])
         mime = "image/png" if name.lower().endswith(".png") else "image/jpeg"
         record = {"image": name, "model": args.model, "thinkingBudget": args.thinking_budget,
                   "promptSha256": prompt_sha(prompt), "line": args.line}
@@ -163,7 +163,7 @@ def run(todo, labels, key, prompt, args, out_path, gap, line):
         for attempt in range(4):
             try:
                 resp = call(key, args.model, prompt, open(path, "rb").read(), mime, args.thinking_budget, args.timeout,
-                            line["angle"])
+                            cfg["angle"])
                 record.update(prediction=parse(resp), latency=round(time.time() - started, 2),
                               usage=resp.get("usageMetadata", {}))
                 break

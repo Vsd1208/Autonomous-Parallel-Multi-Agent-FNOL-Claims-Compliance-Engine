@@ -5,6 +5,7 @@ import { AppHeader } from './components/Shell';
 import ClaimFile from './pages/ClaimFile';
 import Desktop from './pages/Desktop';
 import NewClaimWizard from './pages/NewClaimWizard';
+import Governance from './pages/Governance';
 import UploadPage from './pages/UploadPage';
 
 function AuditRedirect() {
@@ -33,6 +34,7 @@ function AdjusterWorkspace() {
           <Route path="/queue/:view" element={<Desktop />} />
           <Route path="/queue" element={<Navigate to="/" replace />} />
           <Route path="/new" element={<NewClaimWizard />} />
+          <Route path="/governance" element={<Governance />} />
           <Route path="/claim/:claimId" element={<ClaimFile />} />
           <Route path="/claim/:claimId/:section" element={<ClaimFile />} />
           <Route path="/audit/:claimId" element={<AuditRedirect />} />

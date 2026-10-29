@@ -5,6 +5,10 @@ A CLIP image encoder plus the heads trained by tools/second-opinion/build_model.
   - home:    cause of loss (zero-shot from text descriptions)
   - subject: what the photos show (zero-shot)
 
+POST /v1/redact
+  {"line": "AUTO" | "HOME", "images": ["data:image/jpeg;base64,..."]}
+  -> {"images": ["data:image/jpeg;base64,..."], "faces": [n, ...], "plates": [n, ...]}
+  Faces and licence plates blurred (redaction/redact.py), for photos about to leave for an external AI model.
 POST /v1/second-opinion
   {"line": "AUTO" | "HOME", "images": ["data:image/jpeg;base64,..."], "angles": ["FRONT", "CLOSE_UP", ...]}
   -> {"model": ..., "line": ..., "photos": n,
@@ -28,6 +32,8 @@ import numpy as np
 import torch
 from PIL import Image
 from transformers import CLIPModel, CLIPProcessor
+
+from redaction.redact import redact as redact_photo
 
 log = logging.getLogger("fnol-vision-ml")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -76,6 +82,25 @@ def embed(images):
     return torch.nn.functional.normalize(feats, dim=-1).numpy()
 
 
+def raw_bytes(uri):
+    if not isinstance(uri, str) or not DATA_URI.match(uri):
+        raise ValueError("only base64 image data URIs are accepted")
+    try:
+        return base64.b64decode(uri.split(",", 1)[1], validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise ValueError("invalid base64 image") from e
+
+
+def redact_all(line, uris):
+    images, faces, plates = [], [], []
+    for uri in uris:
+        jpeg, f, p = redact_photo(raw_bytes(uri), line)
+        images.append("data:image/jpeg;base64," + base64.b64encode(jpeg).decode())
+        faces.append(f)
+        plates.append(p)
+    return {"images": images, "faces": faces, "plates": plates}
+
+
 def assess(line, uris, angles):
     images = [decode(u) for u in uris]
     emb = embed(images)
@@ -111,7 +136,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "NOT_FOUND"})
 
     def do_POST(self):
-        if self.path != "/v1/second-opinion":
+        if self.path not in ("/v1/second-opinion", "/v1/redact"):
             return self._send(404, {"error": "NOT_FOUND"})
         if not self.headers.get("Content-Length"):
             return self._send(411, {"error": "LENGTH_REQUIRED", "message": "send Content-Length (no chunked bodies)"})
@@ -126,13 +151,18 @@ class Handler(BaseHTTPRequestHandler):
             if line not in ("AUTO", "HOME") or not uris or len(uris) > MAX_IMAGES:
                 return self._send(400, {"error": "BAD_REQUEST", "message": f"line AUTO|HOME and 1-{MAX_IMAGES} images"})
             started = time.time()
-            result = assess(line, uris, angles[:len(uris)])
-            log.info("second opinion line=%s photos=%d in %.0f ms", line, len(uris), (time.time() - started) * 1000)
+            if self.path == "/v1/redact":
+                result = redact_all(line, uris)
+                log.info("redact line=%s photos=%d faces=%d plates=%d in %.0f ms", line, len(uris),
+                         sum(result["faces"]), sum(result["plates"]), (time.time() - started) * 1000)
+            else:
+                result = assess(line, uris, angles[:len(uris)])
+                log.info("second opinion line=%s photos=%d in %.0f ms", line, len(uris), (time.time() - started) * 1000)
             self._send(200, result)
         except (ValueError, OSError, Image.DecompressionBombError) as e:
             self._send(400, {"error": "BAD_IMAGE", "message": str(e)[:200]})
         except Exception:   # never leak internals to the caller
-            log.exception("second opinion failed")
+            log.exception("%s failed", self.path)
             self._send(500, {"error": "INTERNAL_ERROR"})
 
     def log_message(self, fmt, *args):   # request logging is done above, without bodies

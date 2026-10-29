@@ -75,7 +75,18 @@ public class ClaimEntity {
   @Column(length = 500)
   public String overrideReason;
 
-  private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
+  /** Regulatory deadline to acknowledge the claim (cited rule set); null when no rule is loaded for the state. */
+  public LocalDate acknowledgeDue;
+
+  /** Regulatory deadline to accept or deny; null until the clock starts (complete proof of loss) or when none applies. */
+  public LocalDate decisionDue;
+
+  /** When the written acknowledgement was filed on the ClaimCenter claim. */
+  public Instant acknowledgedAt;
+
+  // Dates as ISO text ("2026-06-20"), not number arrays, so the console and reports read them directly.
+  private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules()
+      .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
   public static ClaimEntity from(FNOLResponse r, FNOLPayload p) {
     var e = new ClaimEntity();
@@ -95,6 +106,12 @@ public class ClaimEntity {
     e.gateFlags      = r.gateFlags() == null || r.gateFlags().isEmpty() ? null : String.join(",", r.gateFlags());
     e.createdAt      = Instant.now();
     e.updatedAt      = e.createdAt;
+    if (r.branchB() != null && r.branchB().deadline() != null) {
+      e.acknowledgeDue = r.branchB().deadline().acknowledgeBy();
+      e.decisionDue    = r.branchB().deadline().decisionBy();
+    }
+    // The acknowledgement letter is filed with the rest of the ClaimCenter claim at intake.
+    e.acknowledgedAt = "SYNCED".equals(r.ccSyncStatus()) ? e.createdAt : null;
     try {
       e.explanationJson = MAPPER.writeValueAsString(r.explanation());
     } catch (Exception ex) {

@@ -36,18 +36,18 @@ Burst-pipe water damage has no labelled photos.
 | Photo subject | home photos reported as building | 48/53 |
 | Home cause of loss (zero-shot) | right | 84.9% |
 
-On its own the car head is weaker than Gemini. Its value is as a disagreement check. Of the 35 Gemini answers that
-pass every existing vision check (confidence at least 0.85, probability margin at least 0.30), a threshold of 0.15 on
-the second opinion's probability for Gemini's answer did the following:
+On its own the car head is weaker than Gemini. Its value is as a disagreement check. Of the 46 Gemini answers that
+pass every existing vision check (confidence at least 0.85, probability margin at least 0.30; runs v2-multiphoto and
+v3-subject, 2026-10-29), a threshold on the second opinion's probability for Gemini's answer did the following:
 
 | Second opinion gives Gemini's area less than | Flagged | Wrong answers caught | Wrong main area caught | Right answers flagged |
 |---|---|---|---|---|
-| 0.10 | 2/35 | 0/1 | 1/4 | 2 |
-| **0.15 (default)** | 3/35 | **1/1** | 2/4 | 2 |
-| 0.30 | 12/35 | 1/1 | 2/4 | 11 |
+| 0.10 | 4/46 | 0/2 | 2/6 | 4 |
+| **0.15 (default)** | 6/46 | **2/2** | 4/6 | 4 |
+| 0.30 | 17/46 | 2/2 | 4/6 | 15 |
 
-The one wrong answer it catches (photo 1153: Gemini said front bumper at a 0.70 margin, the damage is on the side
-panel) is the one no other vision check stops. The samples are small: re-run `compare_gemini.py` as the evaluation
+Both wrong answers that get past every other vision check (e.g. photo 1153: Gemini said front bumper at a 0.70 margin,
+the damage is on the side panel) are caught. The samples are still small: re-run `compare_gemini.py` as the evaluation
 grows. The threshold is `fnol.stp.second-opinion-min-probability`. For home claims it uses the same threshold, which
 has not been checked against Gemini's home answers yet (`tools/vision-eval`, home run).
 

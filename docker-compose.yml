@@ -76,6 +76,10 @@ services:
       FNOL_EVIDENCE_ALLOWED_HOSTS: "${FNOL_EVIDENCE_ALLOWED_HOSTS:-}"
       # Second-opinion model; empty turns it off (the MODEL_DISAGREEMENT check then never runs).
       FNOL_SECOND_OPINION_URL: "${FNOL_SECOND_OPINION_URL:-http://vision-ml:8090}"
+      # Faces and licence plates are blurred here before any photo goes to Gemini. With REQUIRED=true no photo is
+      # sent when blurring is unavailable (the claim goes to an adjuster). Empty URL turns redaction off.
+      FNOL_REDACTION_URL: "${FNOL_REDACTION_URL:-http://vision-ml:8090}"
+      FNOL_REDACTION_REQUIRED: "${FNOL_REDACTION_REQUIRED:-true}"
     ports:
       # Override API_HOST_PORT when another server (e.g. Apache) already uses 8080 on the host.
       - "${API_HOST_PORT:-8080}:8080"

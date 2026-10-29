@@ -231,7 +231,7 @@ class FNOLOrchestratorTest {
         assertThat(response.ccSyncStatus()).isEqualTo("SYNCED");
         assertThat(fixture.claimCenter.attachments.get(response.claimId()))
                 .extracting(ClaimAttachment::name)
-                .containsExactly("ai-advisory-why-panel.json", "evidence-uris.json");
+                .containsExactly("ai-advisory-why-panel.json", FNOLOrchestrator.ACKNOWLEDGEMENT_LETTER, "evidence-uris.json");
         assertThat(fixture.claimCenter.attachments.get(response.claimId()).get(0).body())
                 .isEqualTo(response.explanation());
     }
@@ -369,7 +369,8 @@ class FNOLOrchestratorTest {
             assertThat(n.body()).contains("CLAIMED_EXCEEDS_AI_ESTIMATE").contains("the adjuster decides")
                     .doesNotContain("Scraped a pole");   // the claimant's description stays out of ClaimCenter notes
         });
-        assertThat(fixture.claimCenter.activities.get(id)).singleElement().satisfies(a -> {
+        assertThat(fixture.claimCenter.activities.get(id).stream().filter(a -> a.subject().startsWith("Review AI flag")))
+                .singleElement().satisfies(a -> {
             assertThat(a.subject()).isEqualTo("Review AI flag: claimed exceeds ai estimate");
             assertThat(a.description()).contains("request more photos, send to investigation");
             assertThat(a.dueDate()).isEqualTo(flagged.branchB().deadline().acknowledgeBy());
@@ -381,7 +382,8 @@ class FNOLOrchestratorTest {
                 "Scraped a pole in a parking garage.", "3000"));
         assertThat(clean.status()).isEqualTo("PENDING_ADVISORY_REVIEW");
         assertThat(fixture.claimCenter.activities.get(clean.claimId())).extracting(CcActivity::subject)
-                .containsExactly("Confirm AI advisory (straight-through eligible)");
+                .containsExactlyInAnyOrder("Confirm AI advisory (straight-through eligible)",
+                        "Accept or deny the claim (regulatory deadline)");
         assertThat(FNOLOrchestrator.exposureType("HOME", "DWELLING")).isEqualTo("Dwelling");
     }
 
@@ -412,6 +414,30 @@ class FNOLOrchestratorTest {
         // Without the model the same claim is STP-eligible.
         assertThat(orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
                 "Scraped a pole in a parking garage.", "3000")).gateFlags()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Legal: a represented claimant goes to the litigation queue, the acknowledgement letter is addressed to "
+            + "the attorney and cites the rule, and a likely recovery gets a deadline activity")
+    void process_attorneyLetterAndRecovery() {
+        FNOLResponse r = orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "The other driver ran the red light and hit my car. My attorney will contact you. Police report number "
+                        + "LA-778812.", "3000"));
+        String id = r.claimId();
+
+        assertThat(r.inputFlags()).contains(IntakeReviewService.ATTORNEY_REPRESENTED);
+        assertThat(r.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(r.notes()).anyMatch(n -> n.startsWith("ATTORNEY REPRESENTED"));
+        assertThat(r.notes()).anyMatch(n -> n.startsWith("RECOVERY: another party may be liable"));
+        assertThat(fixture.claimCenter.activities.get(id)).anySatisfy(a -> {
+            assertThat(a.subject()).isEqualTo("Review AI flag: attorney represented");
+            assertThat(a.assignedTo()).isEqualTo(FNOLOrchestrator.LITIGATION_QUEUE);
+        });
+        assertThat(fixture.claimCenter.attachments.get(id)).anySatisfy(doc -> {
+            assertThat(doc.name()).isEqualTo(FNOLOrchestrator.ACKNOWLEDGEMENT_LETTER);
+            assertThat(doc.body().toString()).startsWith("To the attorney representing Avery Johnson")
+                    .contains(id).contains("we will direct all communication about this claim to you");
+        });
     }
 
     @Test

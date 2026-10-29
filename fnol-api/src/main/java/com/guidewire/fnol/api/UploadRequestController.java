@@ -1,5 +1,15 @@
 package com.guidewire.fnol.api;
 
+import java.time.ZoneOffset;
+
+import java.time.LocalDate;
+
+import com.guidewire.fnol.common.Models.DeadlineResult;
+
+import com.guidewire.fnol.common.Models.CcActivity;
+
+import com.guidewire.fnol.agents.StatutoryDeadlineAgent;
+
 import com.guidewire.fnol.agents.AuditTrailAgent;
 import com.guidewire.fnol.api.persistence.ClaimDocumentEntity;
 import com.guidewire.fnol.api.persistence.ClaimEntity;
@@ -210,6 +220,7 @@ class UploadRequestController {
         r.photosReceived = stored.size();
         requests.save(r);
         claims.moveStatus(r.claimId, Set.of("NEEDS_MORE_INFO"), "HUMAN_REVIEW", now);
+        startDecisionClock(claim, now);
 
         audit(r.claimId, "SupplementaryEvidence", "requestId=" + r.requestId + ";angles=" + String.join(",", angles),
                 "photosStored=" + stored.size() + ";status=HUMAN_REVIEW", "RECEIVED", AuditService.SYSTEM_ACTOR);
@@ -220,6 +231,37 @@ class UploadRequestController {
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    private StatutoryDeadlineAgent deadlines;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setDeadlines(StatutoryDeadlineAgent deadlines) {
+        this.deadlines = deadlines;
+    }
+
+    /**
+     * The requested items have arrived, so the proof of loss is complete: where the state's decision clock runs from
+     * the proof of loss and has not started yet, start it now, record it and give the adjuster a ClaimCenter activity.
+     */
+    private void startDecisionClock(ClaimEntity claim, Instant now) {
+        if (deadlines == null || claim.decisionDue != null || claim.createdAt == null) return;
+        try {
+            String line = claim.policyNumber != null && claim.policyNumber.startsWith("POL-HOME") ? "HOME" : "AUTO";
+            LocalDate today = LocalDate.ofInstant(now, ZoneOffset.UTC);
+            DeadlineResult d = deadlines.afterProofOfLoss(claim.state, claim.incidentDate, line,
+                    LocalDate.ofInstant(claim.createdAt, ZoneOffset.UTC), today);
+            if (d.decisionBy() == null || claims.startDecisionClock(claim.claimId, d.decisionBy()) == 0) return;
+            audit(claim.claimId, "RegulatoryClock", "proofOfLossCompleteOn=" + today + ";rules=" + d.rulesVersion(),
+                    "decisionDue=" + d.decisionBy() + ";citation=" + d.decisionCitation(), "STARTED",
+                    AuditService.SYSTEM_ACTOR);
+            claimCenter.addActivity(claim.claimId, new CcActivity(null, "Accept or deny the claim (regulatory deadline)",
+                    "Proof of loss completed on " + today + " when the requested photos arrived. " + d.decisionNote() + " "
+                            + Objects.toString(d.decisionCitation(), ""),
+                    "high", d.decisionBy(), "FNOL adjuster queue", null, null));
+        } catch (RuntimeException e) {
+            log.warn("[FNOL] Decision clock not started for {}: {}", claim.claimId, e.getMessage());
+        }
+    }
 
     private static List<String> normalise(List<String> angles) {
         List<String> out = new ArrayList<>();

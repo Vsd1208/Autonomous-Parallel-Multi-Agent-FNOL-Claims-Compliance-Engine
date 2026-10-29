@@ -27,6 +27,16 @@ public class IntakeReviewService {
     public static final String HIGH_CLAIM_FREQUENCY = "HIGH_CLAIM_FREQUENCY";
     /** Photos were sent, but not the standard set: every side of the vehicle plus a close-up of the damage. */
     public static final String INCOMPLETE_PHOTO_SET = "INCOMPLETE_PHOTO_SET";
+    /**
+     * The claimant says they have legal representation. Communications about the claim then go through the attorney,
+     * and the claim belongs with an adjuster used to represented and litigated claims.
+     */
+    public static final String ATTORNEY_REPRESENTED = "ATTORNEY_REPRESENTED";
+    /** Phrases that indicate the claimant is represented by a lawyer. */
+    static final List<String> ATTORNEY_PHRASES = List.of(
+            "my attorney", "my lawyer", "our attorney", "our lawyer", "attorney for", "lawyer for", "represented by",
+            "legal counsel", "my counsel", "law firm", "law office", "solicitor", "retained counsel", "hired a lawyer",
+            "hired an attorney", "letter of representation");
     /** A photo was already submitted on another claim (same file, or resized/recompressed): a fraud indicator. */
     public static final String PHOTO_REUSED = "PHOTO_REUSED";
 
@@ -64,7 +74,18 @@ public class IntakeReviewService {
         if ("HIGH".equalsIgnoreCase(history.claimFrequencyRisk())) {
             flags.add(HIGH_CLAIM_FREQUENCY);
         }
+
+        if (isRepresented(payload.description())) {
+            flags.add(ATTORNEY_REPRESENTED);
+        }
         return List.copyOf(flags);
+    }
+
+    /** True when the description says the claimant has a lawyer. */
+    public static boolean isRepresented(String description) {
+        if (description == null) return false;
+        String text = description.toLowerCase(Locale.ROOT);
+        return ATTORNEY_PHRASES.stream().anyMatch(text::contains);
     }
 
     /** Angles of the standard set for the policy's line that no photo covers, in set order. */

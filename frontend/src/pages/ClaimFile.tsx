@@ -196,6 +196,7 @@ const FLAG_TEXT: Record<string, string> = {
   RESERVE_EXCEEDS_COVERAGE_LIMIT: 'The loss after the deductible is above the coverage limit; the reserve is capped.',
   CLAIMED_EXCEEDS_AI_ESTIMATE: 'The claimant asks for more than the photos support. Not approved automatically.',
   DAMAGE_TYPE_LINE_MISMATCH: "The damage does not fit the policy's line of business.",
+  ATTORNEY_REPRESENTED: 'The claimant mentions legal counsel: communicate through the attorney; litigation queue.',
   MODEL_DISAGREEMENT: 'The independently trained second-opinion model disagrees with Gemini about the damage.',
   PHOTO_REUSED: 'A photo matches one already submitted on another claim (possibly resized).',
   PHOTO_SUBJECT_MISMATCH: 'The photos do not show what the policy insures (e.g. a house on an auto policy).',
@@ -281,6 +282,7 @@ function Summary({ claim, docs, onChanged }: { claim: DashboardClaim; docs: Clai
           ]} />
         </Panel>
       </div>
+      <DecisionTrail claim={claim} />
       <Panel title={`Evidence (${docs.length})`}>
         <EvidenceGallery docs={docs} />
       </Panel>
@@ -293,7 +295,7 @@ function Summary({ claim, docs, onChanged }: { claim: DashboardClaim; docs: Clai
           ['Adjuster reserve', r?.adjusterReserve != null ? money(r.adjusterReserve) : null],
           ['AI confidence', e?.factors.find((f) => f.factor === 'AI Confidence')?.value],
           ['Subrogation score', claim.branchB ? `${claim.branchB.subrogation.score} / 100` : null],
-          ['Acknowledge by', claim.branchB?.deadline.acknowledgeBy ?? claim.branchB?.deadline.deadline],
+          ['Acknowledge by', claim.branchB ? isoDate(claim.branchB.deadline.acknowledgeBy ?? claim.branchB.deadline.deadline) : null],
         ]} />
       </Panel>
       {(claim.notes ?? []).length > 0 && (
@@ -365,6 +367,10 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
               : Number(d.confidence).toFixed(2)],
             ['Photo quality', d.photoQuality ? humanize(d.photoQuality) : null],
             ['Photos show', d.photoSubject ? humanize(d.photoSubject) : null],
+            ['Sent to external AI', d.privacy ? `${d.privacy.photosSent} photo${d.privacy.photosSent === 1 ? '' : 's'}`
+              + (d.privacy.redacted ? `, ${d.privacy.facesBlurred} face${d.privacy.facesBlurred === 1 ? '' : 's'} and `
+                + `${d.privacy.platesBlurred} plate${d.privacy.platesBlurred === 1 ? '' : 's'} blurred` : ', not redacted')
+              + (d.privacy.photosWithheld ? `; ${d.privacy.photosWithheld} withheld (VIN)` : '') : null],
           ]} />
         </Panel>
         <Panel title="Coverage">
@@ -395,6 +401,109 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
       <SecondOpinionPanel geminiType={d.damageType} second={a.secondOpinion} />
     </>
   );
+}
+
+/**
+ * How this claim was decided, in three parts: what machine learning estimated (and what it was allowed to see),
+ * what the rules decided from those estimates, with the claim's own numbers, and what the adjuster decided.
+ * ML never pays, denies or closes a claim; money and legal steps are rules; a licensed adjuster decides.
+ */
+function DecisionTrail({ claim }: { claim: DashboardClaim }) {
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const a = claim.branchA;
+  const b = claim.branchB;
+  const r = claim.record;
+  const d = a?.damageAssessment;
+  const so = a?.secondOpinion;
+  const res = a?.reserve;
+  const flags = [...(claim.inputFlags ?? []), ...(claim.gateFlags ?? [])];
+  const agreement = d && so ? so.damageProbabilities[d.damageType] : undefined;
+  const timing = (claim.notes ?? []).find((n) => n.startsWith('Processing time:'));
+  const decided = !!r?.adjusterDecision;
+  const reserveRule = res
+    ? (res.claimedAmount != null
+      ? `lower of claimed ${money(res.claimedAmount)} and AI estimate ${money(res.estimatedDamage)} = ${money(res.settlementBasis)}`
+      : `AI estimate ${money(res.estimatedDamage)}`)
+      + `, minus deductible ${money(res.deductible ?? a?.coverage.deductible)} = ${money(res.recommendedReserve)}`
+      + (res.coverageLimit ? ` (never above the ${money(res.coverageLimit)} limit)` : '')
+    : null;
+
+  return (
+    <Panel title="How this claim was decided">
+      <div className="trail">
+        <section className="trail-part">
+          <h3><span className="trail-tag ml">ML</span> Machine learning estimated</h3>
+          {d ? (
+            <ul>
+              <li><strong>{humanize(d.damageType)}</strong>, {humanize(d.severity).toLowerCase()}, estimate {money(d.estimatedDamage)}
+                {' '}(Gemini; confidence {Number(d.confidence).toFixed(2)}{d.rawConfidence != null ? ', calibrated' : ''})</li>
+              <li>{so ? (agreement != null
+                ? `Second-opinion model gives that ${(agreement * 100).toFixed(1)}%${agreement < 0.15 ? ': it disagrees' : ''}`
+                : 'Second-opinion model has no view on this damage type')
+                : 'Second-opinion model not available for this claim'}</li>
+              <li>{d.privacy
+                ? `${d.privacy.photosSent} photo${d.privacy.photosSent === 1 ? '' : 's'} sent to Gemini`
+                  + (d.privacy.redacted ? ` after blurring ${plural(d.privacy.facesBlurred, 'face')} and ${plural(d.privacy.platesBlurred, 'plate')}` : ', not blurred')
+                  + (d.privacy.photosWithheld ? `; ${d.privacy.photosWithheld} VIN photo withheld` : '')
+                : 'No photo was sent to an external model'}</li>
+            </ul>
+          ) : <p className="muted">No AI analysis stored for this claim.</p>}
+          <p className="trail-note">Estimates only: machine learning never pays, denies or closes a claim.</p>
+        </section>
+
+        <section className="trail-part">
+          <h3><span className="trail-tag rules">Rules</span> Rules decided what is allowed</h3>
+          <ul>
+            {a && <li>Coverage: {a.coverage.covered ? `covered under ${a.coverage.coverageType}` : 'not covered'}
+              {a.coverage.reasoning?.length ? ` (${a.coverage.reasoning[a.coverage.reasoning.length - 1]})` : ''}</li>}
+            {reserveRule && <li>Reserve: {reserveRule}</li>}
+            {b && <li>Deadlines ({b.deadline.state}): acknowledge by {isoDate(b.deadline.acknowledgeBy ?? b.deadline.deadline)}
+              {b.deadline.decisionBy ? `, decide by ${isoDate(b.deadline.decisionBy)}` : ''}</li>}
+            {b && <li>Personal data removed from the description before analysis
+              {b.pii.piiDetected ? ` (${b.pii.detectedTypes.length} field type${b.pii.detectedTypes.length === 1 ? '' : 's'} found)` : ''}</li>}
+            <li>Route: {flags.length
+              ? <>sent to an adjuster because of {flags.map((f) => humanize(f).toLowerCase()).join(', ')}</>
+              : claim.status === 'PENDING_ADVISORY_REVIEW' ? 'straight-through eligible; waits for an adjuster to confirm'
+                : humanize(claim.status)}</li>
+          </ul>
+          <p className="trail-note">Fixed, written rules: the same inputs always give the same result, and every step is in the audit history.</p>
+        </section>
+
+        <section className="trail-part">
+          <h3><span className="trail-tag human">Adjuster</span> A licensed adjuster decides</h3>
+          {decided ? (
+            <ul>
+              <li><strong>{humanize(r!.adjusterDecision!)}</strong> by {r!.adjusterId} on {dateTime(r!.reviewedAt)}</li>
+              <li>Final reserve {money(r!.adjusterReserve ?? r!.reserve)}
+                {r!.adjusterReserve != null && r!.adjusterReserve !== r!.reserve ? ` (AI recommended ${money(r!.reserve)})` : ''}</li>
+              {r!.overrideReason && <li>Reason for the change: {r!.overrideReason}</li>}
+              {r!.adjusterNotes && <li>Notes: {r!.adjusterNotes}</li>}
+            </ul>
+          ) : (
+            <p><strong>Waiting for an adjuster.</strong> Until then the claim is a draft in ClaimCenter: nothing is paid,
+              denied or closed.</p>
+          )}
+          <p className="trail-note">The adjuster can change the reserve (with a recorded reason) and confirm or correct the damage.</p>
+        </section>
+      </div>
+      {timing && <p className="hint">{timing}</p>}
+    </Panel>
+  );
+}
+
+/** A date as YYYY-MM-DD, whether stored as text or as a [year, month, day] array (older saved analyses). */
+function isoDate(v: unknown): string {
+  if (Array.isArray(v) && v.length >= 3) {
+    return `${v[0]}-${String(v[1]).padStart(2, '0')}-${String(v[2]).padStart(2, '0')}`;
+  }
+  return v == null ? '—' : String(v);
+}
+
+/** Damage types an adjuster can confirm, by line (home coverages get causes of loss). */
+function DAMAGE_CHOICES(coverage?: string): string[] {
+  return coverage === 'DWELLING' || coverage === 'PERSONAL_PROPERTY'
+    ? ['WATER_DAMAGE', 'FLOOD', 'FIRE_SMOKE', 'WIND_STORM', 'FALLEN_TREE', 'MULTIPLE', 'UNKNOWN']
+    : ['FRONT_BUMPER', 'REAR_BUMPER', 'SIDE_PANEL', 'WINDSHIELD', 'ROOF', 'MULTIPLE', 'UNKNOWN'];
 }
 
 /** The independently trained model's view of the same photos, next to Gemini's answer. */
@@ -447,28 +556,72 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
           ]} />
           <div className="redacted"><div className="field-label">Redacted description</div><p>{b.pii.redactedDescription}</p></div>
         </Panel>
-        <Panel title="Statutory Deadlines">
+        <Panel title="Regulatory Deadlines">
           <DetailView rows={[
             ['State', b.deadline.state],
-            ['Acknowledge by', b.deadline.acknowledgeBy ?? b.deadline.deadline],
-            ['Decide by', b.deadline.decisionBy],
+            ['Acknowledge by', b.deadline.acknowledgeBy || b.deadline.deadline
+              ? `${isoDate(b.deadline.acknowledgeBy ?? b.deadline.deadline)}${b.deadline.acknowledgeCitation ? ` — ${b.deadline.acknowledgeCitation}` : ''}`
+              : 'No cited rule for this state'],
+            ['Accept or deny by', b.deadline.decisionBy
+              ? `${isoDate(b.deadline.decisionBy)}${b.deadline.decisionCitation ? ` — ${b.deadline.decisionCitation}` : ''}`
+              : b.deadline.decisionNote ?? null],
+            ['Recover from at-fault party by', b.deadline.recoverBy
+              ? `${isoDate(b.deadline.recoverBy)} — ${b.deadline.recoveryCitation ?? ''}` : null],
             ['Urgency', <StatusChip value={b.deadline.urgencyFlag} />],
-            ['Rule source', b.deadline.ruleSource],
+            ['Rule set', b.deadline.rulesVersion ? `Cited rules, version ${b.deadline.rulesVersion}` : b.deadline.ruleSource],
           ]} />
           <p className="hint">{b.deadline.disclaimer}</p>
         </Panel>
       </div>
+      {(claim.inputFlags ?? []).includes('ATTORNEY_REPRESENTED') && (
+        <MessageBar tone="warning" title="Claimant represented by an attorney">
+          Communicate about this claim through the attorney, not the claimant directly. The claim is routed to the
+          litigation and represented-claims queue and is not eligible for straight-through processing.
+        </MessageBar>
+      )}
+      <AcknowledgementLetterPanel claimId={claim.claimId} />
       <Panel title="Subrogation">
         <DetailView columns={2} rows={[
           ['Score', `${b.subrogation.score} / 100`],
           ['Recommended action', <StatusChip value={b.subrogation.recommendedAction} />],
           ...Object.entries(b.subrogation.factors).map(([k, v]) => [humanize(k.replace(/([A-Z])/g, '_$1')), `${v} pts`] as [string, string]),
         ]} />
+        {b.subrogation.thirdParty && Object.keys(b.subrogation.thirdParty).length > 0 && (
+          <>
+            <div className="field-label" style={{ marginTop: 12 }}>The other party (from the description)</div>
+            <DetailView columns={2} rows={Object.entries(b.subrogation.thirdParty).map(([k, v]) =>
+              [humanize(k.replace(/([A-Z])/g, '_$1')), v] as [string, string])} />
+          </>
+        )}
         {(b.subrogation.complianceNotes ?? []).length > 0 && (
           <ul className="notes compact">{b.subrogation.complianceNotes!.map((n) => <li key={n}>{n}</li>)}</ul>
         )}
       </Panel>
     </>
+  );
+}
+
+/** The written acknowledgement filed on the ClaimCenter claim at intake (template, not AI). */
+function AcknowledgementLetterPanel({ claimId }: { claimId: string }) {
+  const [letter, setLetter] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    apiClient.getClaimCenterView(claimId)
+      .then((cc) => {
+        const doc = cc.attachments.find((a) => a.name === 'acknowledgement-letter.txt');
+        setLetter(typeof doc?.body === 'string' ? doc.body : null);
+      })
+      .catch(() => setLetter(null));
+  }, [claimId]);
+  if (letter === undefined) return null;
+  return (
+    <Panel title="Acknowledgement Letter">
+      {letter
+        ? <pre className="letter">{letter}</pre>
+        : <p className="muted">No acknowledgement letter on file (claim filed before letters were generated, or ClaimCenter
+          is unavailable).</p>}
+      <p className="hint">Generated from a fixed template at intake and filed on the ClaimCenter claim (prototype: not posted
+        or e-mailed).</p>
+    </Panel>
   );
 }
 
@@ -597,6 +750,8 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
   const [requestingPhotos, setRequestingPhotos] = useState(false);
+  const aiType = claim.branchA?.damageAssessment.damageType ?? '';
+  const [confirmedType, setConfirmedType] = useState(aiType);
 
   useEffect(() => {
     setFinalAmount(recommended != null ? String(recommended) : '');
@@ -628,7 +783,8 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
           || `Inspection by ${latest?.inspectorName}: accident-related damage ${money(latest?.accidentRelatedAmount)}`,
       } : {};
       const text = notes.trim() || quickNote || '';
-      const res = await apiClient.submitAdjusterReview(claim.claimId, { decision, adjusterId, notes: text, ...override });
+      const res = await apiClient.submitAdjusterReview(claim.claimId,
+        { decision, adjusterId, notes: text, ...override, confirmedDamageType: confirmedType || undefined });
       claimStore.updateStatus(claim.claimId, res.status);
       setSaved(`${humanize(res.adjusterDecision)} saved at ${new Date(res.reviewedAt).toLocaleString()}`);
       onChanged();
@@ -718,6 +874,16 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
       </Panel>
       <Panel title="Adjuster Review">
         <div className="form-grid">
+          {aiType && (
+            <label className="field">
+              <span className="field-label">Damage the photos show (confirm or correct the AI)</span>
+              <select value={confirmedType} onChange={(e) => setConfirmedType(e.target.value)} disabled={!reviewable}>
+                {DAMAGE_CHOICES(claim.branchA?.coverage.coverageType ?? undefined).map((t) => (
+                  <option key={t} value={t}>{humanize(t)}{t === aiType ? ' (AI)' : ''}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="field">
             <span className="field-label">Adjuster ID<span className="required"> *</span></span>
             <input value={adjusterId} onChange={(e) => setAdjusterId(e.target.value)} disabled={!reviewable} />

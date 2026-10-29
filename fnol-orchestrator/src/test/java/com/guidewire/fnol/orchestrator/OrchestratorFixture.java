@@ -40,7 +40,7 @@ final class OrchestratorFixture {
                 new PolicyValidatorAgent(pc, new SyntheticCoverageRuleProvider()),
                 new ReserveCalculatorAgent(),
                 new PiiRedactionAgent(),
-                new StatutoryDeadlineAgent(new SyntheticDeadlineRuleProvider()),
+                new StatutoryDeadlineAgent(new CitedDeadlineRuleProvider()),
                 new SubrogationScorerAgent(new DeterministicSubrogationScorer()),
                 audit,
                 claimCenter,

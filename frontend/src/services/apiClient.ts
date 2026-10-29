@@ -1,6 +1,7 @@
 import {
   AdjusterReviewRequest,
   AdjusterReviewResponse,
+  AiMetrics,
   AuditTrail,
   CcClaim,
   ClaimDocument,
@@ -73,6 +74,9 @@ export const apiClient = {
   /** The intake's full AI analysis as saved on the server (404 for claims filed before it was saved). */
   getAnalysis: (claimId: string) =>
     request<ClaimResult>(`/api/v1/fnol/${encodeURIComponent(claimId)}/analysis`, {}, true),
+
+  /** AI governance: routing, flags, leakage, adjuster agreement, privacy and drift. */
+  getAiMetrics: () => request<AiMetrics>('/api/v1/ai/metrics', {}, true),
 
   /** The claim as ClaimCenter holds it: exposures with reserves, activities, notes, documents. */
   getClaimCenterView: (claimId: string) =>

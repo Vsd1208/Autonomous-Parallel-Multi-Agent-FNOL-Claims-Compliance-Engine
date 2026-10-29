@@ -53,7 +53,7 @@ prompt or the thinking budget.
 |---|---|---|---|---|
 | `thinking0` | single-photo prompt (before the standard photo set) | 25 | see `results/report-thinking0.md` | Kept for comparison; not used for the app map |
 | `v2-multiphoto` | multi-photo prompt, photo labelled `angle: OTHER` (prompt SHA-256 `61a89427e0e132d9`) | 33 | 91% / 67% (`results/report-v2-multiphoto.md`) | Stopped: the prompt now also asks for `photoSubject`. Kept for comparison |
-| `v3-subject` | current prompt: as v2, plus `photoSubject` (VEHICLE, BUILDING, OTHER_PROPERTY, NONE) (prompt SHA-256 `501b3308884a64f8`) | 15 of 50 needed | 80% / 60% (`results/report-v3-subject.md`) | Run daily until 50; car photos reported as VEHICLE: 15/15 |
+| `v3-subject` | current prompt: as v2, plus `photoSubject` (VEHICLE, BUILDING, OTHER_PROPERTY, NONE) (prompt SHA-256 `501b3308884a64f8`) | 32 of 50 needed | 81% / 56% (`results/report-v3-subject.md`) | Run daily until 50; car photos reported as VEHICLE: 32/32; self-reported confidence AUC 0.52, margin AUC 0.83 |
 
 `v3-subject` restarts the count because a changed prompt can change the answers. Compare it with
 `v2-multiphoto` on the photos both runs answered to see whether the extra question moved the damage-zone
@@ -98,8 +98,13 @@ python -P gate_ablation.py --run v2-multiphoto --run v3-subject      # writes re
 |---|---|---|---|---|
 | `v2-multiphoto` (33) | confidence factor only | 32 | 3 / 10 | 1 |
 | | + `AMBIGUOUS_DAMAGE_TYPE` | 25 | 1 / 3 | 6 |
-| `v3-subject` (15) | confidence factor only | 15 | 3 / 6 | 0 |
-| | + `AMBIGUOUS_DAMAGE_TYPE` (+ severity, + subject) | 10 | 0 / 1 | 2 |
+| `v3-subject` (32) | confidence factor only | 32 | 6 / 14 | 0 |
+| | + `AMBIGUOUS_DAMAGE_TYPE` (+ severity, + subject) | 21 | 1 / 3 | 6 |
+
+With the second-opinion check as well (`tools/second-opinion/compare_gemini.py`, both runs): of the 46 answers that
+pass the confidence and margin checks, 2 are wrong, and the second opinion (below 0.15 for Gemini's area) flags both,
+at the cost of 4 right answers sent to an adjuster. On these 80 answers no wrong answer reaches auto-approval with all
+checks on.
 
 The margin check removes most wrong answers that the confidence factor lets through, at the cost of sending
 some right answers to an adjuster. The one wrong answer no vision check stops (photo 1153, a confident wrong

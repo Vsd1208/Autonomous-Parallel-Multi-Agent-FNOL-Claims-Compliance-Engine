@@ -71,6 +71,7 @@ export function AppHeader() {
           </span>
         )}
         <NavLink to="/new" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>New Claim</NavLink>
+        <NavLink to="/governance" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>AI Governance</NavLink>
       </nav>
       <form className="header-search" onSubmit={goToClaim} role="search">
         <input

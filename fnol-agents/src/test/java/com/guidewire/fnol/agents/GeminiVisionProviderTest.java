@@ -230,6 +230,48 @@ class GeminiVisionProviderTest {
         assertThat(provider.assess(payloadWithUri("https://example.com/b.jpg"), "AUTO").photoSubject()).isNull();
     }
 
+    @Test
+    @DisplayName("Privacy: photos are blurred before they leave; the VIN photo is withheld; no redaction, no Gemini call")
+    @SuppressWarnings("unchecked")
+    void assess_redactsBeforeSendingAndFailsClosed() throws Exception {
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(geminiResponse("SIDE_PANEL", "MODERATE", 3100, 0.9)));
+        PhotoRedactor blurring = new PhotoRedactor("http://vision-ml:8090", true, null) {
+            @Override
+            public Redacted redact(List<String> images, String line) {
+                return new Redacted(images.stream().map(i -> "data:image/jpeg;base64,QkxVUlJFRA==").toList(), 2, 1);
+            }
+        };
+        EvidenceImageLoader loader = new EvidenceImageLoader(List.of());
+        GeminiVisionProvider withRedaction = new GeminiVisionProvider(restTemplate, new ObjectMapper(), loader, blurring);
+        ReflectionTestUtils.setField(withRedaction, "apiKey", "test-api-key");
+        ReflectionTestUtils.setField(withRedaction, "model", "gemini-2.5-flash");
+        FNOLPayload payload = new FNOLPayload("POL-AUTO-112233", LocalDate.of(2026, 8, 16), "CA", "Side swipe",
+                "Avery Johnson", null, null,
+                List.of("data:image/jpeg;base64,/9j/4AAQ", "data:image/jpeg;base64,/9j/4AAQ", "data:image/png;base64,iVBORw0KGgo="),
+                "WEB", null, null, null, List.of("LEFT", "CLOSE_UP", "ODOMETER_VIN"));
+
+        DamageAssessment result = withRedaction.assess(payload, "AUTO");
+
+        ArgumentCaptor<HttpEntity> captor = ArgumentCaptor.forClass(HttpEntity.class);
+        verify(restTemplate).postForEntity(anyString(), captor.capture(), eq(String.class));
+        String body = captor.getValue().getBody().toString();
+        assertThat(body).contains("QkxVUlJFRA==").doesNotContain("/9j/4AAQ").doesNotContain("iVBORw0KGgo=");
+        assertThat(result.privacy()).isEqualTo(new com.guidewire.fnol.common.Models.PhotoPrivacy(2, 1, 2, 1, true));
+
+        PhotoRedactor down = new PhotoRedactor("http://vision-ml:8090", true, null) {
+            @Override
+            public Redacted redact(List<String> images, String line) throws RedactionUnavailableException {
+                throw new RedactionUnavailableException("service down", null);
+            }
+        };
+        GeminiVisionProvider failClosed = new GeminiVisionProvider(restTemplate, new ObjectMapper(), loader, down);
+        ReflectionTestUtils.setField(failClosed, "apiKey", "test-api-key");
+        DamageAssessment fallback = failClosed.assess(payload, "AUTO");
+        assertThat(fallback.confidence()).isEqualByComparingTo("0.60");
+        verifyNoMoreInteractions(restTemplate);   // still only the one call from above
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
             "http://127.0.0.1/admin.jpg",
