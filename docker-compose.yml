@@ -72,7 +72,10 @@ services:
       FNOL_STP_REQUIRE_ADVISORY_REVIEW: "${FNOL_STP_REQUIRE_ADVISORY_REVIEW:-true}"
       # Empty token = adjuster endpoints (review, audit, explanation, queue) reject every request.
       FNOL_ADJUSTER_TOKEN: "${FNOL_ADJUSTER_TOKEN:-}"
-      FNOL_CORS_ALLOWED_ORIGINS: "${FNOL_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
+      # Adjuster workspace (5173) and policyholder portal (5174)
+      FNOL_CORS_ALLOWED_ORIGINS: "${FNOL_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}"
+      # One-time upload links sent to claimants open the portal
+      FNOL_PORTAL_BASE_URL: "${FNOL_PORTAL_BASE_URL:-http://localhost:5174}"
       FNOL_EVIDENCE_ALLOWED_HOSTS: "${FNOL_EVIDENCE_ALLOWED_HOSTS:-}"
       # Second-opinion model; empty turns it off (the MODEL_DISAGREEMENT check then never runs).
       FNOL_SECOND_OPINION_URL: "${FNOL_SECOND_OPINION_URL:-http://vision-ml:8090}"
@@ -106,8 +109,23 @@ services:
       args:
         VITE_API_BASE_URL: "http://localhost:${API_HOST_PORT:-8080}"
         VITE_ADJUSTER_TOKEN: "${FNOL_ADJUSTER_TOKEN:-}"
+        VITE_PORTAL_URL: "${FNOL_PORTAL_BASE_URL:-http://localhost:5174}"
     ports:
       - "5173:5173"
+    depends_on:
+      fnol-api:
+        condition: service_healthy
+
+  portal:
+    # Policyholder claims portal: report a loss, track a claim, add requested photos. A separate build from the
+    # adjuster workspace that never receives the adjuster token; it calls only /api/v1/portal and /api/v1/public.
+    build:
+      context: .
+      dockerfile: frontend/portal.Dockerfile
+      args:
+        VITE_API_BASE_URL: "http://localhost:${API_HOST_PORT:-8080}"
+    ports:
+      - "5174:5174"
     depends_on:
       fnol-api:
         condition: service_healthy

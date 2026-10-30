@@ -1,0 +1,51 @@
+{
+  "description": "Maps the gap between Gemini's two highest damage-type probabilities to the observed share of correct damage-zone answers. Fitted by tools/vision-eval/calibrate.py.",
+  "signal": "probabilityMargin",
+  "model": "gemini-2.5-flash",
+  "thinkingBudget": 0,
+  "promptSha256": "501b3308884a64f8",
+  "dataset": "Humans in the Loop - Car parts and car damages (CC0 1.0)",
+  "images": 50,
+  "overallAccuracy": 0.82,
+  "createdAt": "2026-10-30",
+  "leaveOneOut": {
+    "brier_raw": 0.154,
+    "brier_calibrated": 0.137,
+    "ece_raw": 0.086,
+    "ece_calibrated": 0.055,
+    "auc_confidence": 0.524,
+    "auc_margin": 0.791
+  },
+  "table": [
+    {
+      "from": 0.0,
+      "to": 0.2,
+      "calibrated": 0.649,
+      "n": 18
+    },
+    {
+      "from": 0.5,
+      "to": 0.55,
+      "calibrated": 0.713,
+      "n": 2
+    },
+    {
+      "from": 0.6,
+      "to": 0.77,
+      "calibrated": 0.877,
+      "n": 10
+    },
+    {
+      "from": 0.8,
+      "to": 0.82,
+      "calibrated": 0.91,
+      "n": 4
+    },
+    {
+      "from": 0.85,
+      "to": 0.9,
+      "calibrated": 0.964,
+      "n": 16
+    }
+  ]
+}

@@ -196,7 +196,8 @@ public final class Models {
             Map<String, BigDecimal> damageTypeProbabilities, // e.g. {"FRONT_BUMPER": 0.87, "SIDE_PANEL": 0.09, ...}
             BigDecimal rawConfidence,                     // the model's own confidence when `confidence` is calibrated
             String photoSubject,                          // what the photos show: "VEHICLE" | "BUILDING" | "OTHER_PROPERTY" | "NONE"; null = not reported
-            PhotoPrivacy privacy                          // what left the system for the external model; null = nothing was sent
+            PhotoPrivacy privacy,                         // what left the system for the external model; null = nothing was sent
+            String visionSource                           // which model answered: "<model> prompt <sha16> thinking <n>"; null = mock or fallback
     ) {
         public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
                                 String photoQuality, Map<String, BigDecimal> damageTypeProbabilities) {
@@ -216,16 +217,29 @@ public final class Models {
                     photoSubject, null);
         }
 
+        public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
+                                String photoQuality, Map<String, BigDecimal> damageTypeProbabilities,
+                                BigDecimal rawConfidence, String photoSubject, PhotoPrivacy privacy) {
+            this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, rawConfidence,
+                    photoSubject, privacy, null);
+        }
+
         /** The same assessment with the photo subject the vision model reported. */
         public DamageAssessment withPhotoSubject(String subject) {
             return new DamageAssessment(damageType, severity, estimatedDamage, confidence, photoQuality,
-                    damageTypeProbabilities, rawConfidence, subject, privacy);
+                    damageTypeProbabilities, rawConfidence, subject, privacy, visionSource);
         }
 
         /** The same assessment with a record of what was sent to the external model. */
         public DamageAssessment withPrivacy(PhotoPrivacy p) {
             return new DamageAssessment(damageType, severity, estimatedDamage, confidence, photoQuality,
-                    damageTypeProbabilities, rawConfidence, photoSubject, p);
+                    damageTypeProbabilities, rawConfidence, photoSubject, p, visionSource);
+        }
+
+        /** The same assessment marked with the model, prompt and settings that produced it (for feedback refits). */
+        public DamageAssessment withVisionSource(String source) {
+            return new DamageAssessment(damageType, severity, estimatedDamage, confidence, photoQuality,
+                    damageTypeProbabilities, rawConfidence, photoSubject, privacy, source);
         }
 
         /**

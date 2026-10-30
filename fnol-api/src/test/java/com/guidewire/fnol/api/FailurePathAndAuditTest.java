@@ -171,7 +171,7 @@ class FailurePathAndAuditTest {
     }
 
     private JsonNode postIntake(FNOLPayload payload, int expectedStatus) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/v1/fnol/intake")
+        MvcResult result = mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().is(expectedStatus))

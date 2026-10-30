@@ -272,7 +272,8 @@ public class GeminiVisionProvider implements VisionProvider {
             ResponseEntity<String> response = restTemplate.postForEntity(GEMINI_API_URL.formatted(model), request, String.class);
             // The calibration map was measured on the vehicle prompt only; property answers keep Gemini's confidence.
             return parseGeminiResponse(response.getBody(),
-                    prompt == DAMAGE_ASSESSMENT_PROMPT ? calibrator : VisionConfidenceCalibrator.none()).withPrivacy(privacy);
+                    prompt == DAMAGE_ASSESSMENT_PROMPT ? calibrator : VisionConfidenceCalibrator.none()).withPrivacy(privacy)
+                    .withVisionSource(visionSource(prompt));
 
         } catch (RestClientException e) {
             log.error("[GeminiVision] Gemini API call failed — using fallback assessment. Cause: {}", e.getClass().getSimpleName());
@@ -281,6 +282,11 @@ public class GeminiVisionProvider implements VisionProvider {
             log.error("[GeminiVision] Unexpected error during vision assessment — using fallback. Cause: {}", e.getMessage());
             return fallback("PARSE_ERROR");
         }
+    }
+
+    /** Model, prompt hash and thinking budget, so adjuster feedback can be matched to the prompt that produced it. */
+    String visionSource(String prompt) {
+        return model + " prompt " + VisionConfidenceCalibrator.promptSha(prompt) + " thinking " + thinkingBudget;
     }
 
     /** JSON-only output; thinking budget only for 2.5 models (older models reject thinkingConfig). */

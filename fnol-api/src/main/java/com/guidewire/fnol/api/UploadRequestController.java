@@ -76,7 +76,7 @@ class UploadRequestController {
 
     UploadRequestController(ClaimRepository claims, UploadRequestRepository requests, EvidenceStore evidence,
                             AuditService auditService, AuditTrailAgent auditAgent, ClaimCenterClient claimCenter,
-                            @Value("${fnol.portal.base-url:http://localhost:5173}") String portalBaseUrl) {
+                            @Value("${fnol.portal.base-url:http://localhost:5174}") String portalBaseUrl) {
         this.claims = claims;
         this.requests = requests;
         this.evidence = evidence;

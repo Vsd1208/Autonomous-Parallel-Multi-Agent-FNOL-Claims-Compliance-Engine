@@ -20,7 +20,7 @@ public class SecurityConfig {
 
     @Bean
     FilterRegistrationBean<CorsFilter> corsFilter(
-            @Value("${fnol.cors.allowed-origins:http://localhost:5173}") List<String> allowedOrigins) {
+            @Value("${fnol.cors.allowed-origins:http://localhost:5173,http://localhost:5174}") List<String> allowedOrigins) {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(allowedOrigins);
         cors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));

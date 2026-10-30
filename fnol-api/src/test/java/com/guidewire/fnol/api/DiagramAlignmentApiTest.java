@@ -184,7 +184,7 @@ class DiagramAlignmentApiTest {
     }
 
     private JsonNode postIntake(FNOLPayload payload, int expectedStatus) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/fnol/intake")
+        String body = mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().is(expectedStatus))

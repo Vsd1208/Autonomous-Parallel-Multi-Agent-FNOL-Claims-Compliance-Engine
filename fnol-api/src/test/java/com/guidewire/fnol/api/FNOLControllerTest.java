@@ -82,7 +82,7 @@ class FNOLControllerTest {
                 new BigDecimal("3000")
         );
 
-        mockMvc.perform(post("/api/v1/fnol/intake")
+        mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
@@ -107,7 +107,7 @@ class FNOLControllerTest {
                 .andExpect(jsonPath("$.requiresHumanValidation").isBoolean());
 
         // Check claim status retrieval
-        mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000001"))
+        mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000001").header("X-Adjuster-Token", "test-adjuster-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.claimId").value("CLM-2026-000001"))
                 .andExpect(jsonPath("$.policyNumber").value("POL-AUTO-112233"))
@@ -131,7 +131,7 @@ class FNOLControllerTest {
                 .andExpect(jsonPath("$.adjusterDecision").value("APPROVED_BY_ADJUSTER"))
                 .andExpect(jsonPath("$.adjusterId").value("ADJ-001"));
 
-        mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000001"))
+        mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000001").header("X-Adjuster-Token", "test-adjuster-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED_BY_ADJUSTER"))
                 .andExpect(jsonPath("$.adjusterDecision").value("APPROVED_BY_ADJUSTER"));
@@ -153,7 +153,7 @@ class FNOLControllerTest {
                 null, null, null, List.of(), null
         );
 
-        mockMvc.perform(post("/api/v1/fnol/intake")
+        mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalidPayload)))
                 .andExpect(status().isBadRequest())
@@ -163,7 +163,7 @@ class FNOLControllerTest {
     @Test
     @DisplayName("GET /api/v1/fnol/status/{claimId} returns 404 for non-existent claim")
     void statusEndpoint_returns404ForUnknownClaim() throws Exception {
-        mockMvc.perform(get("/api/v1/fnol/status/CLM-NONEXISTENT-999"))
+        mockMvc.perform(get("/api/v1/fnol/status/CLM-NONEXISTENT-999").header("X-Adjuster-Token", "test-adjuster-token"))
                 .andExpect(status().isNotFound());
     }
 }

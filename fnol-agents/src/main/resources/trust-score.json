@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "line": "AUTO",
+  "model": "gemini-2.5-flash",
+  "thinkingBudget": 0,
+  "promptSha256": "501b3308884a64f8",
+  "images": 50,
+  "target": "lenient",
+  "withSecondOpinion": {
+    "features": [
+      "margin",
+      "agreement",
+      "specific"
+    ],
+    "coef": [
+      0.478309,
+      0.835006,
+      1.245624
+    ],
+    "intercept": 0.554707
+  },
+  "marginOnly": {
+    "features": [
+      "margin",
+      "specific"
+    ],
+    "coef": [
+      0.598227,
+      1.417536
+    ],
+    "intercept": 0.585071
+  },
+  "metrics": {
+    "aucRaw": 0.5244,
+    "aucTrust": 0.6829,
+    "brierRaw": 0.1537,
+    "brierTrust": 0.1274
+  }
+}

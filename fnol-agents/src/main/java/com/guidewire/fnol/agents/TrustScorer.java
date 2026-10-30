@@ -84,7 +84,7 @@ public class TrustScorer {
         BigDecimal raw = d.rawConfidence() != null ? d.rawConfidence() : d.confidence();
         return new DamageAssessment(d.damageType(), d.severity(), d.estimatedDamage(),
                 BigDecimal.valueOf(score).setScale(2, RoundingMode.HALF_UP), d.photoQuality(),
-                d.damageTypeProbabilities(), raw, d.photoSubject(), d.privacy());
+                d.damageTypeProbabilities(), raw, d.photoSubject(), d.privacy(), d.visionSource());
     }
 
     private static Model[] load(JsonNode json, String model, int thinkingBudget) {

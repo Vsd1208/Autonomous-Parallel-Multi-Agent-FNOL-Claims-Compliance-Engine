@@ -6,19 +6,26 @@ import ClaimFile from './pages/ClaimFile';
 import Desktop from './pages/Desktop';
 import NewClaimWizard from './pages/NewClaimWizard';
 import Governance from './pages/Governance';
-import UploadPage from './pages/UploadPage';
 
 function AuditRedirect() {
   const { claimId } = useParams<{ claimId: string }>();
   return <Navigate to={`/claim/${claimId}/history`} replace />;
 }
 
+const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL || 'http://localhost:5174').replace(/\/+$/, '');
+
+/** Policyholder pages live in the separate portal app; an old upload link on the workspace is sent there. */
+function PortalRedirect() {
+  const { token = '' } = useParams<{ token: string }>();
+  React.useEffect(() => { window.location.replace(`${PORTAL_URL}/upload/${encodeURIComponent(token)}`); }, [token]);
+  return null;
+}
+
 function App() {
   return (
     <Router>
       <Routes>
-        {/* Claimant-facing: reached from the link the adjuster sends; no adjuster screens. */}
-        <Route path="/upload/:token" element={<UploadPage />} />
+        <Route path="/upload/:token" element={<PortalRedirect />} />
         <Route path="*" element={<AdjusterWorkspace />} />
       </Routes>
     </Router>

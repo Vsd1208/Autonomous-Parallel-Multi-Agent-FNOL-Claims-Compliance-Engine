@@ -459,10 +459,29 @@ class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
-    @ExceptionHandler({IllegalArgumentException.class, MethodArgumentNotValidException.class})
+    @ExceptionHandler(IllegalArgumentException.class)
     ResponseEntity<ApiError> bad(Exception e, HttpServletRequest r) {
+        return validation(e.getMessage(), r);
+    }
+
+    /** Names the fields only: Spring's own message lists Java class and method names, and the portal is public. */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    ResponseEntity<ApiError> invalidFields(MethodArgumentNotValidException e, HttpServletRequest r) {
+        String fields = e.getBindingResult().getFieldErrors().stream()
+                .map(f -> f.getField() + " " + f.getDefaultMessage()).sorted().distinct()
+                .collect(java.util.stream.Collectors.joining("; "));
+        return validation("Invalid request: " + (fields.isEmpty() ? "check the fields sent" : fields), r);
+    }
+
+    /** Missing or malformed JSON body: a client error, not a processing failure. */
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    ResponseEntity<ApiError> unreadable(Exception e, HttpServletRequest r) {
+        return validation("The request body is missing or is not valid JSON.", r);
+    }
+
+    private static ResponseEntity<ApiError> validation(String message, HttpServletRequest r) {
         return ResponseEntity.badRequest().body(
-                new ApiError(Instant.now(), 400, "VALIDATION_ERROR", e.getMessage(), r.getRequestURI()));
+                new ApiError(Instant.now(), 400, "VALIDATION_ERROR", message, r.getRequestURI()));
     }
 
     @ExceptionHandler(DuplicateFNOLException.class)

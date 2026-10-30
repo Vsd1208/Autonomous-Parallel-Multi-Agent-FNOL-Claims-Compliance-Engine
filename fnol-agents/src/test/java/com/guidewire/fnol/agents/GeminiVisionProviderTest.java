@@ -83,6 +83,8 @@ class GeminiVisionProviderTest {
         assertThat(result.confidence()).isEqualByComparingTo("0.91");
         assertThat(result.photoQuality()).isEqualTo("CLEAR");
         assertThat(result.damageTypeProbabilities().get("FRONT_BUMPER")).isEqualByComparingTo("0.91");
+        // marked with the prompt that produced it, so adjuster feedback can be matched to the trust score's prompt
+        assertThat(result.visionSource()).contains("prompt " + VisionConfidenceCalibrator.VEHICLE_PROMPT_SHA);
     }
 
     @Test
@@ -130,6 +132,7 @@ class GeminiVisionProviderTest {
 
         assertThat(result.damageType()).isEqualTo("UNKNOWN");
         assertThat(result.confidence()).isEqualByComparingTo("0.60");
+        assertThat(result.visionSource()).isNull();
     }
 
     @Test

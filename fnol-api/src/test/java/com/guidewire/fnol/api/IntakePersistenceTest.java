@@ -70,7 +70,7 @@ class IntakePersistenceTest {
 
         when(claimCenterClient.createClaim(any())).thenReturn(new ClaimCreateResponse("CLM-2026-000777", "OPEN"));
 
-        mockMvc.perform(post("/api/v1/fnol/intake")
+        mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload(LocalDate.now().minusDays(21)))))
                 .andExpect(status().isConflict())
@@ -90,11 +90,11 @@ class IntakePersistenceTest {
 
         String body = objectMapper.writeValueAsString(payload(LocalDate.now().minusDays(22)));
 
-        mockMvc.perform(post("/api/v1/fnol/intake").contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().is5xxServerError());
 
         // A retry must not reach ClaimCenter again and file a second claim.
-        mockMvc.perform(post("/api/v1/fnol/intake").contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("DUPLICATE_FNOL"));
     }

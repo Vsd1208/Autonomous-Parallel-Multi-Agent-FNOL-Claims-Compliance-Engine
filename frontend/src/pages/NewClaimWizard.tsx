@@ -26,7 +26,7 @@ const emptyForm: FormData = {
   claimantSsn: '',
   claimantPhone: '',
   claimantEmail: '',
-  channel: 'WEB',
+  channel: 'PHONE',
   claimedAmount: '',
 };
 
@@ -42,7 +42,10 @@ function Field({ label, required, children, wide }: {
   );
 }
 
-/** New Claim wizard: step list on the left, Back / Next / Finish toolbar, review page before submit. */
+/**
+ * New Claim wizard for internal intake (a claim taken by phone or from an agent): step list on the left,
+ * Back / Next / Finish toolbar, review page before submit. Policyholders report through the separate portal.
+ */
 export default function NewClaimWizard() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);

@@ -36,15 +36,15 @@ Burst-pipe water damage has no labelled photos.
 | Photo subject | home photos reported as building | 48/53 |
 | Home cause of loss (zero-shot) | right | 84.9% |
 
-On its own the car head is weaker than Gemini. Its value is as a disagreement check. Of the 46 Gemini answers that
+On its own the car head is weaker than Gemini. Its value is as a disagreement check. Of the 56 Gemini answers that
 pass every existing vision check (confidence at least 0.85, probability margin at least 0.30; runs v2-multiphoto and
-v3-subject, 2026-10-29), a threshold on the second opinion's probability for Gemini's answer did the following:
+v3-subject, 2026-10-30), a threshold on the second opinion's probability for Gemini's answer did the following:
 
 | Second opinion gives Gemini's area less than | Flagged | Wrong answers caught | Wrong main area caught | Right answers flagged |
 |---|---|---|---|---|
-| 0.10 | 4/46 | 0/2 | 2/6 | 4 |
-| **0.15 (default)** | 6/46 | **2/2** | 4/6 | 4 |
-| 0.30 | 17/46 | 2/2 | 4/6 | 15 |
+| 0.10 | 4/56 | 0/2 | 2/6 | 4 |
+| **0.15 (default)** | 6/56 | **2/2** | 4/6 | 4 |
+| 0.30 | 19/56 | 2/2 | 4/6 | 17 |
 
 Both wrong answers that get past every other vision check (e.g. photo 1153: Gemini said front bumper at a 0.70 margin,
 the damage is on the side panel) are caught. The samples are still small: re-run `compare_gemini.py` as the evaluation

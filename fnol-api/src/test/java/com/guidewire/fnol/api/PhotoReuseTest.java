@@ -85,7 +85,7 @@ class PhotoReuseTest {
         FNOLPayload payload = new FNOLPayload("POL-AUTO-112233", LocalDate.now().minusDays(daysAgo), "CA",
                 "Hit a bollard while parking.", "Avery Johnson", null, null, List.of(photo), "WEB", null, null,
                 new BigDecimal("2000"), List.of("CLOSE_UP"));
-        String body = mockMvc.perform(post("/api/v1/fnol/intake").contentType(MediaType.APPLICATION_JSON)
+        String body = mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token").contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(payload))).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body);

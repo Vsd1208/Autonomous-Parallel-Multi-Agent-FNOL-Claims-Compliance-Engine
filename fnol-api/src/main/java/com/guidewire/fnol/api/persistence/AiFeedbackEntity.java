@@ -45,6 +45,10 @@ public class AiFeedbackEntity {
     @Column(length = 20)
     public String photoSubject;
 
+    /** The model, prompt hash and thinking budget that produced the AI answer; null = mock or fallback. */
+    @Column(length = 80)
+    public String visionSource;
+
     @Column(length = 500)
     public String gateFlags;
 

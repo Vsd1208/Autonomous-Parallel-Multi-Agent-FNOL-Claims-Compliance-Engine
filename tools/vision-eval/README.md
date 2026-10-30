@@ -53,7 +53,7 @@ prompt or the thinking budget.
 |---|---|---|---|---|
 | `thinking0` | single-photo prompt (before the standard photo set) | 25 | see `results/report-thinking0.md` | Kept for comparison; not used for the app map |
 | `v2-multiphoto` | multi-photo prompt, photo labelled `angle: OTHER` (prompt SHA-256 `61a89427e0e132d9`) | 33 | 91% / 67% (`results/report-v2-multiphoto.md`) | Stopped: the prompt now also asks for `photoSubject`. Kept for comparison |
-| `v3-subject` | current prompt: as v2, plus `photoSubject` (VEHICLE, BUILDING, OTHER_PROPERTY, NONE) (prompt SHA-256 `501b3308884a64f8`) | 32 of 50 needed | 81% / 56% (`results/report-v3-subject.md`) | Run daily until 50; car photos reported as VEHICLE: 32/32; self-reported confidence AUC 0.52, margin AUC 0.83 |
+| `v3-subject` | current prompt: as v2, plus `photoSubject` (VEHICLE, BUILDING, OTHER_PROPERTY, NONE) (prompt SHA-256 `501b3308884a64f8`) | **50 (complete, 2026-10-30)** | 82% / 56% (`results/report-v3-subject.md`) | Car photos reported as VEHICLE: 50/50; self-reported confidence AUC 0.52, margin AUC 0.79. Trust score and margin map shipped to the app |
 
 `v3-subject` restarts the count because a changed prompt can change the answers. Compare it with
 `v2-multiphoto` on the photos both runs answered to see whether the extra question moved the damage-zone
@@ -120,25 +120,59 @@ right from wrong answers: the probability margin, the second-opinion model's agr
 out-of-fold) and whether Gemini named a specific area. Logistic regression, scored leave-one-image-out:
 
 ```bash
-python -P trust_score.py --run v2-multiphoto --run v3-subject      # study, results/report-trust-score.md
-python -P trust_score.py --run v3-subject --write-app               # app file, once the shipping rules pass
+python -P trust_score.py --run v3-subject                    # study, results/report-trust-score.md
+python -P trust_score.py --run v3-subject --write-app        # app file, only when the shipping rules pass
+python -P refit_from_feedback.py --run v3-subject [--write-app]   # the same, with adjusters' decisions added
 ```
 
-48 answers on 33 photos (provisional):
+**Honest measurement.** Every score is leave-one-image-out. The amount of smoothing (regularisation C) is chosen by
+cross-validation *inside* each training set (nested), so picking it cannot flatter the result, and every Brier score
+and calibration error comes with a 95% range from 2000 bootstrap resamples of the images.
 
-| Confidence used | Separation (AUC) | Brier | Passing 0.85: answers / wrong |
+Shipped 30 Oct 2026, 50 photos, current prompt:
+
+| Confidence used | Separation (AUC) | Brier (95% range) | Calibration error (95% range) | Passing 0.85: answers / wrong |
+|---|---|---|---|---|
+| Gemini's self-reported confidence | 0.52 | 0.154 (0.073-0.234) | 0.122 (0.037-0.201) | 50 / 9 |
+| **Trust score in the app** (3 inputs, C=1) | 0.68 | 0.127 (0.074-0.186) | 0.212 (0.091-0.263) | 31 / **1** |
+| Smoothing chosen by cross-validation | 0.71 | 0.127 (0.074-0.189) | 0.143 (0.057-0.228) | 30 / 1 |
+
+**What was tried to lower the calibration error (30 Oct 2026), and why the app did not change.** Stronger smoothing
+made it worse (C=0.1: 0.24), not better. Fewer inputs did not help either: the probability margin alone lets 2 wrong
+answers through. Lighter smoothing, chosen honestly by nested cross-validation, lowers the error to 0.14 at the same
+Brier, but the ranges overlap almost completely: with 9 wrong answers in 50 the difference is not reliable. And the
+lightly smoothed model gives the probability margin a *negative* weight (a clearer Gemini answer would get a lower
+trust score), which fits this sample but could not be explained to an adjuster or a regulator. The shipping rules
+refuse it, so the app keeps the trust score above. The remaining error comes mostly from one group: Gemini's
+"multiple areas" answers get a low score but are all right.
+
+Shipping rules (`trust_score.py --write-app`): a single run with the app's vehicle prompt, model and thinking budget;
+at least 50 evaluation photos; better Brier than Gemini's raw confidence; no worse Brier and no more wrong answers at
+0.85 than the app's current trust score on the same data; and no negative weight on the margin or the second-opinion
+agreement. The app's `TrustScorer` checks the prompt, model and thinking budget again at startup. Home claims keep
+Gemini's confidence: the model is trained on car photos.
+
+**Learning from adjusters.** Each adjuster decision is stored next to the AI's view (`ai_feedback`), including the
+model, prompt hash and thinking budget that produced the answer (`vision_source`). `refit_from_feedback.py` exports the
+decisions where the adjuster confirmed the damage type and adds them as labelled examples (right when the adjuster
+confirmed the AI's damage type), but only those from the same model and prompt; mock, fallback, home and old-prompt
+answers are skipped and counted. The refit goes through the same measurement and shipping rules. Note that adjusters
+confirm one main area, so these labels are stricter than the evaluation's lenient target. As of 30 Oct 2026 there is no
+usable decision yet (one recorded, a home claim).
+
+### Final result at 50 photos (2026-10-30)
+
+All checks replayed on the 50 answers of `v3-subject` (current prompt):
+
+| Checks on | Could go straight through | Wrong answers let through | Right answers sent to an adjuster |
 |---|---|---|---|
-| Gemini's self-reported confidence | 0.50 | 0.110 | 47 of 48 / 6 |
-| Trust score (margin + second opinion) | **0.73** | 0.099 | 36 of 48 / **1** |
+| Gemini's confidence only (>= 0.85) | 50/50 | 9 | 0 |
+| + answer-gap check | 32/50 | 2 | 11 |
+| + severity and photo subject | 32/50 | 2 | 11 |
+| + second-opinion model | 29/50 | **1** | 13 |
 
-At the app's 0.85 confidence factor, Gemini's own number lets 6 wrong answers through; the trust score lets 1 through
-and sends 12 answers to an adjuster instead. Gemini's raw number has the lower calibration error only because it says
-0.9 for everything and about 88% of answers are right; it does not rank answers at all.
-
-The app's `TrustScorer` replaces Gemini's confidence with the trust score (keeping Gemini's value in `rawConfidence`)
-only when `fnol-agents/src/main/resources/trust-score.json` was written from a single run with the current vehicle
-prompt, model and thinking budget, on at least 50 images, and beats Gemini's raw confidence on the Brier score. Not
-shipped yet (33 images, two prompts). Home claims keep Gemini's confidence: the model is trained on car photos.
+The one left (photo 1336) is a confident "multiple areas" answer; the second-opinion model has no "multiple" class, so it
+cannot check that kind of answer. Trust score: see the section above.
 
 ## Home (property) evaluation
 

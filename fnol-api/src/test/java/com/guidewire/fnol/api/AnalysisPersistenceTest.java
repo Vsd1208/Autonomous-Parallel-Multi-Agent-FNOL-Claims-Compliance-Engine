@@ -56,7 +56,7 @@ class AnalysisPersistenceTest {
         FNOLPayload payload = new FNOLPayload("POL-AUTO-112233", LocalDate.now().minusDays(4), "CA", DESCRIPTION,
                 "Avery Johnson", "01/02/1980", SSN, List.of("mock://photo/normal.jpg"), "WEB", null, null,
                 new BigDecimal("3000"));
-        mockMvc.perform(post("/api/v1/fnol/intake").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token").contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(payload))).andExpect(status().isOk());
 
         mockMvc.perform(get("/api/v1/fnol/CLM-2026-000731/analysis")).andExpect(status().isUnauthorized());
@@ -74,7 +74,7 @@ class AnalysisPersistenceTest {
         assertThat(stored).doesNotContain(SSN).doesNotContain("driver side at a junction").doesNotContain("01/02/1980");
 
         // The claim row's own JSON does not carry the analysis blob.
-        mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000731"))
+        mockMvc.perform(get("/api/v1/fnol/status/CLM-2026-000731").header("X-Adjuster-Token", "test-adjuster-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.analysisJson").doesNotExist());
     }

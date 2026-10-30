@@ -8,7 +8,6 @@ import {
   ClaimRecord,
   Inspection,
   Inspector,
-  PublicUpload,
   UploadRequest,
   ClaimResult,
   ExplanationObject,
@@ -60,10 +59,10 @@ export const apiClient = {
     channel: FormData['channel'];
     claimedAmount?: number;
     evidenceAngles?: string[];
-  }) => request<ClaimResult>('/api/v1/fnol/intake', { method: 'POST', body: JSON.stringify(payload) }),
+  }) => request<ClaimResult>('/api/v1/fnol/intake', { method: 'POST', body: JSON.stringify(payload) }, true),
 
   getClaimStatus: (claimId: string) =>
-    request<ClaimRecord>(`/api/v1/fnol/status/${encodeURIComponent(claimId)}`),
+    request<ClaimRecord>(`/api/v1/fnol/status/${encodeURIComponent(claimId)}`, {}, true),
 
   getExplanation: (claimId: string) =>
     request<ExplanationObject>(`/api/v1/fnol/${encodeURIComponent(claimId)}/explanation`, {}, true),
@@ -147,17 +146,6 @@ export const apiClient = {
     request<UploadRequest>(
       `/api/v1/fnol/${encodeURIComponent(claimId)}/upload-requests/${encodeURIComponent(requestId)}/cancel`,
       { method: 'POST', body: JSON.stringify({ adjusterId }) }, true),
-
-  /** Claimant side: no adjuster token. A used or expired link answers 410 with the same body. */
-  getPublicUpload: async (token: string): Promise<PublicUpload> => {
-    const response = await fetch(`${API_BASE_URL}/api/v1/public/upload/${encodeURIComponent(token)}`);
-    if (response.ok || response.status === 410) return response.json();
-    throw new ApiError(response.status === 404 ? 'This upload link is not valid.' : `HTTP ${response.status}`, response.status);
-  },
-
-  submitPublicUpload: (token: string, body: { evidenceUris: string[]; evidenceAngles: string[] }) =>
-    request<{ claimId: string; photosReceived: number }>(
-      `/api/v1/public/upload/${encodeURIComponent(token)}`, { method: 'POST', body: JSON.stringify(body) }),
 
   /** Pushes the recorded decision to ClaimCenter again after a failed sync. */
   retryClaimCenterSync: (claimId: string) =>

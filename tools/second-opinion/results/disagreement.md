@@ -1,14 +1,14 @@
 # Second opinion vs Gemini
 
-Gemini answers that pass the existing vision checks (confidence >= 0.85, margin >= 0.30) in runs v2-multiphoto, v3-subject: 46 answers, 2 wrong (lenient), 6 with the wrong main area (strict). The second opinion's probabilities are out-of-fold (it never saw the photo).
+Gemini answers that pass the existing vision checks (confidence >= 0.85, margin >= 0.30) in runs v2-multiphoto, v3-subject: 56 answers, 2 wrong (lenient), 6 with the wrong main area (strict). The second opinion's probabilities are out-of-fold (it never saw the photo).
 
 | Disagreement threshold | Flagged | Wrong caught (lenient) | Wrong main area caught (strict) | Right answers flagged (extra adjuster work) |
 |---|---|---|---|---|
-| second opinion gives Gemini's area < 0.05 | 0/46 | 0/2 | 0/6 | 0 |
-| second opinion gives Gemini's area < 0.10 | 4/46 | 0/2 | 2/6 | 4 |
-| second opinion gives Gemini's area < 0.15 | 6/46 | 2/2 | 4/6 | 4 |
-| second opinion gives Gemini's area < 0.20 | 7/46 | 2/2 | 4/6 | 5 |
-| second opinion gives Gemini's area < 0.30 | 17/46 | 2/2 | 4/6 | 15 |
+| second opinion gives Gemini's area < 0.05 | 0/56 | 0/2 | 0/6 | 0 |
+| second opinion gives Gemini's area < 0.10 | 4/56 | 0/2 | 2/6 | 4 |
+| second opinion gives Gemini's area < 0.15 | 6/56 | 2/2 | 4/6 | 4 |
+| second opinion gives Gemini's area < 0.20 | 7/56 | 2/2 | 4/6 | 5 |
+| second opinion gives Gemini's area < 0.30 | 19/56 | 2/2 | 4/6 | 17 |
 
 Answers with the wrong main area:
 

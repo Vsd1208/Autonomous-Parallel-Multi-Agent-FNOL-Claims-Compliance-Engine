@@ -43,7 +43,8 @@ public class AiGovernanceService {
 
     /** The AI's view of a claim, read from the analysis stored at intake. */
     record AiView(String line, String damageType, String status, BigDecimal reserve, BigDecimal confidence,
-                  BigDecimal rawConfidence, BigDecimal margin, BigDecimal agreement, String subject, JsonNode privacy) {}
+                  BigDecimal rawConfidence, BigDecimal margin, BigDecimal agreement, String subject, JsonNode privacy,
+                  String visionSource) {}
 
     AiView view(ClaimEntity claim) {
         JsonNode a = parse(claim.analysisJson);
@@ -56,7 +57,7 @@ public class AiGovernanceService {
                 : decimal(a.path("branchA").path("secondOpinion").path("damageProbabilities").path(type));
         return new AiView(line, type, text(a, "status"), claim.reserve, decimal(d.path("confidence")),
                 decimal(d.path("rawConfidence")), margin(d.path("damageTypeProbabilities")), agreement,
-                text(d, "photoSubject"), d.path("privacy"));
+                text(d, "photoSubject"), d.path("privacy"), text(d, "visionSource"));
     }
 
     /** Records an adjuster decision next to the AI's view. Never throws: the decision itself is already saved. */
@@ -78,6 +79,7 @@ public class AiGovernanceService {
             f.probabilityMargin = ai.margin();
             f.secondOpinionAgreement = ai.agreement();
             f.photoSubject = ai.subject();
+            f.visionSource = ai.visionSource();
             f.gateFlags = claim.gateFlags;
             f.adjusterId = adjusterId;
             f.decidedAt = Instant.now();

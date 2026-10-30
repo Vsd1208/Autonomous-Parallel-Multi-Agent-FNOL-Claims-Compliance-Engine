@@ -64,7 +64,7 @@ class UploadRequestWorkflowTest {
                 "requestedBy", "ADJ-001", "angles", List.of("rear", "CLOSE_UP"),
                 "message", "Please send a photo of the rear and a close-up of the dent.")), 200);
         String url = created.path("uploadUrl").asText();
-        assertThat(url).startsWith("http://localhost:5173/upload/");
+        assertThat(url).startsWith("http://localhost:5174/upload/");
         String token = url.substring(url.lastIndexOf('/') + 1);
         assertThat(token).hasSizeGreaterThanOrEqualTo(43);   // 256 random bits, base64url
         ClaimEntity waiting = claims.findById(claimId).orElseThrow();

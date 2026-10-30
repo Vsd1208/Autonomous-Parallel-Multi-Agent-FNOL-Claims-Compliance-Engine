@@ -147,7 +147,7 @@ class EvidenceDocumentsTest {
     private JsonNode intake(String description, List<String> evidence, int expectedStatus) throws Exception {
         FNOLPayload payload = new FNOLPayload("POL-AUTO-112233", LocalDate.now().minusDays(DAYS_AGO.getAndIncrement()), "CA",
                 description, "Avery Johnson", null, null, evidence, "WEB");
-        String body = mockMvc.perform(post("/api/v1/fnol/intake").contentType(MediaType.APPLICATION_JSON)
+        String body = mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().is(expectedStatus))
                 .andReturn().getResponse().getContentAsString();

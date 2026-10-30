@@ -11,6 +11,8 @@
 set -uo pipefail
 
 API_URL="${API_URL:-http://localhost:8080}"
+# Internal intake needs the adjuster token (.env.demo sets demo-adjuster-token). Policyholders use the portal.
+ADJUSTER_TOKEN="${ADJUSTER_TOKEN:-demo-adjuster-token}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FAILURES=0
 PASSES=0
@@ -36,7 +38,7 @@ json_string() {   # first "key":"value" in a JSON response
 post() {   # post <json>  ->  sets HTTP_CODE and BODY
   local out
   out=$(curl -s --max-time 40 -w $'\n%{http_code}' -X POST "$API_URL/api/v1/fnol/intake" \
-    -H "Content-Type: application/json" -d "$1")
+    -H "Content-Type: application/json" -H "X-Adjuster-Token: $ADJUSTER_TOKEN" -d "$1")
   HTTP_CODE="${out##*$'\n'}"
   BODY="${out%$'\n'*}"
 }

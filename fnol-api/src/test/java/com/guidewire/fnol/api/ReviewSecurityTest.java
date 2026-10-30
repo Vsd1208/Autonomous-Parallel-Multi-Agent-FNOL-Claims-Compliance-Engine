@@ -71,10 +71,14 @@ class ReviewSecurityTest {
     }
 
     @Test
-    @DisplayName("Intake, status and health stay open")
+    @DisplayName("Health stays open; workspace intake and the full claim status need the adjuster token")
     void openEndpointsDoNotNeedToken() throws Exception {
         mockMvc.perform(get("/api/v1/health")).andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/fnol/status/" + saveClaim("HUMAN_REVIEW"))).andExpect(status().isOk());
+        String claimId = saveClaim("HUMAN_REVIEW");
+        mockMvc.perform(get("/api/v1/fnol/status/" + claimId)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/fnol/status/" + claimId).header("X-Adjuster-Token", TOKEN)).andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/fnol/intake").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

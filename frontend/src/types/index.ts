@@ -210,15 +210,6 @@ export interface UploadRequest {
   photosReceived: number | null;
 }
 
-/** What the claimant's upload page shows (GET /public/upload/{token}). */
-export interface PublicUpload {
-  claimId: string;
-  angles: string[];
-  message: string | null;
-  expiresAt: string;
-  status: 'OPEN' | 'USED' | 'CANCELLED' | 'EXPIRED';
-}
-
 /** GET /inspectors */
 export interface Inspector {
   inspectorId: string;

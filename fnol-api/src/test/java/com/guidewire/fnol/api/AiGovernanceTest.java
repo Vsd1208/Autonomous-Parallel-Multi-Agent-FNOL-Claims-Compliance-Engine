@@ -50,7 +50,7 @@ class AiGovernanceTest {
         FNOLPayload payload = new FNOLPayload("POL-AUTO-112233", LocalDate.now().minusDays(41), "CA",
                 "Reversed into a bollard.", "Avery Johnson", null, null, List.of("mock://photo/normal.jpg"), "WEB", null,
                 null, new BigDecimal("9000"), List.of("CLOSE_UP"));
-        mockMvc.perform(post("/api/v1/fnol/intake").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token").contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(payload))).andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/fnol/CLM-2026-000814/review").header("X-Adjuster-Token", token)
@@ -70,6 +70,8 @@ class AiGovernanceTest {
         assertThat(row.path("adjusterReserve").decimalValue()).isEqualByComparingTo("2500");
         assertThat(row.path("aiStatus").asText()).isEqualTo("HUMAN_REVIEW");
         assertThat(row.path("probabilityMargin").decimalValue()).isEqualByComparingTo("0.85");
+        // mock vision answers carry no vision source, so a trust-score refit never learns from them
+        assertThat(row.path("visionSource").isNull()).isTrue();
 
         JsonNode metrics = objectMapper.readTree(mockMvc.perform(get("/api/v1/ai/metrics").header("X-Adjuster-Token", token))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());

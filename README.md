@@ -16,6 +16,7 @@ An end-to-end First Notice of Loss (FNOL) claims intelligence platform for fast,
 ## End-to-end flow
 
 ```text
+0. Policyholder portal       report a loss (WEB), track it, add requested photos (separate app, no adjuster access)
 1. FNOL intake               claim, policy, claimant, evidence URIs, channel
 2. Input validation (HRP1)   format guardrail + intake review flags
 3. Context enrichment        policy, claim history, frequency risk
@@ -54,7 +55,8 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs
 | Hash-chained audit trail + `chainValid` + PDF report | Done |
 | ClaimCenter draft → decision status, attachments, tracked review actions; sync status for retry | Done (retry job not built) |
 | Adjuster queue (API + console page) | Done |
-| Console wired to live data; channel selector and photo upload | Done |
+| Console wired to live data; internal intake (phone, agent) with channel selector and photo upload | Done |
+| Policyholder claims portal (separate app on 5174): report a loss, track it with claim + policy number, add requested photos; never sees AI findings, reserve or notes | Done |
 | Reproducible demo (`.env.demo`, `run-all.sh`, 7 scenarios) | Done |
 | Authentication | Shared adjuster token only (prototype) |
 
@@ -68,7 +70,7 @@ fnol-agents/          Agents, vision providers, EvidenceImageLoader, rule provid
 fnol-guardrails/      Input, output, PII and coverage guardrails
 fnol-orchestrator/    FNOLOrchestrator, IntakeReviewService, ExplanationBuilder, STP settings
 fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V8, PDF
-frontend/             React + Vite console: intake, claim dashboard, queue, audit trail
+frontend/             React + Vite adjuster workspace (src/) and policyholder portal (portal/)
 demo-scenarios/       Seven scenario payloads, run-all.sh, duplicate script
 postman/              Request collection
 docs/                 Architecture, ADRs, agents, API, database, Guidewire, traceability
@@ -96,8 +98,10 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/api/v1/health` | Health check |
-| POST | `/api/v1/fnol/intake` | Submit an FNOL and receive the full analysis |
-| GET | `/api/v1/fnol/status/{claimId}` | Saved claim row (status, decision, flags, failure reason, sync status) |
+| POST | `/api/v1/portal/claims` | Policyholder reports a loss (channel WEB); returns a receipt without AI findings or reserve |
+| GET | `/api/v1/portal/claims/{claimId}?policyNumber=` | Policyholder tracks a claim: plain-language stage, dates, requested photos, acknowledgement letter |
+| POST 🔒 | `/api/v1/fnol/intake` | Internal intake (phone, agent, API): submit an FNOL and receive the full analysis |
+| GET 🔒 | `/api/v1/fnol/status/{claimId}` | Saved claim row (status, decision, flags, failure reason, sync status) |
 | GET 🔒 | `/api/v1/fnol/{claimId}/explanation` | Saved WHY panel |
 | GET 🔒 | `/api/v1/fnol/{claimId}/analysis` | Full AI analysis saved at intake (no description text) |
 | GET 🔒 | `/api/v1/fnol/{claimId}/documents` | Evidence on the claim (photos and references) |
@@ -131,7 +135,8 @@ If port 5432 is already in use on your machine, add `POSTGRES_HOST_PORT=5433` in
 
 | Service | URL |
 |---|---|
-| Console | http://localhost:5173 (queue at `/queue`) |
+| Adjuster workspace | http://localhost:5173 (queue at `/queue`) |
+| Policyholder portal | http://localhost:5174 (report, track, upload links) |
 | API health | http://localhost:8080/api/v1/health |
 | Mock PolicyCenter | http://localhost:9090/pc/policies/POL-AUTO-112233 |
 
@@ -144,8 +149,9 @@ Copy `.env.example` to `.env`, set `GEMINI_API_KEY`, `FNOL_ADJUSTER_TOKEN` and, 
 ### Tests and builds
 
 ```bash
-mvn -q test                                   # backend: 249 tests
-cd frontend && npm install && npm run build    # console
+mvn -q test                                   # backend tests
+cd frontend && npm install && npm run build    # adjuster workspace
+npm run build:portal                           # policyholder portal (dist-portal/, no adjuster token)
 ```
 
 ## Demo scenarios
@@ -178,7 +184,8 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_ORCHESTRATOR_POOL_SIZE` / `_QUEUE_SIZE` | `8` / `32` | Branch executor bounds (2 tasks per intake) |
 | `FNOL_STP_REQUIRE_ADVISORY_REVIEW` | `true` | STP-eligible claims wait for an adjuster |
 | `FNOL_ADJUSTER_TOKEN` | empty (all adjuster requests rejected) | Shared secret for adjuster endpoints; also baked into the console build |
-| `FNOL_CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Allowed browser origins |
+| `FNOL_CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5174` | Allowed browser origins (workspace and portal) |
+| `FNOL_PORTAL_BASE_URL` | `http://localhost:5174` | Portal address used in one-time upload links |
 | `FNOL_EVIDENCE_ALLOWED_HOSTS` | empty | https hosts evidence photos may be downloaded from |
 | `GEMINI_API_KEY` | empty | Gemini key (sent as `x-goog-api-key` header) |
 | `GEMINI_VISION_ENABLED` | `true` | `false` = deterministic mock vision |

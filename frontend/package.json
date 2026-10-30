@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:portal": "vite --config vite.portal.config.ts --host 0.0.0.0",
     "build": "tsc && vite build",
+    "build:portal": "tsc && vite build --config vite.portal.config.ts",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

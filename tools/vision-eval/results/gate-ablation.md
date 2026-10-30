@@ -16,16 +16,16 @@ Wrong answers (lenient) and the checks that stop them:
 - Car damages 305.png: answered MULTIPLE, true WINDSHIELD, confidence 0.9, margin 0.00 -> AMBIGUOUS_DAMAGE_TYPE
 - Car damages 1153.png: answered FRONT_BUMPER, true SIDE_PANEL, confidence 0.9, margin 0.70 -> **not stopped by any vision check**
 
-## Run `v3-subject` (32 photos, 6 wrong answers, lenient)
+## Run `v3-subject` (50 photos, 9 wrong answers, lenient)
 
 | Checks applied | Auto-approvable | Wrong answers let through (lenient / strict) | Right answers sent to adjuster |
 |---|---|---|---|
-| Confidence factor only (>= 0.85) | 32/32 | 6 / 14 | 0 |
-| + AMBIGUOUS_DAMAGE_TYPE (margin >= 0.30) | 21/32 | 1 / 3 | 6 |
-| + SEVERITY_ESTIMATE_MISMATCH | 21/32 | 1 / 3 | 6 |
-| + PHOTO_SUBJECT_MISMATCH (subject = VEHICLE) | 21/32 | 1 / 3 | 6 |
+| Confidence factor only (>= 0.85) | 50/50 | 9 / 22 | 0 |
+| + AMBIGUOUS_DAMAGE_TYPE (margin >= 0.30) | 32/50 | 2 / 4 | 11 |
+| + SEVERITY_ESTIMATE_MISMATCH | 32/50 | 2 / 4 | 11 |
+| + PHOTO_SUBJECT_MISMATCH (subject = VEHICLE) | 32/50 | 2 / 4 | 11 |
 
-Photo subject reported: VEHICLE 32 (every photo is a car).
+Photo subject reported: VEHICLE 50 (every photo is a car).
 
 Wrong answers (lenient) and the checks that stop them:
 
@@ -35,3 +35,6 @@ Wrong answers (lenient) and the checks that stop them:
 - Car damages 707.png: answered MULTIPLE, true SIDE_PANEL, confidence 0.9, margin 0.05 -> AMBIGUOUS_DAMAGE_TYPE
 - Car damages 305.png: answered MULTIPLE, true WINDSHIELD, confidence 0.9, margin 0.10 -> AMBIGUOUS_DAMAGE_TYPE
 - Car damages 1153.png: answered FRONT_BUMPER, true SIDE_PANEL, confidence 0.9, margin 0.70 -> **not stopped by any vision check**
+- Car damages 1143.jpg: answered MULTIPLE, true SIDE_PANEL, confidence 0.9, margin 0.10 -> AMBIGUOUS_DAMAGE_TYPE
+- Car damages 1336.png: answered MULTIPLE, true SIDE_PANEL, confidence 0.9, margin 0.55 -> **not stopped by any vision check**
+- Car damages 900.png: answered MULTIPLE, true REAR_BUMPER, confidence 0.9, margin 0.10 -> AMBIGUOUS_DAMAGE_TYPE

@@ -6,10 +6,11 @@ All platform endpoints are served by `fnol-api` on port 8080 under `/api/v1`. Da
 
 | Endpoint group | Auth |
 |---|---|
-| `GET /health`, `POST /fnol/intake`, `GET /fnol/status/{claimId}` | Open |
+| `GET /health`, `POST /portal/claims`, `GET /portal/claims/{claimId}?policyNumber=`, `GET`/`POST /public/upload/{token}` | Open: the policyholder portal. Answers never include AI findings, reserve, flags or adjuster notes. |
+| `POST /fnol/intake`, `GET /fnol/status/{claimId}` | Adjuster token (below): internal intake and the full claim row. |
 | `POST /fnol/{claimId}/review`, `GET /fnol/{claimId}/audit`, `GET /fnol/{claimId}/audit/pdf`, `GET /fnol/{claimId}/explanation`, `GET /fnol/{claimId}/documents`, `GET /fnol/{claimId}/documents/{documentId}/content`, `GET /fnol/queue` | Header `X-Adjuster-Token` must equal `fnol.security.adjuster-token` (env `FNOL_ADJUSTER_TOKEN`). Missing or wrong token → `401 UNAUTHORIZED`. If no token is configured, every request to these endpoints is rejected. |
 
-CORS allows only the origins in `fnol.cors.allowed-origins` (env `FNOL_CORS_ALLOWED_ORIGINS`, default `http://localhost:5173`), methods GET/POST/OPTIONS, headers `Content-Type` and `X-Adjuster-Token`.
+CORS allows only the origins in `fnol.cors.allowed-origins` (env `FNOL_CORS_ALLOWED_ORIGINS`, default `http://localhost:5173,http://localhost:5174`), methods GET/POST/OPTIONS, headers `Content-Type` and `X-Adjuster-Token`.
 
 ## Claim statuses
 
@@ -42,7 +43,7 @@ All errors use this body (`claimId` is present only when a failed intake was sav
 
 | HTTP | `error` | When | Saved as |
 |---|---|---|---|
-| 400 | `VALIDATION_ERROR` | Bean validation or input guardrail (policy format `POL-TYPE-123456`, state CA/NY/TX/FL/IL, date not in future, description present); invalid review decision; bad queue paging | — |
+| 400 | `VALIDATION_ERROR` | Missing or unreadable JSON body; bean validation (message names the fields only) or input guardrail (policy format `POL-TYPE-123456`, state CA/NY/TX/FL/IL, date not in future, description present); invalid review decision; bad queue paging | — |
 | 401 | `UNAUTHORIZED` | Adjuster endpoint without a valid `X-Adjuster-Token` | — |
 | 409 | `DUPLICATE_FNOL` | Same policy + incident date + state already in flight or stored (REJ- rows are ignored). `claimId` = the original claim, which gets a `DUPLICATE_SUBMISSION` gate flag and a `DuplicateCheck` audit event; an original in `STRAIGHT_THROUGH_PROCESSING` goes back to `HUMAN_REVIEW` | — |
 | 409 | `CLAIM_ID_CONFLICT` | ClaimCenter returned a claim ID already in the database; the stored claim is not overwritten | — |
@@ -57,7 +58,7 @@ All errors use this body (`claimId` is present only when a failed intake was sav
 ## `GET /api/v1/health`
 `200 {"status":"UP"}`
 
-## `POST /api/v1/fnol/intake`
+## `POST /api/v1/fnol/intake` (token)
 
 Request (required: `policyNumber`, `incidentDate`, `state`, `description`):
 
@@ -151,7 +152,30 @@ Response `200` (abridged):
 - `branchB.subrogation` is assessed in Branch B (third-party liability and `complianceNotes`) and finalised at the gate with Branch A's severity.
 - The ClaimCenter claim is created as `DRAFT_PENDING_REVIEW` (or `OPEN` for STP with advisory review off).
 
-## `GET /api/v1/fnol/status/{claimId}`
+## Policyholder portal
+
+The portal (`frontend/portal`, port 5174) is a separate build from the adjuster workspace and never carries the
+adjuster token.
+
+- `POST /api/v1/portal/claims` with the intake payload (`channel` is ignored and set to `WEB`). Runs the same intake
+  as `POST /fnol/intake` (same validation, duplicate check and error codes) but returns only a receipt:
+
+```json
+{
+  "claimId": "CLM-2026-000033", "lineOfBusiness": "AUTO", "incidentDate": "2026-09-20", "reportedOn": "2026-10-30",
+  "stage": "IN_REVIEW", "stageTitle": "Your claim is being reviewed", "stageText": "A licensed claims adjuster …",
+  "acknowledgedOn": "2026-10-30", "acknowledgeBy": "2026-11-14", "decisionBy": null,
+  "photosRequested": [], "letter": "Dear Avery Johnson, …"
+}
+```
+
+- `GET /api/v1/portal/claims/{claimId}?policyNumber=POL-AUTO-112233`: the same view. The policy number must match
+  (case and surrounding spaces ignored); a wrong policy number and an unknown claim give the same `404 NOT_FOUND`.
+- `stage`: `IN_REVIEW` (also used for an investigation, in neutral words), `ACTION_NEEDED` (open photo request or
+  `NEEDS_MORE_INFO`), `ACCEPTED`, `DECIDED`, `CLOSED`, `SPECIALIST` (REJ- claims). `letter` is the acknowledgement
+  letter stored in ClaimCenter, `null` if ClaimCenter is unavailable.
+
+## `GET /api/v1/fnol/status/{claimId}` (token)
 The saved claim row, or `404`:
 
 ```json

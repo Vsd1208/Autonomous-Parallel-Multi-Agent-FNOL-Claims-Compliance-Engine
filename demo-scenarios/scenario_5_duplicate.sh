@@ -4,6 +4,8 @@
 set -uo pipefail
 
 URL="${API_URL:-http://localhost:8080}/api/v1/fnol/intake"
+# Internal intake needs the adjuster token (.env.demo sets demo-adjuster-token).
+TOKEN="${ADJUSTER_TOKEN:-demo-adjuster-token}"
 DATE=$(date -d "-$((31 + RANDOM % 120)) days" +%F 2>/dev/null || date -v-"$((31 + RANDOM % 120))"d +%F)
 
 PAYLOAD='{
@@ -19,7 +21,7 @@ PAYLOAD='{
 }'
 
 echo "First submission (incident date $DATE):"
-curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD"
+curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" -X POST "$URL" -H "Content-Type: application/json" -H "X-Adjuster-Token: $TOKEN" -d "$PAYLOAD"
 
 echo "Second submission (duplicate):"
-curl -s -w "\nHTTP Status: %{http_code}\n" -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD"
+curl -s -w "\nHTTP Status: %{http_code}\n" -X POST "$URL" -H "Content-Type: application/json" -H "X-Adjuster-Token: $TOKEN" -d "$PAYLOAD"

@@ -2,7 +2,7 @@
 
 One card per AI component in the FNOL engine: what it is for, what it was measured on, how well it does, where it
 fails, and where a person must decide. Figures are from `tools/vision-eval` and `tools/second-opinion` as of
-29 Oct 2026; samples are still small and every number should be re-read from the latest reports.
+30 Oct 2026; samples are still small and every number should be re-read from the latest reports.
 
 The engine is advisory. No AI component pays, denies or closes a claim: a licensed adjuster decides, and every AI
 output is written to the claim's tamper-evident audit chain.
@@ -16,8 +16,8 @@ output is written to the claim's tamper-evident audit chain.
 | **Purpose** | From the claim photos: the damaged vehicle area (AUTO) or the cause of loss (HOME), severity, a repair-cost estimate, photo quality, and what the photos show. |
 | **Type** | General-purpose multimodal model from a third party, used through its API with a fixed prompt (`GeminiVisionProvider`), temperature 0, thinking off. Not trained or fine-tuned for insurance. |
 | **Inputs sent** | Up to 6 claim photos per claim, faces and licence plates blurred first, the odometer / VIN photo withheld. No claimant text, name or policy data. |
-| **Measured on** | 32 labelled car-damage photos (Humans in the Loop, CC0), one photo per call, current prompt (run `v3-subject`); 33 more under the previous prompt. |
-| **Results** | Damaged area right (any damaged area / the main one): **81% / 56%**. Car photos recognised as a vehicle: 32/32. |
+| **Measured on** | 50 labelled car-damage photos (Humans in the Loop, CC0), one photo per call, current prompt (run `v3-subject`); 33 more under the previous prompt. |
+| **Results** | Damaged area right (any damaged area / the main one): **82% / 56%**. Car photos recognised as a vehicle: 50/50. With all checks on, wrong answers that could reach straight-through processing fall from 9 to 1 of 50. |
 | **Confidence** | Its self-reported confidence is about 0.9 for nearly every answer and does not separate right from wrong (AUC 0.52). It is not used as the AI confidence once the trust score ships (card 3). |
 | **Known failure modes** | Hedges ("multiple areas") on unclear photos; occasionally a confident wrong area (photo 1153: front bumper for side-panel damage at a 0.70 probability margin). Dollar estimates and severity are **not validated** (no dataset with repair costs). The property prompt (HOME) has not been evaluated yet (53 labelled FEMA photos are prepared). |
 | **Controls** | Probability-margin check (`AMBIGUOUS_DAMAGE_TYPE`), second-opinion check (`MODEL_DISAGREEMENT`), photo-subject check, severity/estimate consistency, reserve capped at the lower of claim and estimate, flood exclusion flag, fallback to a human on any error or timeout. |
@@ -31,7 +31,7 @@ output is written to the claim's tamper-evident audit chain.
 | **Type** | CLIP ViT-B/32 image encoder (LAION, MIT licence, safetensors weights) with a logistic-regression head for the vehicle area; zero-shot heads for the photo subject and the home cause of loss. Served by `fnol-vision-ml` on the insurer's own infrastructure. |
 | **Training data** | 441 car-damage photos with damage outlines (Humans in the Loop, CC0); labels derived from the outlines. |
 | **Results (out-of-fold)** | Vehicle area right (main / any): 65% / 81%. Home cause of loss (zero-shot, 53 FEMA photos): 85%. Photo subject: 441/441 car photos as vehicle, 48/53 home photos as building. |
-| **As a check on Gemini** | Of 46 Gemini answers that pass the confidence and margin checks, it flagged **both wrong ones** (2/2) and 4 of 6 with the wrong main area, while sending 4 right answers to an adjuster. |
+| **As a check on Gemini** | Of 56 Gemini answers that pass the confidence and margin checks, it flagged **both wrong ones** (2/2) and 4 of 6 with the wrong main area, while sending 4 right answers to an adjuster. |
 | **Known failure modes** | Weak on windshields (6 training photos; no properly licensed photos found to add). On laboratory crash-test photos (NHTSA) it named the right area first for 1 of 6. The 0.15 threshold has not been checked on home claims. |
 | **Human decision** | It only adds a flag and a note; the adjuster sees both models' answers side by side. |
 
@@ -41,9 +41,11 @@ output is written to the claim's tamper-evident audit chain.
 |---|---|
 | **Purpose** | Replace Gemini's uninformative self-reported confidence with the measured probability that the damaged area is right. Used by the straight-through confidence factor (0.85) and shown on the claim. |
 | **Type** | Logistic regression on the probability margin, the second opinion's agreement and whether a specific area was named (`tools/vision-eval/trust_score.py`, `TrustScorer`). |
-| **Results (leave-one-image-out, 32 photos, current prompt)** | Separation of right from wrong answers: **AUC 0.65** (Gemini's own confidence 0.52). At the 0.85 threshold: **1 wrong answer passes instead of 6**; 21 of 32 answers pass instead of 32. |
-| **Status** | **Not active.** It ships only when measured on a single prompt with at least 50 photos and better than Gemini's raw confidence on the Brier score; until then the app uses Gemini's confidence and relies on the other checks. |
-| **Known limits** | Vehicle claims only (trained on car photos). Calibration error is still high at this sample size. |
+| **Results (leave-one-image-out, 50 photos, current prompt)** | Separation of right from wrong answers: **AUC 0.68** (Gemini's own confidence 0.52). At the 0.85 threshold: **1 wrong answer passes instead of 9**; 31 of 50 answers pass instead of 50. |
+| **Status** | **Active since 30 Oct 2026** (50 photos, one prompt, Brier 0.127 against 0.154 for Gemini's confidence). It is re-checked automatically: a prompt, model or thinking-budget change switches it off until re-measured. |
+| **Uncertainty** | 95% bootstrap ranges: Brier 0.127 (0.074-0.186), calibration error 0.212 (0.091-0.263). Gemini's own confidence: Brier 0.154 (0.073-0.234). |
+| **Known limits** | Vehicle claims only (trained on car photos). Calibration error is still high at this sample size: it ranks answers well, but a score of 0.80 is not yet exactly 80% right. Lighter smoothing lowered the error to 0.14 under nested cross-validation, but within the uncertainty and with a negative weight on the probability margin, so it was not shipped. |
+| **Updates** | `tools/vision-eval/refit_from_feedback.py` adds adjuster-confirmed damage types from claims answered with the same model and prompt, and replaces the app's trust score only if it passes the same shipping rules (better than Gemini's confidence, no worse than the current trust score, sensible weight directions). |
 
 ## 4. Privacy redaction
 

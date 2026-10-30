@@ -15,7 +15,11 @@ fnol:
     # Empty means those endpoints reject every request.
     adjuster-token: ${FNOL_ADJUSTER_TOKEN:}
   cors:
-    allowed-origins: ${FNOL_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+    # Adjuster workspace (5173) and policyholder portal (5174)
+    allowed-origins: ${FNOL_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
+  portal:
+    # Where the policyholder portal runs; one-time upload links sent to claimants point here.
+    base-url: ${FNOL_PORTAL_BASE_URL:http://localhost:5174}
   evidence:
     # Comma-separated https hosts the API may download evidence photos from. Empty = data: URIs only.
     allowed-hosts: ${FNOL_EVIDENCE_ALLOWED_HOSTS:}
