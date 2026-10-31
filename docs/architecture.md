@@ -67,8 +67,8 @@ The **Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine** is a dec
 | `fnol-agents` | Agents, vision providers, `EvidenceImageLoader`, deadline / coverage / subrogation providers, Gemini `RestTemplate` |
 | `fnol-guardrails` | Input, output, PII and validation guardrails |
 | `fnol-orchestrator` | `FNOLOrchestrator`, `IntakeReviewService`, `GateConsistencyChecker`, `ExplanationBuilder`, `ClaimTypeValidator`, `OrchestratorProperties`, `StpProperties` |
-| `fnol-api` | REST controller, error mapping, adjuster-token and CORS filters, `AuditService` (hash chain), `FailedIntakeRecorder`, `DuplicateSubmissionRecorder`, `IdempotencyStore`, JPA entities, Flyway V1–V7, PDF report |
+| `fnol-api` | REST controller, error mapping, adjuster-token and CORS filters, `AuditService` (hash chain), `FailedIntakeRecorder`, `DuplicateSubmissionRecorder`, `IdempotencyStore`, JPA entities, Flyway V1–V17, PDF report |
 | `frontend` | React + Vite adjuster workspace (`src/`: internal intake, claim dashboard, queue, audit trail) and policyholder portal (`portal/`: report, track, add requested photos; built without the adjuster token) |
 
 ## Human-in-the-loop
-The platform recommends; adjusters decide. With the default `fnol.stp.require-advisory-review=true`, every claim — including STP-eligible ones — waits in the adjuster queue for a human decision. Turning the flag off lets STP-eligible claims be filed without a human step; that is a business decision, see ADR-009. Statutory deadlines, coverage rules and subrogation weights are synthetic prototype values.
+The platform recommends; adjusters decide. With the default `fnol.stp.require-advisory-review=true`, every claim — including STP-eligible ones — waits in the adjuster queue for a human decision. Turning the flag off lets STP-eligible claims be filed without a human step; that is a business decision, see ADR-009. Coverage rules and subrogation weights are synthetic prototype values; the state claim clock cites real regulations but has not been legally reviewed ([legal-compliance.md](legal-compliance.md)).

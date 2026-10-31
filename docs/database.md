@@ -2,7 +2,7 @@
 
 ## Database Engine
 - **Target**: PostgreSQL 16 (docker-compose image `postgres:16-alpine`)
-- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V13; Hibernate runs with `ddl-auto: validate`
+- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V17; Hibernate runs with `ddl-auto: validate`
 - **ORM**: Spring Data JPA / Hibernate 6
 - **Tests**: H2 in PostgreSQL mode with `ddl-auto: create-drop` (Flyway disabled); the migrations are exercised by `docker compose up`
 
@@ -23,6 +23,10 @@
 | V11 | `V11__add_photo_angle.sql` | `claim_documents.angle` |
 | V12 | `V12__add_analysis_json.sql` | `claims.analysis_json` |
 | V13 | `V13__add_upload_requests.sql` | `upload_requests` table (one-time claimant photo links) |
+| V14 | `V14__add_claim_document_phash.sql` | `claim_documents.phash` (64-bit perceptual hash for `PHOTO_REUSED`); index on `sha256` |
+| V15 | `V15__add_ai_feedback.sql` | `ai_feedback` table: each adjuster decision next to the AI's view (damage type, reserve, confidence, margin, second-opinion agreement, flags) |
+| V16 | `V16__add_regulatory_deadlines.sql` | `claims.acknowledge_due`, `decision_due`, `acknowledged_at` (regulatory claim clock) |
+| V17 | `V17__add_feedback_vision_source.sql` | `ai_feedback.vision_source` (model, prompt hash and thinking budget that produced the AI answer) |
 
 ## `claims`
 
