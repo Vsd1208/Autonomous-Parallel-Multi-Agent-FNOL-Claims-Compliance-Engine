@@ -2,7 +2,8 @@
 
 One card per AI component in the FNOL engine: what it is for, what it was measured on, how well it does, where it
 fails, and where a person must decide. Figures are from `tools/vision-eval` and `tools/second-opinion` as of
-30 Oct 2026; samples are still small and every number should be re-read from the latest reports.
+30 Oct 2026; samples are still small. [metrics.md](metrics.md) is the authoritative list of every figure, with its
+run, sample size and caveat; if a number here and there differ, metrics.md is right.
 
 The engine is advisory. No AI component pays, denies or closes a claim: a licensed adjuster decides, and every AI
 output is written to the claim's tamper-evident audit chain.
