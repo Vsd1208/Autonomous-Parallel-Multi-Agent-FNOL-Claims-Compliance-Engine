@@ -1,6 +1,6 @@
-# ??? Sprint Plan — Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine
+# Sprint Plan â€” Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine
 
-> **Historical document.** This was the original 4-week plan. Some items differ from what was built (for example vision uses Google Gemini, not LangChain4j/GPT-4o, and the branches run in parallel). For the current system see the [README](../README.md), [architecture](architecture.md) and [ADRs](architecture-decisions.md).
+> **Historical document, kept for the record; not maintained.** Current plan and limits: [ROADMAP.md](ROADMAP.md). This was the original 4-week plan. Some items differ from what was built (for example vision uses Google Gemini, not LangChain4j/GPT-4o, and the branches run in parallel). For the current system see the [README](../README.md), [architecture](architecture.md) and [ADRs](architecture-decisions.md).
 
 > **Team Size:** 3 Students
 > **Total Duration:** 4 Weeks
@@ -20,7 +20,7 @@
 
 ---
 
-## Sprint 1 — "Blueprint"
+## Sprint 1 â€” "Blueprint"
 > *Lay the architectural foundation. Nothing works until everything is scaffolded.*
 
 **Duration:** Week 1
@@ -58,7 +58,7 @@ Week 1 Checklist:
 +-- Create GitHub repo + branch strategy (main / develop / feature/*)
 +-- Set up Maven parent POM with Spring Boot 3.2 BOM
 +-- Scaffold 7 Maven modules (common, mock-guidewire, agents, guardrails,
-¦   enrichment, orchestrator, api, frontend)
+â”‚   enrichment, orchestrator, api, frontend)
 +-- Configure Docker Compose (postgres, fnol-api, fnol-mock-guidewire, frontend)
 +-- Seed mock data: 3 policies + 1 existing claim + 2 policy histories
 +-- Set up Flyway with V1__init_claims_schema.sql
@@ -68,17 +68,17 @@ Week 1 Checklist:
 
 ---
 
-## Sprint 2 — "Dual Brain"
+## Sprint 2 â€” "Dual Brain"
 > *Build the two AI agent branches independently. Make each agent testable in isolation before wiring them together.*
 
 **Duration:** Week 2
 **Sprint Goal:** Branch A (Vision + Policy + Reserve) and Branch B (PII + Deadlines + Subrogation + Audit) are fully functional as standalone modules with unit tests passing.
 
 ### Epics
-- `EP-05` Branch A — Operational Agent Suite
-- `EP-06` Branch B — Legal & Compliance Agent Suite
+- `EP-05` Branch A â€” Operational Agent Suite
+- `EP-06` Branch B â€” Legal & Compliance Agent Suite
 - `EP-07` FNOL Intake Endpoint (Sequential v1)
-- `EP-08` Frontend — Intake Form Wired + Status Page
+- `EP-08` Frontend â€” Intake Form Wired + Status Page
 
 ### User Stories
 
@@ -107,14 +107,14 @@ Week 1 Checklist:
 ```
 Week 2 Checklist:
 +-- Branch A
-¦   +-- VisionDamageAgent.java (LangChain4j + GPT-4o Vision)
-¦   +-- PolicyValidatorAgent.java (WebClient ? mock PC API)
-¦   +-- ReserveCalculatorAgent.java (formula + vendor dispatch)
+â”‚   +-- VisionDamageAgent.java (LangChain4j + GPT-4o Vision)
+â”‚   +-- PolicyValidatorAgent.java (WebClient ? mock PC API)
+â”‚   +-- ReserveCalculatorAgent.java (formula + vendor dispatch)
 +-- Branch B
-¦   +-- PiiRedactionAgent.java (Regex + LLM structured output)
-¦   +-- StatutoryDeadlineAgent.java (state rules engine)
-¦   +-- SubrogationScorerAgent.java (LLM prompt scoring)
-¦   +-- AuditTrailAgent.java (SHA-256 + JPA write)
+â”‚   +-- PiiRedactionAgent.java (Regex + LLM structured output)
+â”‚   +-- StatutoryDeadlineAgent.java (state rules engine)
+â”‚   +-- SubrogationScorerAgent.java (LLM prompt scoring)
+â”‚   +-- AuditTrailAgent.java (SHA-256 + JPA write)
 +-- fnol-api: POST /intake ? sequential agent calls
 +-- React: wire form submit + status polling page
 +-- Write agent unit tests (JUnit 5 + Mockito)
@@ -122,7 +122,7 @@ Week 2 Checklist:
 
 ---
 
-## Sprint 3 — "Safety Wall"
+## Sprint 3 â€” "Safety Wall"
 > *Wire the two branches in parallel. Insert the Guardrail Layer. Implement the Reconciliation Gate. Add Claim History Enrichment.*
 
 **Duration:** Week 3
@@ -166,12 +166,12 @@ Week 2 Checklist:
 Week 3 Checklist:
 +-- FNOLOrchestrator.java: refactor to Mono.zip() parallel fan-out
 +-- fnol-guardrails module:
-¦   +-- GuardrailChain.java
-¦   +-- OutputSchemaGuard.java
-¦   +-- ConfidenceThresholdGuard.java
-¦   +-- BusinessRuleGuard.java
-¦   +-- ComplianceGuard.java
-¦   +-- FraudPatternGuard.java
+â”‚   +-- GuardrailChain.java
+â”‚   +-- OutputSchemaGuard.java
+â”‚   +-- ConfidenceThresholdGuard.java
+â”‚   +-- BusinessRuleGuard.java
+â”‚   +-- ComplianceGuard.java
+â”‚   +-- FraudPatternGuard.java
 +-- ReconciliationGate.java: STP conditions + escalation
 +-- ClaimHistoryAgent.java: fnol-enrichment module
 +-- ExplanationBuilder.java: structured ExplanationObject
@@ -182,7 +182,7 @@ Week 3 Checklist:
 
 ---
 
-## Sprint 4 — "Show Time"
+## Sprint 4 â€” "Show Time"
 > *Polish the demo. Build the 5 failure scenarios. Deploy. Record the walkthrough. Prepare the pitch.*
 
 **Duration:** Week 4
@@ -225,11 +225,11 @@ Week 3 Checklist:
 ```
 Week 4 Checklist:
 +-- demo-scenarios/ folder:
-¦   +-- scenario_1_clean_stp.json
-¦   +-- scenario_2_low_confidence.json
-¦   +-- scenario_3_compliance_block.json
-¦   +-- scenario_4_api_timeout.json
-¦   +-- scenario_5_duplicate.sh
+â”‚   +-- scenario_1_clean_stp.json
+â”‚   +-- scenario_2_low_confidence.json
+â”‚   +-- scenario_3_compliance_block.json
+â”‚   +-- scenario_4_api_timeout.json
+â”‚   +-- scenario_5_duplicate.sh
 +-- Idempotency key check in POST /intake (409 on duplicate FNOL ref)
 +-- MOCK_GW_TIMEOUT flag in mock Guidewire server
 +-- AuditViewer.jsx + jsPDF export
@@ -308,4 +308,4 @@ demo:  demo scenario files
 
 ---
 
-*Sprint Plan — Guidewire DEV-Summit 2026*
+*Sprint Plan â€” Guidewire DEV-Summit 2026*

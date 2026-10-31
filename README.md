@@ -298,6 +298,8 @@ no waiting (in one observed claim with Gemini: operational 3.9 s, legal about 1 
 
 ## Known limits
 
+What comes next and why: [docs/ROADMAP.md](docs/ROADMAP.md).
+
 - Guidewire is mocked; `PolicyCenterClient` and `ClaimCenterClient` are the swap point for real clients ([docs/guidewire-integration.md](docs/guidewire-integration.md)).
 - The adjuster token is a shared secret embedded in the console bundle — a prototype control, not authentication. `adjusterId` is taken from the request body.
 - Claims with `cc_sync_status=FAILED` are marked for retry, but no retry job exists yet.
