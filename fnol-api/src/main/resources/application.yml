@@ -2,6 +2,10 @@ server:
   port: ${SERVER_PORT:8080}
 mock-guidewire:
   base-url: ${MOCK_GUIDEWIRE_BASE_URL:http://localhost:9090}
+guidewire:
+  auth:
+    # Sent as a bearer token on PolicyCenter / ClaimCenter calls when set; the mock needs none.
+    bearer-token: ${GUIDEWIRE_AUTH_BEARER_TOKEN:}
 fnol:
   orchestrator:
     timeout-seconds: ${FNOL_ORCHESTRATOR_TIMEOUT_SECONDS:10}
