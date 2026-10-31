@@ -72,15 +72,16 @@ On the 18 photos both runs answered, the current prompt was right as often or mo
 uninformative (only 0.8 or 0.9; AUC 0.48); the probability margin separates right from wrong answers
 (AUC 0.82).
 
-Until the map ships, the app guards against hedged answers directly: the reconciliation gate raises
+Independently of any confidence score, the app guards against hedged answers directly: the reconciliation gate raises
 `AMBIGUOUS_DAMAGE_TYPE` (claim goes to an adjuster) when the probability margin is below
 `fnol.stp.min-probability-margin` (default 0.30). In `v2-multiphoto`, all 7 hedged `MULTIPLE` answers had
 a margin of 0.20 or less, and 2 of them were wrong; the gate sends all 7 to an adjuster. One wrong answer
 was confident (photo 1153: `FRONT_BUMPER` at margin 0.70 for side-panel damage), so the margin gate
 does not catch everything; the claimed-amount and severity checks remain the backstop.
 
-On 33 photos the calibrated map does not yet beat Gemini's raw confidence out of sample (Brier 0.089 vs
-0.084), so even at 50 photos `calibrate.py` will only write the map if that changes.
+At 33 photos the margin map did not yet beat Gemini's raw confidence out of sample (Brier 0.089 vs 0.084). At 50
+photos it did (0.137 vs 0.154), so `calibrate.py` wrote it to the app on 30 Oct 2026; for vehicle claims the trust
+score below then replaces it. Current figures: [docs/metrics.md](../../docs/metrics.md).
 
 The evaluation scores one photo at a time, while a claim now sends the standard set of five. The map
 therefore calibrates single-photo answers; check it against real multi-photo claims before relying on it.
@@ -98,17 +99,18 @@ python -P gate_ablation.py --run v2-multiphoto --run v3-subject      # writes re
 |---|---|---|---|---|
 | `v2-multiphoto` (33) | confidence factor only | 32 | 3 / 10 | 1 |
 | | + `AMBIGUOUS_DAMAGE_TYPE` | 25 | 1 / 3 | 6 |
-| `v3-subject` (32) | confidence factor only | 32 | 6 / 14 | 0 |
-| | + `AMBIGUOUS_DAMAGE_TYPE` (+ severity, + subject) | 21 | 1 / 3 | 6 |
+| `v3-subject` (50) | confidence factor only | 50 | 9 / 22 | 0 |
+| | + `AMBIGUOUS_DAMAGE_TYPE` (+ severity, + subject) | 32 | 2 / 4 | 11 |
 
-With the second-opinion check as well (`tools/second-opinion/compare_gemini.py`, both runs): of the 46 answers that
-pass the confidence and margin checks, 2 are wrong, and the second opinion (below 0.15 for Gemini's area) flags both,
-at the cost of 4 right answers sent to an adjuster. On these 80 answers no wrong answer reaches auto-approval with all
-checks on.
+With the second-opinion check as well (`tools/second-opinion/compare_gemini.py`, both runs): of the 56 answers that
+pass the confidence and margin checks, 2 are wrong (lenient), and the second opinion (below 0.15 for Gemini's area)
+flags both, at the cost of 4 right answers sent to an adjuster. Replayed on `v3-subject` alone, one wrong answer still
+gets through with every check on (photo 1336, a confident "multiple areas" answer the second opinion cannot check);
+see "Final result at 50 photos" below and [docs/metrics.md](../../docs/metrics.md).
 
 The margin check removes most wrong answers that the confidence factor lets through, at the cost of sending
-some right answers to an adjuster. The one wrong answer no vision check stops (photo 1153, a confident wrong
-zone) is why the claimed-amount check, coverage and the severity gate stay in front of any payment. The
+some right answers to an adjuster. Photo 1153 (a confident wrong zone) is stopped only by the second opinion and photo 1336 by no vision check;
+they are why the claimed-amount check, coverage and the severity gate stay in front of any payment. The
 severity and subject checks stop no further wrong answer on these car photos: they target other failures
 (inconsistent estimates, the wrong kind of property).
 
@@ -194,8 +196,8 @@ quota with the car run). Burst-pipe water damage has no FEMA captions to label f
 
 - **Signal: probability margin**, the gap between Gemini's two highest damage-type probabilities.
   Gemini's self-reported confidence was useless as a signal: it only ever said 0.90 or 0.95, for right
-  and wrong answers alike (AUC 0.52 on 25 photos). The margin separates specific answers (all right)
-  from hedged "MULTIPLE" answers (often wrong): AUC 0.86.
+  and wrong answers alike (AUC 0.52 on the first 25 photos, run `thinking0`). The margin separates specific answers
+  (all right) from hedged "MULTIPLE" answers (often wrong): AUC 0.86 on that run, 0.79 on the 50 `v3-subject` photos.
 - **Isotonic regression** from margin to the share of correct answers, each block shrunk toward the
   overall accuracy rather than 50%, so small groups are not dragged to extreme values.
 - **Leave-one-out** testing: every photo is scored by a map fitted without it. Calibration error is

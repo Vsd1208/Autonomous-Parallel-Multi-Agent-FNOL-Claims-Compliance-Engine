@@ -6,7 +6,8 @@ set -uo pipefail
 URL="${API_URL:-http://localhost:8080}/api/v1/fnol/intake"
 # Internal intake needs the adjuster token (.env.demo sets demo-adjuster-token).
 TOKEN="${ADJUSTER_TOKEN:-demo-adjuster-token}"
-DATE=$(date -d "-$((31 + RANDOM % 120)) days" +%F 2>/dev/null || date -v-"$((31 + RANDOM % 120))"d +%F)
+DAYS=$((1 + RANDOM % 28))
+DATE=$(date -d "-$DAYS days" +%F 2>/dev/null || date -v-"$DAYS"d +%F)
 
 PAYLOAD='{
   "policyNumber": "POL-AUTO-112233",

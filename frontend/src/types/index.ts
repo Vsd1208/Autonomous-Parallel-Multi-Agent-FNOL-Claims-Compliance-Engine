@@ -149,6 +149,16 @@ export interface ClaimResult {
   inputFlags?: string[];
   ccSyncStatus?: string;
   gateFlags?: string[];
+  fraudAnomaly?: FraudAnomaly | null;
+}
+
+/** Advisory fraud anomaly score: routes to an adjuster and suggests an SIU referral; never denies. */
+export interface FraudAnomaly {
+  score: number;
+  threshold: number;
+  anomalous: boolean;
+  topContributors: { feature: string; label: string; value: string; points: number }[];
+  basis: string | null;
 }
 
 /** Saved claim row (GET /fnol/status/{claimId}). */
@@ -193,6 +203,7 @@ export interface DashboardClaim {
   failureReason?: string | null;
   ccSyncStatus?: string | null;
   record?: ClaimRecord;
+  fraudAnomaly?: FraudAnomaly | null;
 }
 
 /** A one-time photo upload link sent to the claimant (GET /fnol/{id}/upload-requests). */

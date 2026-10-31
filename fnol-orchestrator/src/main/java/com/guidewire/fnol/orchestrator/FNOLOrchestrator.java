@@ -67,6 +67,7 @@ public class FNOLOrchestrator {
     private PhotoHistory photoHistory = PhotoHistory.NONE;
     /** Calibrated AI confidence (tools/vision-eval/trust_score.py); passes confidence through unless configured. */
     private TrustScorer trustScorer = TrustScorer.none();
+    private FraudAnomalyScorer fraudScorer = FraudAnomalyScorer.none();
     /** Independent vision model (fnol-vision-ml), asked in parallel with Gemini; disabled unless configured. */
     private SecondOpinionAgent secondOpinion = SecondOpinionAgent.disabled();
     private final PolicyValidatorAgent policy;
@@ -334,6 +335,11 @@ public class FNOLOrchestrator {
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setFraudScorer(FraudAnomalyScorer fraudScorer) {
+        this.fraudScorer = fraudScorer;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setSecondOpinion(SecondOpinionAgent secondOpinion) {
         this.secondOpinion = secondOpinion;
     }
@@ -427,7 +433,14 @@ public class FNOLOrchestrator {
 
         // Gate Step 2: Output guardrails (value ranges) and cross-branch consistency checks
         output.validate(branchA.reserve(), subrogation);
-        List<String> gateFlags = consistency.check(policyRecord, branchA);
+        List<String> checked = new ArrayList<>(consistency.check(policyRecord, branchA));
+        // Advisory fraud anomaly score: routes to an adjuster and suggests an SIU referral; never denies.
+        FraudAnomaly fraud = fraudScorer.score(FraudAnomalyScorer.features(payload, policyRecord, policyContext, branchA,
+                inputFlags.contains(IntakeReviewService.PHOTO_REUSED), LocalDate.now()));
+        if (fraud != null && fraud.anomalous()) {
+            checked.add(FraudAnomalyScorer.FRAUD_ANOMALY);
+        }
+        List<String> gateFlags = List.copyOf(checked);
         List<String> reviewFlags = new ArrayList<>(inputFlags);
         reviewFlags.addAll(gateFlags);
 
@@ -536,6 +549,7 @@ public class FNOLOrchestrator {
                                 + "yourself before relying on the damage type or estimate.";
                 case GateConsistencyChecker.CONFIDENCE_PHOTO_QUALITY_MISMATCH ->
                         "high AI confidence was reported for a poor-quality photo; do not rely on the estimate alone.";
+                case FraudAnomalyScorer.FRAUD_ANOMALY -> fraudNote(fraud);
                 default -> "review before any decision.";
             });
         }
@@ -565,7 +579,7 @@ public class FNOLOrchestrator {
         // Gate Step 6: Audit trail — one SHA-256 hashed record per agent plus the gate decision.
         // Inputs are hashed from the sanitized intake only, never the raw payload (SSN, DOB, name).
         SanitizedIntake intake = SanitizedIntake.of(payload, branchB.pii().redactedDescription());
-        List<AuditRecord> records = List.of(
+        List<AuditRecord> records = new ArrayList<>(List.of(
                 audit.record(claimId, "VisionDamageAgent",      intake,                     branchA.damageAssessment(), "SUCCESS"),
                 audit.record(claimId, "PolicyValidatorAgent",   payload.policyNumber(),     branchA.coverage(),         "SUCCESS"),
                 audit.record(claimId, "ReserveCalculatorAgent", branchA.damageAssessment(), branchA.reserve(),          "SUCCESS"),
@@ -575,7 +589,10 @@ public class FNOLOrchestrator {
                 audit.record(claimId, "ReconciliationGate",     explanation,
                         "status=" + status + ";requiresHumanValidation=" + requiresHumanValidation
                                 + ";inputFlags=" + inputFlags + ";gateFlags=" + gateFlags, status)
-        );
+        ));
+        if (fraud != null) {
+            records.add(audit.record(claimId, "FraudAnomalyScorer", intake, fraud, fraud.anomalous() ? "FLAGGED" : "SUCCESS"));
+        }
 
         BranchBResult branchBWithAudit = new BranchBResult(
                 branchB.pii(), branchB.deadline(), subrogation, records
@@ -606,8 +623,21 @@ public class FNOLOrchestrator {
                 Collections.unmodifiableList(notes),
                 inputFlags,
                 ccSyncStatus,
-                gateFlags
+                gateFlags,
+                fraud
         );
+    }
+
+    /** Explains FRAUD_ANOMALY with the features that contributed most. */
+    static String fraudNote(FraudAnomaly fraud) {
+        StringBuilder top = new StringBuilder();
+        for (FraudContribution c : fraud.topContributors()) {
+            if (!top.isEmpty()) top.append("; ");
+            top.append(c.label()).append(" ").append(c.value()).append(" (+").append(c.points()).append(")");
+        }
+        return "the claim's intake details are unusual together (anomaly score " + fraud.score() + ", threshold "
+                + fraud.threshold() + "): " + top + ". Consider a referral to the special investigations unit. "
+                + "This is a statistical signal, not a finding of fraud, and it never denies the claim.";
     }
 
     /** Adds a note for a review flag and remembers it as the reason for that flag's ClaimCenter activity. */

@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "description": "Fraud anomaly score: robust z-scores of intake features against a fitted reference profile. Routes to an adjuster and suggests an SIU referral; never denies.",
+  "dataset": "SYNTHETIC, tools/fraud-eval/fraud_eval.py, seed 20261031, 20000 claims, 4% fraud. Results on real claims are unknown.",
+  "createdAt": "2026-10-31",
+  "cap": 4.0,
+  "threshold": 5.9118,
+  "referralBudget": 0.05,
+  "features": [
+    {
+      "name": "claimRatio",
+      "label": "Amount claimed / AI estimate",
+      "type": "continuous",
+      "direction": 1,
+      "transform": "log",
+      "median": 0.002507,
+      "scale": 0.121172
+    },
+    {
+      "name": "policyAgeDays",
+      "label": "Days from policy start to loss",
+      "type": "continuous",
+      "direction": -1,
+      "transform": "log1p",
+      "median": 7.033951,
+      "scale": 0.860969
+    },
+    {
+      "name": "reportLagDays",
+      "label": "Days from loss to report",
+      "type": "continuous",
+      "direction": 1,
+      "transform": "log1p",
+      "median": 1.237623,
+      "scale": 0.866081
+    },
+    {
+      "name": "priorClaims12m",
+      "label": "Claims on the policy in the last 12 months",
+      "type": "continuous",
+      "direction": 1,
+      "transform": "none",
+      "median": 0.0,
+      "scale": 1.0
+    },
+    {
+      "name": "secondOpinionDisagreement",
+      "label": "Second opinion's disagreement with the AI damage type",
+      "type": "continuous",
+      "direction": 1,
+      "transform": "none",
+      "median": 0.26569,
+      "scale": 0.165717
+    },
+    {
+      "name": "photoReused",
+      "label": "Photo already used on another claim",
+      "type": "binary",
+      "weight": 3.0
+    }
+  ],
+  "metrics": {
+    "auc": 0.9152,
+    "precision": 0.4004,
+    "recall": 0.5628,
+    "flagRate": 0.0537,
+    "testClaims": 10000,
+    "testFraud": 382
+  },
+  "referenceCases": [
+    {
+      "claimRatio": 1.157621,
+      "policyAgeDays": 2417.25673,
+      "reportLagDays": 1.93076,
+      "priorClaims12m": 0,
+      "secondOpinionDisagreement": 0.337972,
+      "photoReused": 0,
+      "expectedScore": 1.623413
+    },
+    {
+      "claimRatio": 1.119241,
+      "policyAgeDays": 1822.94174,
+      "reportLagDays": 2.669526,
+      "priorClaims12m": 0,
+      "secondOpinionDisagreement": 0.125205,
+      "photoReused": 0,
+      "expectedScore": 0.981083
+    },
+    {
+      "claimRatio": 0.971645,
+      "policyAgeDays": 1571.528199,
+      "reportLagDays": 2.525138,
+      "priorClaims12m": 0,
+      "secondOpinionDisagreement": 0.475542,
+      "photoReused": 0,
+      "expectedScore": 1.292072
+    },
+    {
+      "claimRatio": 0.996194,
+      "policyAgeDays": 693.962885,
+      "reportLagDays": 1.693702,
+      "priorClaims12m": 0,
+      "secondOpinionDisagreement": 0.446933,
+      "photoReused": 0,
+      "expectedScore": 1.662922
+    },
+    {
+      "claimRatio": 0.999141,
+      "policyAgeDays": 2489.402196,
+      "reportLagDays": 2.195198,
+      "priorClaims12m": 0,
+      "secondOpinionDisagreement": 0.088381,
+      "photoReused": 0,
+      "expectedScore": 0.0
+    },
+    {
+      "claimRatio": 1.011972,
+      "policyAgeDays": 123.595942,
+      "reportLagDays": 2.273322,
+      "priorClaims12m": 0,
+      "secondOpinionDisagreement": 0.253375,
+      "photoReused": 0,
+      "expectedScore": 2.643094
+    }
+  ]
+}

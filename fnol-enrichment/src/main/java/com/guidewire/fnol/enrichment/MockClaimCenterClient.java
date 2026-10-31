@@ -39,7 +39,7 @@ public class MockClaimCenterClient implements ClaimCenterClient {
         rest.postForLocation(baseUrl + "/cc/claims/{claimId}/attachments", attachment, claimId);
     }
 
-    // Claim child objects, on paths shaped like the ClaimCenter Cloud API claim resources.
+    // Claim child objects, on paths modelled on (not verified against) the ClaimCenter Cloud API claim resources.
     private static final String CLAIM_API = "/cc/rest/claim/v1/claims/{claimId}";
 
     @Override

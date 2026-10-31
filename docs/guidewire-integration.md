@@ -62,8 +62,8 @@ The FNOL application NEVER directly interacts with the mock services or mock cla
 ## What the engine files in ClaimCenter
 
 The AI does not keep its own claim: it files the claim in ClaimCenter and fills it the way an adjuster works with it.
-ClaimCenter stays the system of record. The mock ClaimCenter stores each object on a path shaped like the Cloud API
-claim resources:
+ClaimCenter stays the system of record. The mock ClaimCenter stores each object on a path modelled on the Cloud API
+claim resources (not verified against them; see [What was checked against Guidewire's documentation](#what-was-checked-against-guidewires-documentation)):
 
 | ClaimCenter object | Mock path | What the engine puts there |
 |---|---|---|
@@ -80,6 +80,61 @@ of this for a claim (`GET /api/v1/fnol/{id}/claimcenter`, adjusters only).
 
 In a real deployment the same calls go to ClaimCenter's Cloud API, and a ClaimCenter app event on claim creation (for
 FNOL taken in ClaimCenter or a customer portal) would trigger the engine instead of the engine creating the claim.
+
+## What was checked against Guidewire's documentation
+
+Checked on 31 Oct 2026 against Guidewire's public Cloud API documentation (ClaimCenter Cloud API Consumer Guide). Only
+what the pages state is listed as verified.
+
+| Topic | Guidewire's Cloud API (documented) | This mock | Status |
+|---|---|---|---|
+| FNOL is a draft first | Create a draft claim with `POST /claims` in the Claim API; the response carries the claim's id and a **draft claim number**. Optionally `PATCH /claims/{claimId}` one or more times. ([The FNOL process in Cloud API](https://docs.guidewire.com/cloud/is/202603/cloudapibf/cloudAPI/ClaimCenter/fnol/executing-fnol/c_the-FNOL-process-in-Cloud-API.html)) | `POST /cc/claims` with `initialStatus: DRAFT_PENDING_REVIEW`; the claim number is final at once | Concept matches; path and numbering differ |
+| Submitting the draft | `POST /claim/v1/claims/{claimId}/submit` turns the draft into an open claim with an open claim number and runs claim setup rules (segmentation, assignment, activities). A failed validation leaves the claim in draft. ([Submitting a draft claim](https://docs.guidewire.com/cloud/is/202603/cloudapibf/cloudAPI/ClaimCenter/fnol/executing-fnol/c_submitting-a-draft-claim.html)) | The adjuster's decision moves the draft to `OPEN` through `PUT /cc/claims/{id}` | Not modelled: a real adapter would call `submit` when the adjuster approves |
+| Policy on the claim | During draft creation ClaimCenter retrieves the policy from the policy administration system; unverified policies need a composite request | The engine reads the policy from mock PolicyCenter itself | Differs |
+| Exposures, activities, notes, documents | Documented as Claim API resources (the consumer guide has sections for each), but the exact paths were not confirmed | `/cc/rest/claim/v1/claims/{id}/exposures`, `/activities`, `/notes`, `/documents` | **Not verified**; the paths are this project's own |
+| Authentication | Guidewire Cloud APIs use OAuth2 tokens | No auth on the mock; a configurable bearer token (`guidewire.auth.bearer-token`) is sent when set | Seam only; token fetching not built |
+
+Endpoint paths can differ between Guidewire releases; a real adapter must be built from the tenant's own API
+definition.
+
+## Contract tests
+
+`fnol-mock-guidewire/src/test/java/com/guidewire/fnol/mock/GuidewireClientContractTest.java` exercises the engine's
+own client classes (`MockPolicyCenterClient`, `MockClaimCenterClient`) for everything the engine relies on: an
+in-force policy with term, state and line of business; coverages with a limit and a deductible; claim history; a 404
+for an unknown policy; a claim created as a draft that stays a draft until the adjuster's update; exposures,
+activities, notes and documents stored with server ids; a 404 for writes to an unknown claim.
+
+It runs against the mock on a random port in every build. To point it at another server:
+
+```bash
+GUIDEWIRE_CONTRACT_BASE_URL=https://… GUIDEWIRE_CONTRACT_TOKEN=… GUIDEWIRE_CONTRACT_POLICY=…   mvn -pl fnol-mock-guidewire -am test -Dtest=GuidewireClientContractTest -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+Against a real tenant this only becomes meaningful once a `GuidewireClaimCenterClient` maps these calls onto the
+tenant's Cloud API paths (see below); the assertions describe the engine's needs, not Guidewire's wire format.
+
+## Path to production
+
+**Nothing below is built.** It is the plan for connecting to a real Guidewire Cloud tenant.
+
+What changes:
+
+1. **Adapters.** New `GuidewirePolicyCenterClient` and `GuidewireClaimCenterClient` implementing the existing
+   interfaces, active under the `guidewire` Spring profile (the mock clients are already `@Profile("!guidewire")`).
+   They map the engine's calls onto the tenant's Cloud API: create the draft claim, add exposures, activities, notes
+   and documents, then call `submit` when the adjuster approves.
+2. **Authentication.** OAuth2 client credentials against the tenant's identity provider, with token caching and
+   refresh, replacing the static bearer token in `GuidewireAuthInterceptor`.
+3. **Events instead of polling.** Subscribe to ClaimCenter App Events (or webhooks) for claim creation and updates, so
+   FNOL taken in ClaimCenter or a Guidewire portal triggers the engine, and adjuster actions in ClaimCenter flow back.
+4. **Adjuster UI.** The React workspace would become a Jutro-based experience embedded in ClaimCenter; the engine's
+   REST API stays the back end.
+5. **Contract tests** re-pointed at a sandbox tenant through the adapters, plus field mappings validated against the
+   tenant's OpenAPI definitions.
+
+What does not change: the agents, the orchestrator, the reconciliation gate and its flags, the WHY panel, the audit
+chain, the governance rules (the AI never pays; drafts until a person decides) and the engine's database.
 
 ## Production Replacement Path
 

@@ -1,0 +1,35 @@
+{
+  "scenario": "fraud_anomaly",
+  "description": "A claim that passes every rule on its own: reported 45-75 days after the loss, about four months into the policy, asking 9.5% above the AI estimate (inside the 10% tolerance). Together these details are unusual, so the fraud anomaly score raises FRAUD_ANOMALY: HUMAN_REVIEW with an SIU-referral suggestion and the top contributing details. It never denies the claim.",
+  "daysAgoMin": 45,
+  "daysAgoMax": 75,
+  "payload": {
+    "policyNumber": "POL-AUTO-112233",
+    "incidentDate": "2026-09-01",
+    "state": "CA",
+    "description": "Vehicle involved in a minor collision. Front bumper damaged.",
+    "claimantName": "Avery Johnson",
+    "claimantDob": "01/01/1990",
+    "claimantSsn": "123-45-6789",
+    "evidenceUris": [
+      "mock://photo/normal-front-bumper-front.jpg",
+      "mock://photo/normal-front-bumper-rear.jpg",
+      "mock://photo/normal-front-bumper-left.jpg",
+      "mock://photo/normal-front-bumper-right.jpg",
+      "mock://photo/normal-front-bumper-close-up.jpg"
+    ],
+    "channel": "API",
+    "claimedAmount": 4600,
+    "evidenceAngles": [
+      "FRONT",
+      "REAR",
+      "LEFT",
+      "RIGHT",
+      "CLOSE_UP"
+    ]
+  },
+  "expectedStatus": 200,
+  "expectedClaimStatus": "HUMAN_REVIEW",
+  "expectedDecision": "ADVISORY_RECOMMENDED_ACTION",
+  "expectedGateFlag": "FRAUD_ANOMALY"
+}

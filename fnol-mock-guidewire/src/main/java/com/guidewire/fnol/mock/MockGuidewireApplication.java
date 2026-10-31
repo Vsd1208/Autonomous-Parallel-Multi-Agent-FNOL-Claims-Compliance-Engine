@@ -110,7 +110,7 @@ class ClaimCenterController {
         return attachment;
     }
 
-    // ── Claim child objects, on paths shaped like the ClaimCenter Cloud API claim resources ──
+    // ── Claim child objects, on paths modelled on (not verified against) the ClaimCenter Cloud API claim resources ──
 
     @PostMapping("/cc/rest/claim/v1/claims/{claimId}/exposures")
     @ResponseStatus(HttpStatus.CREATED)

@@ -6,3 +6,7 @@ dist-portal/
 .idea/
 .vscode/
 *.log
+__pycache__/
+*.pyc
+.env.local
+.env.*.local

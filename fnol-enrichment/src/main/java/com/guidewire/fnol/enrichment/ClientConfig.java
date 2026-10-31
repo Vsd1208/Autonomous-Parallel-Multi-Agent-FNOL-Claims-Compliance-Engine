@@ -1,5 +1,6 @@
 package com.guidewire.fnol.enrichment;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,10 +19,12 @@ class ClientConfig {
 
     @Bean
     @Primary
-    RestTemplate restTemplate(RestTemplateBuilder b) {
+    RestTemplate restTemplate(RestTemplateBuilder b,
+                              @Value("${guidewire.auth.bearer-token:}") String bearerToken) {
         return b.setConnectTimeout(Duration.ofSeconds(2))
                 .setReadTimeout(Duration.ofSeconds(3))
                 .requestFactory(SimpleClientHttpRequestFactory::new)
+                .additionalInterceptors(new GuidewireAuthInterceptor(bearerToken))
                 .build();
     }
 }

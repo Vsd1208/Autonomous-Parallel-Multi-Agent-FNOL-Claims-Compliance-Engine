@@ -2,6 +2,10 @@ server:
   port: ${SERVER_PORT:8080}
 mock-guidewire:
   base-url: ${MOCK_GUIDEWIRE_BASE_URL:http://localhost:9090}
+guidewire:
+  auth:
+    # Sent as a bearer token on PolicyCenter / ClaimCenter calls when set; the mock needs none.
+    bearer-token: ${GUIDEWIRE_AUTH_BEARER_TOKEN:}
 fnol:
   orchestrator:
     timeout-seconds: ${FNOL_ORCHESTRATOR_TIMEOUT_SECONDS:10}
@@ -10,6 +14,9 @@ fnol:
   stp:
     # true: STP-eligible claims are pre-filed but wait as PENDING_ADVISORY_REVIEW for an adjuster.
     require-advisory-review: ${FNOL_STP_REQUIRE_ADVISORY_REVIEW:true}
+    # Advisory fraud anomaly score (FRAUD_ANOMALY routes to an adjuster; never denies). Empty threshold = the fitted one.
+    fraud-anomaly-enabled: ${FNOL_STP_FRAUD_ANOMALY_ENABLED:true}
+    fraud-anomaly-threshold: ${FNOL_STP_FRAUD_ANOMALY_THRESHOLD:}
   security:
     # Shared secret for adjuster-only endpoints (review, audit, audit/pdf, explanation, queue).
     # Empty means those endpoints reject every request.

@@ -397,7 +397,37 @@ public final class Models {
             List<String> notes,
             List<String> inputFlags,           // Human Review Point 1 flags, e.g. MISSING_EVIDENCE
             String ccSyncStatus,               // SYNCED | FAILED: were the advisory and evidence attached in ClaimCenter
-            List<String> gateFlags             // reconciliation-gate consistency flags, e.g. RESERVE_EXCEEDS_COVERAGE_LIMIT
+            List<String> gateFlags,            // reconciliation-gate consistency flags, e.g. RESERVE_EXCEEDS_COVERAGE_LIMIT
+            FraudAnomaly fraudAnomaly          // advisory anomaly score with its top contributors; null when off
+    ) {
+        public FNOLResponse(String claimId, String status, BranchAResult branchA, BranchBResult branchB,
+                            PolicyHistoryContext policyContext, ExplanationObject explanation, String severityGate,
+                            Boolean eligibleForAdvisoryPrefill, Boolean requiresHumanValidation, List<String> notes,
+                            List<String> inputFlags, String ccSyncStatus, List<String> gateFlags) {
+            this(claimId, status, branchA, branchB, policyContext, explanation, severityGate, eligibleForAdvisoryPrefill,
+                    requiresHumanValidation, notes, inputFlags, ccSyncStatus, gateFlags, null);
+        }
+    }
+
+    /** One feature's share of the fraud anomaly score: its value and the points it added. */
+    public record FraudContribution(
+            String feature,
+            String label,
+            String value,
+            BigDecimal points
+    ) {}
+
+    /**
+     * Advisory fraud anomaly score: how unusual the claim's intake features are against a reference profile.
+     * At or above the threshold the gate raises FRAUD_ANOMALY, which routes the claim to an adjuster and suggests an
+     * SIU referral. It is not a finding of fraud and never denies a claim.
+     */
+    public record FraudAnomaly(
+            BigDecimal score,
+            BigDecimal threshold,
+            boolean anomalous,
+            List<FraudContribution> topContributors,
+            String basis               // what the parameters were fitted on (synthetic data; see docs/model-cards.md)
     ) {}
 
     public record ApiError(

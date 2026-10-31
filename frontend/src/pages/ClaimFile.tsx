@@ -10,7 +10,7 @@ import { angleLabel, anglesFor } from '../photoAngles';
 import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionResult } from '../components/Inspection';
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
-import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, Inspection, SecondOpinion } from '../types';
+import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, SecondOpinion } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 
@@ -204,6 +204,7 @@ const FLAG_TEXT: Record<string, string> = {
   CONFIDENCE_PHOTO_QUALITY_MISMATCH: 'High AI confidence was reported for a poor photo.',
   AMBIGUOUS_DAMAGE_TYPE: 'The AI could not settle on one damage type; check the photos yourself.',
   DUPLICATE_SUBMISSION: 'A duplicate FNOL was submitted for this loss; verify it.',
+  FRAUD_ANOMALY: 'Several intake details are unusual together. Consider an SIU referral; this is a statistical signal, not a finding of fraud.',
 };
 
 /** The decision is saved here but did not reach ClaimCenter; lets the adjuster push it again. */
@@ -336,7 +337,34 @@ function Advisory({ claim }: { claim: DashboardClaim }) {
           ))}
         </ListView>
       </Panel>
+      {claim.fraudAnomaly && <FraudAnomalyPanel fraud={claim.fraudAnomaly} />}
     </>
+  );
+}
+
+/** The anomaly score next to the WHY panel: score, threshold and the details that contributed most. */
+function FraudAnomalyPanel({ fraud }: { fraud: FraudAnomaly }) {
+  return (
+    <Panel title="Fraud Anomaly Score (advisory)" flush>
+      <DetailView rows={[
+        ['Score', `${fraud.score} points (flag at ${fraud.threshold})`],
+        ['Result', <StatusChip value={fraud.anomalous ? 'REVIEW' : 'PASS'} />],
+        ['What it means', fraud.anomalous
+          ? 'Several intake details are unusual together. Consider a referral to the special investigations unit.'
+          : 'Nothing unusual enough to flag.'],
+      ]} />
+      {fraud.topContributors.length > 0 && (
+        <ListView head={['Detail', 'Value', 'Points']}>
+          {fraud.topContributors.map((c) => (
+            <tr key={c.feature}><td>{c.label}</td><td>{c.value}</td><td>+{c.points}</td></tr>
+          ))}
+        </ListView>
+      )}
+      <p className="muted wrap" style={{ padding: '8px 12px' }}>
+        It routes the claim to you and never denies it. Calibrated on synthetic data only; its accuracy on real claims
+        is unknown. Channel, time of day, location and personal details are not used.
+      </p>
+    </Panel>
   );
 }
 

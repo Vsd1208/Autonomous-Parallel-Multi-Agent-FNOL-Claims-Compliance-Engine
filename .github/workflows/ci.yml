@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main, selection-readiness]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Maven verify, Java 17)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      # Tests use the deterministic mock providers: no network, no Gemini key, no Docker.
+      - run: mvn -B -q verify
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-coverage
+          path: '*/target/site/jacoco/'
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend (workspace and portal builds, Node 20)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:portal
+      # The policyholder portal must never carry the adjuster token or call adjuster endpoints.
+      - name: Portal bundle has no adjuster access
+        run: |
+          if grep -rqE "X-Adjuster-Token|/api/v1/fnol/|/api/v1/ai/" dist-portal/assets; then
+            echo "The portal bundle references the adjuster token or adjuster endpoints"; exit 1
+          fi
+
+  python:
+    name: Python (syntax check, no model downloads)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # fnol-vision-ml needs PyTorch and the CLIP weights (~1 GB) to run, so CI only checks that every script compiles.
+      - run: python -m compileall -q fnol-vision-ml tools

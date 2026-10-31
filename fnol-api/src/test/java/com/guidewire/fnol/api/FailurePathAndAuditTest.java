@@ -142,8 +142,10 @@ class FailurePathAndAuditTest {
 
         JsonNode trail = getAudit(claimId);
         assertThat(trail.path("chainValid").asBoolean()).isTrue();
-        assertThat(trail.path("records")).hasSize(8);   // 7 pipeline events + the stored evidence reference
-        assertThat(trail.path("records").get(7).path("agentName").asText()).isEqualTo("EvidenceStore");
+        // 7 pipeline events + the fraud anomaly score + the stored evidence reference
+        assertThat(trail.path("records")).hasSize(9);
+        assertThat(trail.path("records").get(7).path("agentName").asText()).isEqualTo("FraudAnomalyScorer");
+        assertThat(trail.path("records").get(8).path("agentName").asText()).isEqualTo("EvidenceStore");
         assertThat(trail.path("records").get(0).path("seq").asInt()).isEqualTo(1);
         assertThat(trail.path("records").get(6).path("agentName").asText()).isEqualTo("ReconciliationGate");
 
