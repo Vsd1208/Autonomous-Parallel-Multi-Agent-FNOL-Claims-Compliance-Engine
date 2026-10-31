@@ -1,0 +1,41 @@
+# Credits and third-party licences
+
+The project's own code is under the [MIT licence](LICENSE). It bundles or downloads the third-party models, data and
+images below; each keeps its own licence. Licences were taken from the sources already cited in this repository.
+
+## Models
+
+| Component | Used for | Licence | Where |
+|---|---|---|---|
+| Google Gemini 2.5 Flash | Damage assessment, called over Google's API (not bundled) | Google's API terms of service | `GeminiVisionProvider` |
+| LAION CLIP ViT-B/32 (`laion/CLIP-ViT-B-32-laion2B-s34B-b79K`) | Image encoder of the second-opinion model; downloaded at image build time as safetensors, not committed | MIT | `fnol-vision-ml/Dockerfile`, [tools/second-opinion/README.md](tools/second-opinion/README.md) |
+| YuNet face detector (`face_detection_yunet_2023mar.onnx`, OpenCV model zoo) | Face blurring before photos leave for Gemini; committed | MIT | `fnol-vision-ml/redaction/` |
+| OpenCV and its licence-plate Haar cascade | Plate blurring | Apache-2.0 | `fnol-vision-ml/redaction/redact.py` |
+| Second-opinion head (`fnol-vision-ml/model/second-opinion-model.json`) | Trained in this project from the CC0 data below | MIT (this project) | `tools/second-opinion/build_model.py` |
+
+## Data and images
+
+| Data | Used for | Licence | Details |
+|---|---|---|---|
+| Humans in the Loop, *Car Parts and Car Damages* (Hugging Face copy `DrBimmer/car-parts-and-damage-dataset`) | Gemini evaluation, trust score, second-opinion training; four sample photos | CC0 1.0 | [tools/vision-eval/README.md](tools/vision-eval/README.md); downloaded, not committed except the samples |
+| NHTSA Vehicle Crash Test Database | Six vehicle photo sets for demos | U.S. government work, public domain | [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images/CREDITS.md) |
+| FEMA photo library (via Wikimedia Commons) | Home photo sets, home cause-of-loss evaluation, redaction evaluation | Public domain (FEMA) | [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images/CREDITS.md), `tools/vision-eval/prepare_home.py` |
+| Wikimedia Commons CC0 photos | Some home sample photos | CC0 1.0 | [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images/CREDITS.md) |
+
+Policies, claimants and claim histories in the mock Guidewire service are invented test data.
+
+## Main software dependencies
+
+| Library | Licence |
+|---|---|
+| Spring Boot, Spring Framework, Jackson, Flyway | Apache-2.0 |
+| PostgreSQL JDBC driver | BSD-2-Clause |
+| H2 (mock ClaimCenter default, tests) | MPL-2.0 / EPL-1.0 |
+| OpenPDF (audit PDF report) | LGPL-2.1 / MPL-2.0 |
+| React, React Router, Vite | MIT |
+| lucide-react (icons) | ISC |
+| Source Sans 3 (font, loaded from Google Fonts) | SIL Open Font License 1.1 |
+| PyTorch, Hugging Face Transformers | BSD-3-Clause, Apache-2.0 |
+
+Guidewire, PolicyCenter, ClaimCenter, Jutro and related names are trademarks of Guidewire Software, Inc. This project
+is not affiliated with or endorsed by Guidewire and uses no Guidewire code, logos or branding.

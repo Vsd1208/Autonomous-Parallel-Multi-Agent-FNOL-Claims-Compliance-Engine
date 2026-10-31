@@ -59,7 +59,7 @@ Where docs, README, comments and code disagree. The code is taken as correct.
 | Finding | Where | Action |
 |---|---|---|
 | Committed Python bytecode | `fnol-vision-ml/redaction/__pycache__/redact.cpython-312.pyc` | Remove; ignore `__pycache__/`, `*.pyc` |
-| Unrelated editor-extension tooling committed | `.github/modernize/java-upgrade/**` (a VS Code "app modernization" hook recorder) | Remove from the repo (it is not part of the project) |
+| Editor-extension tooling in `.github/` | `.github/modernize/java-upgrade/**` (a VS Code extension's hook recorder) exists locally but is not tracked (its own `.gitignore` ignores everything) | None needed |
 | No CI | `.github/workflows` does not exist | Add backend, frontend and Python checks |
 | JaCoCo declared but never run | root `pom.xml:37` (pluginManagement only) | Bind `prepare-agent` and `report` |
 | Build warning | 14 × "Using platform encoding" | Set `project.build.sourceEncoding` / `project.reporting.outputEncoding` to UTF-8 |
@@ -77,7 +77,7 @@ Where docs, README, comments and code disagree. The code is taken as correct.
 | 1 | Fix every stale number and statement in section 2 | j, d | 1 h | see section 5 |
 | 2 | README first screen: problem, solution, Mermaid diagram, real-vs-simulated table, key results, 3-command quick start | j, d, b | 2 h | see section 5 |
 | 3 | `docs/metrics.md` as the single source of truth for measured numbers | b, j | 1.5 h | see section 5 |
-| 4 | Remove build artefacts and unrelated tooling; fix the encoding warning | e | 0.5 h | see section 5 |
+| 4 | Remove the committed build artefact; fix the encoding warning | e | 0.5 h | see section 5 |
 | 5 | CI workflow (Maven verify + JaCoCo artifact, frontend builds, Python compile check) with README badge | e | 1 h | see section 5 |
 | 6 | `docs/DOMAIN.md`: FNOL lifecycle and insurance terms mapped to classes | a, i | 1.5 h | see section 5 |
 | 7 | Explainable fraud anomaly score with a documented synthetic evaluation and `FRAUD_ANOMALY` routing flag | c | 5 h | see section 5 |
