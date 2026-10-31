@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Runs every demo scenario against a running stack and checks the HTTP status, claim status,
-# WHY-panel decision, error code and intake flags. Exits non-zero on any mismatch.
+# WHY-panel decision, error code, intake flags and gate flags. Exits non-zero on any mismatch.
 #
 # Needs: bash, curl, awk, sed, grep. Start the stack with mock vision first:
 #   docker compose --env-file .env.demo up -d --build
 #
-# Each scenario gets a fresh random incident date 31-150 days ago, so the script can be re-run
-# without tripping the duplicate check (a DUPLICATE_FNOL on a first submission is retried with
-# another date).
+# Each scenario gets a fresh random incident date 1-28 days ago (a scenario can set its own range with
+# "daysAgoMin" / "daysAgoMax"), so the script can be re-run without tripping the duplicate check (a
+# DUPLICATE_FNOL on a first submission is retried with another date). Most losses are reported within
+# days; a much later report is one of the details the fraud anomaly score weighs (scenario 10).
 set -uo pipefail
 
 API_URL="${API_URL:-http://localhost:8080}"
@@ -55,9 +56,11 @@ check() {   # check <scenario> <what> <expected> <actual>
 
 # Posts a scenario with a fresh date; on a date collision (409 on first submit) tries another date.
 submit_fresh() {
-  local file="$1" attempt
-  for attempt in 1 2 3 4 5; do
-    DATE=$(days_ago $((31 + RANDOM % 120)))
+  local file="$1" attempt lo hi
+  lo=$(expected "$file" daysAgoMin); lo=${lo:-1}
+  hi=$(expected "$file" daysAgoMax); hi=${hi:-28}
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    DATE=$(days_ago $((lo + RANDOM % (hi - lo + 1))))
     PAYLOAD=$(payload_with_date "$file" "$DATE")
     post "$PAYLOAD"
     if [[ "$HTTP_CODE" != "409" ]]; then return; fi
@@ -83,6 +86,12 @@ for file in "$DIR"/scenario_*.json; do
   if [[ -n "$flag" ]]; then
     if grep -qE "\"inputFlags\":\[[^]]*\"$flag\"" <<<"$BODY"; then PASSES=$((PASSES + 1));
     else FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] inputFlags: expected $flag"; fi
+  fi
+
+  gate=$(expected "$file" expectedGateFlag)
+  if [[ -n "$gate" ]]; then
+    if grep -qE "\"gateFlags\":\[[^]]*\"$gate\"" <<<"$BODY"; then PASSES=$((PASSES + 1));
+    else FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] gateFlags: expected $gate"; fi
   fi
 
   dup=$(expected "$file" expectedDuplicateStatus)
