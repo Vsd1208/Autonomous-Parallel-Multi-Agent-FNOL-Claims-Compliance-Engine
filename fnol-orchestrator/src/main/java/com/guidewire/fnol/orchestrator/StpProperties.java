@@ -68,6 +68,19 @@ public class StpProperties {
     public BigDecimal getPiiRedactionConfidence() { return piiRedactionConfidence; }
     public void setPiiRedactionConfidence(BigDecimal piiRedactionConfidence) { this.piiRedactionConfidence = piiRedactionConfidence; }
 
+    /**
+     * FRAUD_ANOMALY when the fraud anomaly score reaches this many points. Empty uses the threshold fitted in
+     * fraud-anomaly.json (a 5% referral budget on synthetic data). The flag only routes to an adjuster.
+     */
+    private BigDecimal fraudAnomalyThreshold;
+    /** false turns the fraud anomaly score off (no score, no FRAUD_ANOMALY flag). */
+    private boolean fraudAnomalyEnabled = true;
+
+    public BigDecimal getFraudAnomalyThreshold() { return fraudAnomalyThreshold; }
+    public void setFraudAnomalyThreshold(BigDecimal v) { this.fraudAnomalyThreshold = v; }
+    public boolean isFraudAnomalyEnabled() { return fraudAnomalyEnabled; }
+    public void setFraudAnomalyEnabled(boolean v) { this.fraudAnomalyEnabled = v; }
+
     public BigDecimal getSecondOpinionMinProbability() { return secondOpinionMinProbability; }
     public void setSecondOpinionMinProbability(BigDecimal v) { this.secondOpinionMinProbability = v; }
 

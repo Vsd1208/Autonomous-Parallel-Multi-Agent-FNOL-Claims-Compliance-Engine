@@ -14,6 +14,9 @@ fnol:
   stp:
     # true: STP-eligible claims are pre-filed but wait as PENDING_ADVISORY_REVIEW for an adjuster.
     require-advisory-review: ${FNOL_STP_REQUIRE_ADVISORY_REVIEW:true}
+    # Advisory fraud anomaly score (FRAUD_ANOMALY routes to an adjuster; never denies). Empty threshold = the fitted one.
+    fraud-anomaly-enabled: ${FNOL_STP_FRAUD_ANOMALY_ENABLED:true}
+    fraud-anomaly-threshold: ${FNOL_STP_FRAUD_ANOMALY_THRESHOLD:}
   security:
     # Shared secret for adjuster-only endpoints (review, audit, audit/pdf, explanation, queue).
     # Empty means those endpoints reject every request.

@@ -134,6 +134,6 @@ public class ClaimEntity {
         b.deadline(), b.subrogation(), java.util.List.of());
     return new FNOLResponse(r.claimId(), r.status(), r.branchA(), safeB, r.policyContext(), r.explanation(),
         r.severityGate(), r.eligibleForAdvisoryPrefill(), r.requiresHumanValidation(), r.notes(), r.inputFlags(),
-        r.ccSyncStatus(), r.gateFlags());
+        r.ccSyncStatus(), r.gateFlags(), r.fraudAnomaly());
   }
 }
