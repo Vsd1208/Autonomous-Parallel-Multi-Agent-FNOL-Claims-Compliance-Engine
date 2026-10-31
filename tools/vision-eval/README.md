@@ -53,7 +53,7 @@ prompt or the thinking budget.
 |---|---|---|---|---|
 | `thinking0` | single-photo prompt (before the standard photo set) | 25 | see `results/report-thinking0.md` | Kept for comparison; not used for the app map |
 | `v2-multiphoto` | multi-photo prompt, photo labelled `angle: OTHER` (prompt SHA-256 `61a89427e0e132d9`) | 33 | 91% / 67% (`results/report-v2-multiphoto.md`) | Stopped: the prompt now also asks for `photoSubject`. Kept for comparison |
-| `v3-subject` | current prompt: as v2, plus `photoSubject` (VEHICLE, BUILDING, OTHER_PROPERTY, NONE) (prompt SHA-256 `501b3308884a64f8`) | **50 (complete, 2026-10-30)** | 82% / 56% (`results/report-v3-subject.md`) | Car photos reported as VEHICLE: 50/50; self-reported confidence AUC 0.52, margin AUC 0.79. Trust score and margin map shipped to the app |
+| `v3-subject` | current prompt: as v2, plus `photoSubject` (VEHICLE, BUILDING, OTHER_PROPERTY, NONE) (prompt SHA-256 `501b3308884a64f8`) | **66** of 120 (50 on 2026-10-30, 16 on 2026-10-31; continues daily within the free tier) | 82% / 58% (`results/report-v3-subject.md`) | Car photos reported as VEHICLE: 66/66; self-reported confidence AUC 0.57, margin AUC 0.74. Trust score v3 shipped from these 66; margin map from the first 50 |
 
 `v3-subject` restarts the count because a changed prompt can change the answers. Compare it with
 `v2-multiphoto` on the photos both runs answered to see whether the extra question moved the damage-zone
@@ -99,14 +99,14 @@ python -P gate_ablation.py --run v2-multiphoto --run v3-subject      # writes re
 |---|---|---|---|---|
 | `v2-multiphoto` (33) | confidence factor only | 32 | 3 / 10 | 1 |
 | | + `AMBIGUOUS_DAMAGE_TYPE` | 25 | 1 / 3 | 6 |
-| `v3-subject` (50) | confidence factor only | 50 | 9 / 22 | 0 |
-| | + `AMBIGUOUS_DAMAGE_TYPE` (+ severity, + subject) | 32 | 2 / 4 | 11 |
+| `v3-subject` (66) | confidence factor only | 65 | 11 / 27 | 0 |
+| | + `AMBIGUOUS_DAMAGE_TYPE` (+ severity, + subject) | 42 | 2 / 4 | 14 |
 
-With the second-opinion check as well (`tools/second-opinion/compare_gemini.py`, both runs): of the 56 answers that
+With the second-opinion check as well (`tools/second-opinion/compare_gemini.py`, both runs): of the 66 answers that
 pass the confidence and margin checks, 2 are wrong (lenient), and the second opinion (below 0.15 for Gemini's area)
 flags both, at the cost of 4 right answers sent to an adjuster. Replayed on `v3-subject` alone, one wrong answer still
 gets through with every check on (photo 1336, a confident "multiple areas" answer the second opinion cannot check);
-see "Final result at 50 photos" below and [docs/metrics.md](../../docs/metrics.md).
+see "Final result at 66 photos" below and [docs/metrics.md](../../docs/metrics.md).
 
 The margin check removes most wrong answers that the confidence factor lets through, at the cost of sending
 some right answers to an adjuster. Photo 1153 (a confident wrong zone) is stopped only by the second opinion and photo 1336 by no vision check;
@@ -131,27 +131,36 @@ python -P refit_from_feedback.py --run v3-subject [--write-app]   # the same, wi
 cross-validation *inside* each training set (nested), so picking it cannot flatter the result, and every Brier score
 and calibration error comes with a 95% range from 2000 bootstrap resamples of the images.
 
-Shipped 30 Oct 2026, 50 photos, current prompt:
+Shipped 31 Oct 2026 (version 3), 66 photos, current prompt:
 
 | Confidence used | Separation (AUC) | Brier (95% range) | Calibration error (95% range) | Passing 0.85: answers / wrong |
 |---|---|---|---|---|
-| Gemini's self-reported confidence | 0.52 | 0.154 (0.073-0.234) | 0.122 (0.037-0.201) | 50 / 9 |
-| **Trust score in the app** (3 inputs, C=1) | 0.68 | 0.127 (0.074-0.186) | 0.212 (0.091-0.263) | 31 / **1** |
-| Smoothing chosen by cross-validation | 0.71 | 0.127 (0.074-0.189) | 0.143 (0.057-0.228) | 30 / 1 |
+| Gemini's self-reported confidence | 0.57 | 0.150 (0.082-0.228) | 0.090 (0.044-0.188) | 65 / 11 |
+| Previous app trust score (margin on every answer), re-measured | 0.72 | 0.121 (0.078-0.170) | 0.055 (0.045-0.171) | — |
+| **Trust score in the app** (margin only for a named area) | 0.68 | **0.118** (0.077-0.164) | **0.051** (0.025-0.132) | 41 / **1** |
 
-**What was tried to lower the calibration error (30 Oct 2026), and why the app did not change.** Stronger smoothing
-made it worse (C=0.1: 0.24), not better. Fewer inputs did not help either: the probability margin alone lets 2 wrong
-answers through. Lighter smoothing, chosen honestly by nested cross-validation, lowers the error to 0.14 at the same
-Brier, but the ranges overlap almost completely: with 9 wrong answers in 50 the difference is not reliable. And the
-lightly smoothed model gives the probability margin a *negative* weight (a clearer Gemini answer would get a lower
-trust score), which fits this sample but could not be explained to an adjuster or a regulator. The shipping rules
-refuse it, so the app keeps the trust score above. The remaining error comes mostly from one group: Gemini's
-"multiple areas" answers get a low score but are all right.
+It is calibrated within the sample's precision: it predicts 0.97 on average for answers that name an area (97.6% right)
+and 0.58 for "multiple areas" answers (56% right).
+
+**What changed on 31 Oct 2026, and why.**
+
+- *A measurement artefact in the calibration error.* Earlier reports gave the trust score a calibration error of about
+  0.21. Under leave-one-out, holding out a right answer slightly lowers its own prediction; the metric sorted answers
+  by those scores before binning, so answers with identical features were split into bins by their labels. `ece` now
+  orders the bins by the model's all-data score (features only) and measures the out-of-sample scores. Re-measured this
+  way the previous trust score was already well calibrated (0.055).
+- *The margin only counts when Gemini names an area* (`namedMargin`). For a "multiple areas" or UNKNOWN answer the
+  margin says nothing about whether an area is right; UNKNOWN answers have a margin of 1.0 and are always wrong. Using
+  it there produced the negative margin weight that the shipping rules kept refusing (driven by 2 of 66 answers), and
+  the previous app model gave UNKNOWN answers more trust (0.74) than genuine "multiple areas" answers (0.64). The new
+  weights are all positive: named-area margin +1.24, second-opinion agreement +1.46, named area +1.36.
+- The new model's AUC (0.68) is lower than the previous one's (0.72); with 12 wrong answers that difference is within
+  noise, and the Brier score and calibration error are no worse.
 
 Shipping rules (`trust_score.py --write-app`): a single run with the app's vehicle prompt, model and thinking budget;
 at least 50 evaluation photos; better Brier than Gemini's raw confidence; no worse Brier and no more wrong answers at
-0.85 than the app's current trust score on the same data; and no negative weight on the margin or the second-opinion
-agreement. The app's `TrustScorer` checks the prompt, model and thinking budget again at startup. Home claims keep
+0.85 than the app's current trust score on the same data; and no negative weight on the named-area margin or the
+second-opinion agreement. The app's `TrustScorer` checks the prompt, model and thinking budget again at startup. Home claims keep
 Gemini's confidence: the model is trained on car photos.
 
 **Learning from adjusters.** Each adjuster decision is stored next to the AI's view (`ai_feedback`), including the
@@ -162,16 +171,16 @@ answers are skipped and counted. The refit goes through the same measurement and
 confirm one main area, so these labels are stricter than the evaluation's lenient target. As of 30 Oct 2026 there is no
 usable decision yet (one recorded, a home claim).
 
-### Final result at 50 photos (2026-10-30)
+### Final result at 66 photos (2026-10-31)
 
-All checks replayed on the 50 answers of `v3-subject` (current prompt):
+All checks replayed on the 66 answers of `v3-subject` (current prompt):
 
 | Checks on | Could go straight through | Wrong answers let through | Right answers sent to an adjuster |
 |---|---|---|---|
-| Gemini's confidence only (>= 0.85) | 50/50 | 9 | 0 |
-| + answer-gap check | 32/50 | 2 | 11 |
-| + severity and photo subject | 32/50 | 2 | 11 |
-| + second-opinion model | 29/50 | **1** | 13 |
+| Gemini's confidence only (>= 0.85) | 65/66 | 11 | 0 |
+| + answer-gap check | 42/66 | 2 | 14 |
+| + severity and photo subject | 42/66 | 2 | 14 |
+| + second-opinion model | 39/66 | **1** | 16 |
 
 The one left (photo 1336) is a confident "multiple areas" answer; the second-opinion model has no "multiple" class, so it
 cannot check that kind of answer. Trust score: see the section above.

@@ -348,6 +348,7 @@ function FraudAnomalyPanel({ fraud }: { fraud: FraudAnomaly }) {
     <Panel title="Fraud Anomaly Score (advisory)" flush>
       <DetailView rows={[
         ['Score', `${fraud.score} points (flag at ${fraud.threshold})`],
+        ['Compared with reference claims', fraud.percentile != null ? `More unusual than ${fraud.percentile}%` : null],
         ['Result', <StatusChip value={fraud.anomalous ? 'REVIEW' : 'PASS'} />],
         ['What it means', fraud.anomalous
           ? 'Several intake details are unusual together. Consider a referral to the special investigations unit.'

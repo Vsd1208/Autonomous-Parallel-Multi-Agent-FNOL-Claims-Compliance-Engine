@@ -7,6 +7,9 @@ No real fraud labels are available, so the data is SYNTHETIC: a documented gener
 encodes this project's own assumptions about how fraudulent claims differ from genuine ones; the evaluation shows that
 the score recovers those assumed patterns, not that it detects real fraud. Results on real claims are unknown.
 
+One feature is not synthetic: the second-opinion disagreement of genuine claims is drawn from the real model's
+out-of-fold outputs on 441 labelled car photos (second-opinion-disagreement.json).
+
 The score (same formula as the app's FraudAnomalyScorer):
     for each continuous feature:  points = clamp(direction * (transform(x) - median) / scale, 0, cap)
     for a binary feature:         points = weight when it is 1
@@ -27,6 +30,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 APP_FILE = ROOT / "fnol-orchestrator" / "src" / "main" / "resources" / "fraud-anomaly.json"
+# REAL measured values: the second-opinion model's out-of-fold disagreement with the true damaged area on 441 labelled
+# car photos. Genuine claims draw this feature from here, so its reference profile matches what the app's model outputs.
+REAL_DISAGREEMENT = json.loads((HERE / "second-opinion-disagreement.json").read_text(encoding="utf-8"))["values"]
 REPORT = HERE / "results" / "report.md"
 
 SEED = 20261031
@@ -66,7 +72,7 @@ def genuine(rng):
         "reportLagDays": lag,
         "priorClaims12m": prior,
         "priorClaims6m": binomial(rng, prior, 0.5),
-        "secondOpinionDisagreement": 1 - rng.betavariate(5, 2),
+        "secondOpinionDisagreement": rng.choice(REAL_DISAGREEMENT),
         "photoReused": 1 if rng.random() < 0.003 else 0,
         "fraud": 0,
         "patterns": [],
@@ -88,7 +94,9 @@ def fraudulent(rng):
             c["priorClaims12m"] = poisson(rng, 1.8)
             c["priorClaims6m"] = binomial(rng, c["priorClaims12m"], 0.6)
         elif p == "photoMismatch":
-            c["secondOpinionDisagreement"] = 1 - rng.betavariate(2, 4)
+            # Photos that do not show this loss: the second opinion barely supports the claimed area. The two wrong
+            # Gemini answers measured in tools/second-opinion both had a disagreement of 0.87.
+            c["secondOpinionDisagreement"] = rng.uniform(0.80, 0.99)
         elif p == "photoReused":
             c["photoReused"] = 1
     c["fraud"], c["patterns"] = 1, chosen
@@ -208,7 +216,11 @@ def main():
 
     train, test = dataset()
     params = fit(train)
-    threshold = round(percentile([score(c, params) for c in train], 1 - REFERRAL_BUDGET), 4)
+    train_scores = [score(c, params) for c in train]
+    threshold = round(percentile(train_scores, 1 - REFERRAL_BUDGET), 4)
+    # The reference distribution of scores (0th..100th percentile): the app reports each claim's percentile, i.e. the
+    # share of reference claims that are less unusual. Checked below on the held-out half.
+    quantiles = [round(percentile(train_scores, q / 100) if q else min(train_scores), 4) for q in range(101)]
 
     y = [c["fraud"] for c in test]
     s = [score(c, params) for c in test]
@@ -217,6 +229,8 @@ def main():
     by_all_rules = confusion([all_rules(c) for c in test], y)
     by_either = confusion([fraud_rules(c) or v >= threshold for c, v in zip(test, s)], y)
     test_auc = round(auc(s, y), 4)
+    # Percentile calibration on held-out claims: the share scoring above the reference p-th percentile should be 1 - p.
+    pct_check = [(q, sum(1 for v in s if v > quantiles[q]) / len(s)) for q in (50, 80, 90, 95, 99)]
 
     per_pattern = {}
     for p in PATTERNS:
@@ -235,7 +249,7 @@ def main():
                          | {"expectedScore": round(score(c, params), 6)})
 
     write_report(params, threshold, metrics, by_score, by_fraud_rules, by_all_rules, by_either, per_pattern,
-                 single, multi, s, y, test)
+                 single, multi, s, y, test, pct_check)
     print(f"threshold {threshold}  AUC {test_auc}  precision {by_score['precision']:.3f}  "
           f"recall {by_score['recall']:.3f}  flag rate {by_score['flagRate']:.3f}")
 
@@ -250,6 +264,7 @@ def main():
             "cap": CAP,
             "threshold": threshold,
             "referralBudget": REFERRAL_BUDGET,
+            "referenceQuantiles": quantiles,
             "features": params,
             "metrics": metrics,
             "referenceCases": reference,
@@ -259,7 +274,7 @@ def main():
         print(f"wrote {APP_FILE}")
 
 
-def write_report(params, threshold, metrics, sc, fr, ar, ei, per_pattern, single, multi, s, y, test):
+def write_report(params, threshold, metrics, sc, fr, ar, ei, per_pattern, single, multi, s, y, test, pct_check):
     def row(name, m):
         return (f"| {name} | {m['flagged']} ({m['flagRate']:.1%}) | {m['precision']:.1%} | {m['recall']:.1%} |")
 
@@ -299,6 +314,15 @@ def write_report(params, threshold, metrics, sc, fr, ar, ei, per_pattern, single
         f"Fraud claims with one pattern: score {recall(single, lambda i: s[i] >= threshold)}, rules "
         f"{recall(single, lambda i: fraud_rules(test[i]))}. With two or more: score "
         f"{recall(multi, lambda i: s[i] >= threshold)}, rules {recall(multi, lambda i: fraud_rules(test[i]))}.",
+        "",
+        "## Percentile calibration (held-out)",
+        "",
+        "The app reports each claim's percentile against the training scores. If that is calibrated, the share of "
+        "held-out claims above the p-th percentile is 1 − p:",
+        "",
+        "| Percentile | Expected share above | Observed share above |",
+        "|---|---|---|",
+    ] + [f"| {q}th | {1 - q / 100:.1%} | {obs:.1%} |" for q, obs in pct_check] + [
         "",
         "## Fitted reference profile",
         "",

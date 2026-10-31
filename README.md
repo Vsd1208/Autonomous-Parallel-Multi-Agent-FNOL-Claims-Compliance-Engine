@@ -35,7 +35,7 @@ flowchart LR
 |---|---|---|---|
 | Damage assessment | **Real** Gemini 2.5 Flash API calls when a key is set; a deterministic mock for demos and tests | Demos and CI must run without a key | `GeminiVisionProvider.java`, `MockVisionProvider.java` (`fnol-agents`) |
 | Second-opinion vision model | **Real**, trained in this project on 441 public-domain photos | An independent check on a third-party model | `fnol-vision-ml/`, `tools/second-opinion/` |
-| Trust score (calibrated confidence) | **Real**, fitted and measured on 50 labelled Gemini answers | Gemini's own confidence does not separate right from wrong | `TrustScorer.java`, `tools/vision-eval/trust_score.py` |
+| Trust score (calibrated confidence) | **Real**, fitted and measured on 66 labelled Gemini answers | Gemini's own confidence does not separate right from wrong | `TrustScorer.java`, `tools/vision-eval/trust_score.py` |
 | Face and licence-plate blurring | **Real** (OpenCV, YuNet) | Photos leave for an external model | `fnol-vision-ml/redaction/` |
 | PII redaction in text | **Real**, rule-based | Personal data must not reach models or logs | `PiiRedactionAgent.java`, `PIIGuardrail.java` |
 | State claim clock (CA, NY, TX, FL, IL) | **Real citations**; a prototype not reviewed by a lawyer; 3 recovery limits unverified | Deadlines are what regulators examine | `claim-regulations.json`, `CitedDeadlineRuleProvider.java`, [docs/legal-compliance.md](docs/legal-compliance.md) |
@@ -55,11 +55,11 @@ All from small public datasets, not real claims. Every number, with its run, dat
 
 | Result | Value | Source |
 |---|---|---|
-| Wrong Gemini answers that could go straight through: confidence check only → all vision checks | **9 → 1** of 50 | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
-| Separation of right from wrong answers (AUC): trust score vs Gemini's own confidence | **0.68** vs 0.52 (50 photos) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
-| Gemini damaged area right, lenient / strict | 82% / 56% (50 photos); dollar estimates not validated | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
-| Wrong answers passing every other check that the second opinion caught | 2 of 2 (56 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests, build warnings | 272 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
+| Wrong Gemini answers that could go straight through: confidence check only → all vision checks | **11 → 1** of 66 | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
+| Trust score calibration: how far its confidence is from how often Gemini is actually right (calibration error) | **0.05** (Gemini's own confidence 0.09; 66 photos) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
+| Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
+| Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
+| Backend tests, build warnings | 275 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
 
 ### Quick start (no API key needed)
 
@@ -265,7 +265,7 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_ORCHESTRATOR_POOL_SIZE` / `_QUEUE_SIZE` | `8` / `32` | Branch executor bounds (2 tasks per intake) |
 | `FNOL_STP_REQUIRE_ADVISORY_REVIEW` | `true` | STP-eligible claims wait for an adjuster |
 | `FNOL_STP_FRAUD_ANOMALY_ENABLED` | `true` | Fraud anomaly score on or off |
-| `FNOL_STP_FRAUD_ANOMALY_THRESHOLD` | empty (the fitted 5.91) | Score at which `FRAUD_ANOMALY` is raised |
+| `FNOL_STP_FRAUD_ANOMALY_THRESHOLD` | empty (the fitted 5.86) | Score at which `FRAUD_ANOMALY` is raised |
 | `FNOL_ADJUSTER_TOKEN` | empty (all adjuster requests rejected) | Shared secret for adjuster endpoints; also baked into the console build |
 | `FNOL_CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5174` | Allowed browser origins (workspace and portal) |
 | `FNOL_PORTAL_BASE_URL` | `http://localhost:5174` | Portal address used in one-time upload links |

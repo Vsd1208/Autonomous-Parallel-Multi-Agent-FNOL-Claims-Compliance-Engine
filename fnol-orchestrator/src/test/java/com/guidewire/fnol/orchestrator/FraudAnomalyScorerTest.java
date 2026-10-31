@@ -93,4 +93,35 @@ class FraudAnomalyScorerTest {
         assertThat(scorer.score(claim(1.6, 20.0, 45.0, 2.0, 0.2, true))).isNull();
         assertThat(FraudAnomalyScorer.none().isActive()).isFalse();
     }
+
+    @Test
+    @DisplayName("The percentile rises with the score and the threshold sits at the 95th percentile (5% referral budget)")
+    void percentile() throws Exception {
+        JsonNode json = params();
+        FraudAnomalyScorer scorer = new FraudAnomalyScorer(json, stp);
+        double threshold = json.path("threshold").asDouble();
+        assertThat(scorer.percentile(threshold).doubleValue()).isCloseTo(95.0, within(0.6));
+        assertThat(scorer.percentile(-1).doubleValue()).isZero();
+        assertThat(scorer.percentile(1000).doubleValue()).isEqualTo(100.0);
+        BigDecimal previous = BigDecimal.ZERO;
+        for (double s = 0; s < 12; s += 0.25) {
+            BigDecimal p = scorer.percentile(s);
+            assertThat(p).isGreaterThanOrEqualTo(previous);
+            previous = p;
+        }
+        assertThat(scorer.score(claim(1.6, 20.0, 45.0, 2.0, 0.5, false)).percentile()).isGreaterThan(new BigDecimal("95"));
+    }
+
+    @Test
+    @DisplayName("Regression: a typical real-photo claim (second opinion at its usual 70% disagreement) is not flagged")
+    void typicalRealClaimIsNotFlagged() throws Exception {
+        // Live claim CLM-2026-000034, 31 Oct 2026: F-150 photos, policy 176 days old, reported after 8 days, asked
+        // $2,500 against a $15,000 estimate. With the old synthetic disagreement profile it scored 5.90 against 5.91.
+        FraudAnomaly a = new FraudAnomalyScorer(params(), stp).score(claim(2500 / 15000.0, 176.0, 8.0, 0.0, 0.70, false));
+        assertThat(a.anomalous()).isFalse();
+        assertThat(a.score()).isLessThan(new BigDecimal("4.5"));
+        // The real second-opinion disagreement of a correct answer (median 0.51) adds nothing.
+        assertThat(new FraudAnomalyScorer(params(), stp).score(claim(null, null, null, null, 0.51, false)).score())
+                .isEqualByComparingTo("0");
+    }
 }

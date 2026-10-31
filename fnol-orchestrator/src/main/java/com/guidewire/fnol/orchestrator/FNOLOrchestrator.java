@@ -636,7 +636,8 @@ public class FNOLOrchestrator {
             top.append(c.label()).append(" ").append(c.value()).append(" (+").append(c.points()).append(")");
         }
         return "the claim's intake details are unusual together (anomaly score " + fraud.score() + ", threshold "
-                + fraud.threshold() + "): " + top + ". Consider a referral to the special investigations unit. "
+                + fraud.threshold() + (fraud.percentile() == null ? "" : "; more unusual than " + fraud.percentile()
+                + "% of reference claims") + "): " + top + ". Consider a referral to the special investigations unit. "
                 + "This is a statistical signal, not a finding of fraud, and it never denies the claim.";
     }
 

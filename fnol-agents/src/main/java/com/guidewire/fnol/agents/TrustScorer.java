@@ -41,9 +41,14 @@ public class TrustScorer {
     private final Model full;
     private final Model marginOnly;
 
-    record Model(double margin, double agreement, double specific, double intercept) {
+    /**
+     * {@code margin} weighs the probability margin of every answer (trust-score files up to version 2);
+     * {@code namedMargin} weighs it only when Gemini names a specific area (version 3: for a "multiple areas" or
+     * UNKNOWN answer the margin says nothing about whether an area is right).
+     */
+    record Model(double margin, double namedMargin, double agreement, double specific, double intercept) {
         double score(double m, double a, double s) {
-            return 1 / (1 + Math.exp(-(intercept + margin * m + agreement * a + specific * s)));
+            return 1 / (1 + Math.exp(-(intercept + margin * m + namedMargin * m * s + agreement * a + specific * s)));
         }
     }
 
@@ -114,8 +119,8 @@ public class TrustScorer {
         for (int i = 0; i < node.path("features").size(); i++) {
             c.put(node.path("features").get(i).asText(), node.path("coef").get(i).asDouble());
         }
-        return new Model(c.getOrDefault("margin", 0.0), c.getOrDefault("agreement", 0.0),
-                c.getOrDefault("specific", 0.0), node.path("intercept").asDouble());
+        return new Model(c.getOrDefault("margin", 0.0), c.getOrDefault("namedMargin", 0.0),
+                c.getOrDefault("agreement", 0.0), c.getOrDefault("specific", 0.0), node.path("intercept").asDouble());
     }
 
     private static JsonNode read() {

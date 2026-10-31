@@ -66,4 +66,31 @@ class TrustScorerTest {
                 new BigDecimal("0.60"), "UNUSABLE", Map.of());
         assertThat(scorer.apply(fallback, null, "AUTO")).isSameAs(fallback);
     }
+
+    @Test
+    @DisplayName("The shipped trust score (namedMargin): an UNKNOWN answer never gets more trust than a 'multiple areas' one")
+    void shippedScoreIgnoresMarginWithoutANamedArea() {
+        TrustScorer scorer = new TrustScorer(true, "gemini-2.5-flash", 0);   // the real trust-score.json
+        assertThat(scorer.isActive()).isTrue();
+        // UNKNOWN puts everything on "unknown" (margin 1.0) and is always wrong in evaluation.
+        DamageAssessment unknown = new DamageAssessment("UNKNOWN", "MODERATE", new BigDecimal("3000"),
+                new BigDecimal("0.70"), "CLEAR", Map.of("UNKNOWN", new BigDecimal("1.0")), null, "VEHICLE");
+        DamageAssessment multiple = new DamageAssessment("MULTIPLE", "MODERATE", new BigDecimal("3000"),
+                new BigDecimal("0.90"), "CLEAR", Map.of("SIDE_PANEL", new BigDecimal("0.40"),
+                "MULTIPLE", new BigDecimal("0.40"), "FRONT_BUMPER", new BigDecimal("0.20")), null, "VEHICLE");
+        BigDecimal unknownTrust = scorer.apply(unknown, null, "AUTO").confidence();
+        BigDecimal multipleTrust = scorer.apply(multiple, null, "AUTO").confidence();
+        assertThat(unknownTrust).isEqualByComparingTo(multipleTrust);
+        assertThat(unknownTrust).isLessThan(new BigDecimal("0.85"));   // never straight through on confidence
+
+        // A named area: a clearer answer and an agreeing second opinion both raise the score.
+        SecondOpinion agrees = new SecondOpinion("so", Map.of("FRONT_BUMPER", new BigDecimal("0.80")), Map.of());
+        SecondOpinion disagrees = new SecondOpinion("so", Map.of("FRONT_BUMPER", new BigDecimal("0.05")), Map.of());
+        DamageAssessment unclear = new DamageAssessment("FRONT_BUMPER", "MODERATE", new BigDecimal("4200"),
+                new BigDecimal("0.90"), "CLEAR",
+                Map.of("FRONT_BUMPER", new BigDecimal("0.55"), "SIDE_PANEL", new BigDecimal("0.45")), null, "VEHICLE");
+        assertThat(scorer.apply(GEMINI, agrees, "AUTO").confidence())
+                .isGreaterThan(scorer.apply(unclear, agrees, "AUTO").confidence())
+                .isGreaterThan(scorer.apply(GEMINI, disagrees, "AUTO").confidence());
+    }
 }

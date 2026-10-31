@@ -156,6 +156,7 @@ export interface ClaimResult {
 export interface FraudAnomaly {
   score: number;
   threshold: number;
+  percentile: number | null;
   anomalous: boolean;
   topContributors: { feature: string; label: string; value: string; points: number }[];
   basis: string | null;

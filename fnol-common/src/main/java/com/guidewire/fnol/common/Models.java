@@ -425,6 +425,7 @@ public final class Models {
     public record FraudAnomaly(
             BigDecimal score,
             BigDecimal threshold,
+            BigDecimal percentile,     // share of reference claims (%) less unusual than this one; null without a reference
             boolean anomalous,
             List<FraudContribution> topContributors,
             String basis               // what the parameters were fitted on (synthetic data; see docs/model-cards.md)

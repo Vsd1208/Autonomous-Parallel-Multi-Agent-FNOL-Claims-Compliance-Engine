@@ -21,7 +21,7 @@ Scores are 1 (weak) to 5 (strong). "After" is the score once this branch's chang
 | # | Criterion | Before | After | Evidence | What a skeptical judge would say | Fix |
 |---|---|---|---|---|---|
 | a | Insurance-domain understanding | 4 | 5 | Reserve on the ClaimCenter exposure, `min(claimed, AI estimate) − deductible`, capped at the limit (`fnol-agents/.../ReserveCalculatorAgent.java:13-17`); cited claim clock per state (`docs/legal-compliance.md` §1, `claim-regulations.json`); subrogation with recovery limitation deadline; attorney-representation routing; flood exclusion flag; acknowledgement letter | "Lots of insurance terms, but where is it explained how these fit an FNOL lifecycle? No bodily injury, total loss or liability split." | `docs/DOMAIN.md`: lifecycle, terms, mapping to classes; state the scope (first-party property damage, AUTO and HOME) |
-| b | Real versus hardcoded models | 4 | 4 | Gemini called for real (`GeminiVisionProvider`); second-opinion CLIP head trained in `tools/second-opinion`; trust score fitted and measured leave-one-image-out (`tools/vision-eval/trust_score.py`); `MockVisionProvider` is deterministic for demos and tests | "50 photos is small; are the dollar estimates real? Which numbers come from which run?" | `docs/metrics.md` as the single source of truth with sample size, run and caveat per number; keep "dollar estimates not validated" prominent |
+| b | Real versus hardcoded models | 4 | 5 | Gemini called for real (`GeminiVisionProvider`); second-opinion CLIP head trained in `tools/second-opinion`; trust score fitted and measured leave-one-image-out (`tools/vision-eval/trust_score.py`); `MockVisionProvider` is deterministic for demos and tests | "50 photos is small; are the dollar estimates real? Which numbers come from which run?" | `docs/metrics.md` as the single source of truth with sample size, run and caveat per number; keep "dollar estimates not validated" prominent |
 | c | Fraud detection depth | 2 | 3 | Duplicate FNOL (`DuplicateSubmissionRecorder`), photo reuse by SHA-256 / dHash (`EvidenceStore.java:132`), claim frequency and incident-near-policy-start (`IntakeReviewService.java:26-27,71`), claimed-above-estimate (`GateConsistencyChecker.java:92`) | "Every fraud signal is a hand-written rule. Nothing combines them or is measured." | Phase 4: an explainable anomaly score over intake features, measured on a documented synthetic set, routing only (`FRAUD_ANOMALY`) |
 | d | Real versus simulated data and integrations | 3 | 4 | Honest statement in `docs/guidewire-integration.md`; seeded mock policies; real NHTSA/FEMA/CC0 photos with credits | "README says deadlines are synthetic, the legal doc says they are cited. The mock uses `/cc/rest/claim/v1/...` paths: are those Guidewire's real ones?" | A "What is real vs simulated" table at the top of the README; reword the mock paths as "modelled on, not verified against" unless verified |
 | e | Code quality and tests | 4 | 5 | 253 tests across 6 modules, deterministic providers, Testcontainers-free | "No CI, no coverage report, a committed `.pyc`, an encoding warning, `FNOLOrchestrator` is 732 lines, `ApiExceptionHandler` lives inside `FNOLController.java`" | CI workflow with JaCoCo report and badge; fix the encoding warning; remove build artefacts |
@@ -93,12 +93,14 @@ Re-assessed on branch `selection-readiness`, 31 Oct 2026.
 
 | Command | Result |
 |---|---|
-| `mvn -B clean verify` | BUILD SUCCESS. **272 tests, 0 failures** (fnol-agents 84, fnol-orchestrator 80, fnol-api 64, fnol-mock-guidewire 19, fnol-guardrails 13, fnol-enrichment 12). **0 build warnings** (was 14). JaCoCo instruction coverage: guardrails 96%, orchestrator 93%, mock-guidewire 93%, agents 85%, api 79%, enrichment 66% |
+| `mvn -B clean verify` | BUILD SUCCESS. **275 tests, 0 failures** (fnol-agents 85, fnol-orchestrator 82, fnol-api 64, fnol-mock-guidewire 19, fnol-guardrails 13, fnol-enrichment 12). **0 build warnings** (was 14). JaCoCo instruction coverage: guardrails 96%, orchestrator 93%, mock-guidewire 93%, agents 85%, api 79%, enrichment 66% |
 | `cd frontend && npm ci && npm run build && npm run build:portal` | Both builds succeed; the portal bundle contains no adjuster token or adjuster endpoint (the CI check) |
 | `python -m compileall -q fnol-vision-ml tools` | Passes (no Python unit tests exist; the model service needs ~1 GB of weights) |
-| `python -P tools/fraud-eval/fraud_eval.py --write-app` | AUC 0.915, precision 40.0%, recall 56.3% at a 5.4% flag rate, on synthetic held-out claims |
+| `python -P tools/fraud-eval/fraud_eval.py --write-app` | AUC 0.927, precision 44.7%, recall 57.2% at a 5.2% flag rate, on synthetic held-out claims (after the refit on real second-opinion outputs; the first version gave AUC 0.915, 40.0%, 56.3%) |
 | `python -P tools/vision-eval/gate_ablation.py --run v2-multiphoto --run v3-subject` | Unchanged results (the stale figures were in the README, not the report) |
-| `docker compose --env-file .env.demo up -d --build` + `bash demo-scenarios/run-all.sh` | **Not run**: Docker Desktop was not running. Scenarios 1 and 10 are replayed through the full Spring application by `FraudAnomalyScenarioTest` instead; the other scenarios were not re-run |
+| `docker compose … up -d` with mock vision + `bash demo-scenarios/run-all.sh` (31 Oct 2026, after the merge) | **All 10 scenarios, 29/29 checks passed** |
+| GitHub Actions CI | Passed on the pull request and on `main` after the merge |
+| Live checks with real Gemini (31 Oct 2026) | Trust score active (Gemini 0.95 → trust score 0.92 on a real claim); fraud score, audit record, portal privacy, token lockdown, 400 handling and fairness metrics all as designed. 3 of 5 real-photo claims hit Gemini's 8 s timeout (free tier) and fell back to human review as designed. One ordinary claim scored 5.90 against the fraud threshold of 5.91, which led to refitting that score on real second-opinion outputs (see [metrics.md §7](metrics.md#7-fraud-anomaly-score-synthetic-data-only)) |
 
 **One existing test changed.** `FailurePathAndAuditTest.auditChainDetectsTampering` counted exactly 8 audit records; the
 pipeline now writes a `FraudAnomalyScorer` record, so it expects 9 and also asserts where the new record sits. No test
@@ -109,7 +111,7 @@ was deleted or skipped.
 | # | Before → After | Evidence |
 |---|---|---|
 | a | 4 → 5 | [DOMAIN.md](DOMAIN.md): the FNOL lifecycle, every insurance term mapped to its class, how a decision is made, and a business case from measured outputs only |
-| b | 4 → 4 | Clearer, not stronger: [metrics.md](metrics.md) gives every figure with run, sample and caveat; the samples are still 50 photos |
+| b | 4 → 5 | [metrics.md](metrics.md) gives every figure with run, sample and caveat. Follow-up on 31 Oct 2026: 16 more photos (66), a calibration-metric artefact found and corrected, trust score v3 shipped with calibration error 0.05 and all-positive weights; the fraud score's second-opinion input fitted on real model outputs. Samples remain small (66 photos, 12 wrong) |
 | c | 2 → 3 | `FraudAnomalyScorer` with top contributors, `FRAUD_ANOMALY` routing only, audit record, fairness monitoring, model card 6, demo scenario 10, 11 new tests. Capped at 3 because the calibration is synthetic |
 | d | 3 → 4 | README "What is real and what is simulated" table; claim-clock wording fixed; [guidewire-integration.md](guidewire-integration.md) separates the FNOL draft/submit flow verified against Guidewire's public docs from the unverified child-object paths |
 | e | 4 → 5 | CI workflow (`.github/workflows/ci.yml`) with JaCoCo artifact, 0 warnings, 19 more tests including Guidewire contract tests and a Java/Python parity test. Large classes remain |
@@ -121,8 +123,6 @@ was deleted or skipped.
 
 **Not verified**
 
-- The demo stack and `run-all.sh` (Docker not running).
-- The CI workflow and the README badges on GitHub (they run once the branch is pushed).
 - Mermaid rendering on GitHub (standard `flowchart` syntax; not previewed).
 - Fraud score performance on real claims.
 
