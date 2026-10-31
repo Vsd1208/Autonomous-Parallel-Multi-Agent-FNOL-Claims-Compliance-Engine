@@ -37,7 +37,7 @@ A claim moves through these stages. The engine covers the first four and support
 | **Acknowledgement letter** | Written confirmation that the claim was received and what happens next | `AcknowledgementLetter` (fixed template, not AI), filed on the ClaimCenter claim |
 | **Subrogation** | After paying, the insurer recovers the cost from the party at fault; the right expires after the state's limitation period | `SubrogationScorerAgent`, `DeterministicSubrogationScorer`; activity due on the recovery deadline |
 | **Attorney representation** | A represented claimant must be contacted through their lawyer | `ATTORNEY_REPRESENTED` in `IntakeReviewService` |
-| **SIU (special investigations unit)** | The insurer's fraud team; adjusters refer suspicious claims to it | Fraud red flags route to an adjuster (`PHOTO_REUSED`, `HIGH_CLAIM_FREQUENCY`, `INCIDENT_NEAR_POLICY_START`, duplicates); the decision to refer is the adjuster's |
+| **SIU (special investigations unit)** | The insurer's fraud team; adjusters refer suspicious claims to it | Fraud red flags route to an adjuster (`PHOTO_REUSED`, `HIGH_CLAIM_FREQUENCY`, `INCIDENT_NEAR_POLICY_START`, duplicates), and `FraudAnomalyScorer` raises `FRAUD_ANOMALY` when several details are unusual together, with an SIU-referral suggestion; the decision to refer is the adjuster's |
 | **Inspection / appraisal** | A field, desk or body-shop inspection that sets the accident-related cost | `InspectionController`; earlier damage is excluded from the reserve |
 | **Adjuster** | The licensed person who investigates and decides the claim | Every decision path ends at `POST /fnol/{id}/review`; the AI never pays, denies or closes |
 

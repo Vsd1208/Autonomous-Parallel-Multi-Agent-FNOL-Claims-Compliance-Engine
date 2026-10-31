@@ -102,11 +102,29 @@ unknown.
 
 | Metric | Value | Date | Command |
 |---|---|---|---|
-| Backend tests | 253 passed, 0 failed (fnol-agents 84, fnol-orchestrator 72, fnol-api 61, fnol-guardrails 13, fnol-mock-guidewire 13, fnol-enrichment 10) | 31 Oct 2026 | `mvn -B verify` |
+| Backend tests | 253 passed, 0 failed before this round's changes (fnol-agents 84, fnol-orchestrator 72, fnol-api 61, fnol-guardrails 13, fnol-mock-guidewire 13, fnol-enrichment 10); current count in [AUDIT.md](AUDIT.md#5-after) | 31 Oct 2026 | `mvn -B verify` |
 | Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-orchestrator 93%, fnol-mock-guidewire 93%, fnol-agents 85%, fnol-api 78%, fnol-enrichment 65% | 31 Oct 2026 | `mvn -B verify`, then `*/target/site/jacoco/index.html` |
 | Build warnings | 0 | 31 Oct 2026 | `mvn -B verify` |
 
 These rows are updated at the end of each change set; the final values are in [AUDIT.md](AUDIT.md#5-after).
+
+## 7. Fraud anomaly score (synthetic data only)
+
+**Every number here is on synthetic data.** The generator encodes this project's assumptions about fraud, so these
+figures show the score recovers the patterns it was designed for; **performance on real claims is unknown.**
+Command: `cd tools/fraud-eval && python -P fraud_eval.py`; report:
+[tools/fraud-eval/results/report.md](../tools/fraud-eval/results/report.md). Seed 20261031, 20,000 claims (4% fraud),
+fitted without labels on one half and evaluated on the other (10,000 claims, 382 fraudulent). Measured 31 Oct 2026.
+
+| Method | Claims flagged | Precision | Recall |
+|---|---|---|---|
+| Anomaly score ≥ 5.91 (5% referral budget) | 5.4% | **40.0%** | 56.3% |
+| Existing fraud rules (photo reused, high claim frequency, loss < 30 days after policy start) | 16.4% | 13.9% | 59.7% |
+| Fraud rules + claimed > 10% above estimate + model disagreement | 34.9% | 8.7% | 79.6% |
+| Fraud rules or anomaly score | 18.6% | 15.4% | 75.1% |
+
+Separation of fraudulent from genuine claims (AUC): **0.92**. Fraud with a single pattern: score 26%, rules 46%; with
+two or more patterns: score 83%, rules 72%. The score complements the rules; it does not replace them.
 
 ## Not measured
 

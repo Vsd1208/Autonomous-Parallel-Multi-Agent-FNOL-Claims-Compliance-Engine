@@ -66,6 +66,20 @@ output is written to the claim's tamper-evident audit chain.
 | **Type** | Exact SHA-256 match or a 64-bit perceptual hash (dHash) within 5 bits, so resized or recompressed copies match. Not a learned model. |
 | **Known limits** | Cropped, mirrored or heavily edited copies can escape; photos from the internet are only caught once they appear on a claim in this system. |
 
+## 6. Fraud anomaly score
+
+| | |
+|---|---|
+| **Purpose** | Spot claims whose intake details are unusual *together*, which individual fraud rules miss, and suggest a referral to the special investigations unit (SIU). |
+| **Type** | Sum of one-sided robust z-scores against a reference profile (median and median absolute deviation per feature), capped at 4 points per feature; a reused photo adds a fixed 3 points. Not a learned classifier. `FraudAnomalyScorer`, parameters `fraud-anomaly.json`, fitted by `tools/fraud-eval/fraud_eval.py`. |
+| **Inputs** | Amount claimed / AI estimate; days from policy start to loss; days from loss to report; claims in the last 12 months; the second opinion's disagreement with the AI damage type; reused photo. |
+| **Deliberately not used** | Reporting channel, time of day, state or ZIP code, claimant name, age or any demographic, vehicle age or value: they are protected attributes or plausible proxies (income, location, working hours) and would make the score unfair. |
+| **Training data** | **Synthetic** (seed 20261031, 20,000 claims, 4% fraud); the reference profile is fitted without labels. |
+| **Results (held-out synthetic claims)** | See [metrics.md §7](metrics.md#7-fraud-anomaly-score-synthetic-data-only): AUC 0.92; at a 5% referral budget, precision 40% and recall 56%, against 14% and 60% for the existing fraud rules flagging 16% of claims. **On real claims: unknown.** |
+| **Known limits** | The synthetic generator encodes our own assumptions about fraud. Weaker than the rules on fraud with a single pattern; stronger on combinations. A deployment population that differs from the reference profile (e.g. many new policies) raises the flag rate; the threshold must be re-set on real data. |
+| **Fairness** | The AI Governance page reports each group's not-flagged rate by state, channel and line of business and marks a group below four-fifths of the best for review (`AiGovernanceService.fairness`). |
+| **Human decision** | `FRAUD_ANOMALY` only routes the claim to an adjuster with its top contributing details and an SIU-referral suggestion. It never denies, never changes the reserve, and the adjuster decides whether to refer. Turn it off with `fnol.stp.fraud-anomaly-enabled=false`; override the threshold with `fnol.stp.fraud-anomaly-threshold`. |
+
 ---
 
 ## Mapping to AI governance expectations

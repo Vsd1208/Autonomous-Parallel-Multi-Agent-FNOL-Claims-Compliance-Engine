@@ -79,6 +79,13 @@ Regex redaction of SSN (`***-**-****`), DOB (`**/**/****`), MRN (`[REDACTED_MRN]
 ### `GateConsistencyChecker`
 Cross-checks the branches and the policy: `SEVERITY_ESTIMATE_MISMATCH` (severity label vs. estimate band: MINOR < $2,000, MODERATE ≤ $10,000, else SEVERE), `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH` (vehicle damage on a HOME policy, property damage on AUTO), `MODEL_DISAGREEMENT` (the second-opinion model gives Gemini's damage type less than 0.15; on labelled car photos it caught the one confident wrong answer no other check stops, `tools/second-opinion/README.md`), `PHOTO_SUBJECT_MISMATCH` (`photoSubject` is not what the line insures: VEHICLE for AUTO, BUILDING for HOME; e.g. a house on an auto policy, a car or a boat on a home policy, or no damaged property; on a HOME policy, OTHER_PROPERTY such as a fence asks the adjuster to check other-structures or personal-property cover), `POSSIBLE_FLOOD_EXCLUSION` (FLOOD on a HOME policy: standard homeowners policies exclude flood, so an adjuster confirms the cause of loss; the AI never denies), `CONFIDENCE_PHOTO_QUALITY_MISMATCH` (confidence ≥ 0.85 on a BLURRY/UNUSABLE photo), `AMBIGUOUS_DAMAGE_TYPE` (gap between the two highest damage-type probabilities below `fnol.stp.min-probability-margin`, default 0.30; on labelled photos every wrong answer that passed the confidence factor was below it, see `tools/vision-eval/README.md`), `CLAIMED_EXCEEDS_AI_ESTIMATE` (amount claimed more than `fnol.stp.claimed-amount-tolerance`, default 10%, above the AI estimate: the adjuster requests more photos, investigates, or approves at the AI estimate). `RESERVE_EXCEEDS_COVERAGE_LIMIT` now means the loss after the deductible is above the limit (the reserve itself is capped). Flags block STP and add an explanation note.
 
+### `FraudAnomalyScorer`
+Sums one-sided robust z-scores of six intake features (amount claimed / AI estimate, days from policy start to loss,
+days from loss to report, claims in the last 12 months, second-opinion disagreement, reused photo) against a reference
+profile in `fraud-anomaly.json`. At or above `fnol.stp.fraud-anomaly-threshold` the gate raises `FRAUD_ANOMALY`: the
+claim goes to an adjuster with the top three contributing details and an SIU-referral suggestion. It never denies and
+never changes the reserve. Calibrated on synthetic data ([model-cards.md](model-cards.md), card 6).
+
 ### `AuditTrailAgent`
 SHA-256 (hex) of `String.valueOf(input)` and of the output. Callers pass a `SanitizedIntake` or agent outputs, never the raw payload. `AuditService` (in `fnol-api`) chains the records — see `docs/database.md`.
 

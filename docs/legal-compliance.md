@@ -43,7 +43,8 @@ Sources consulted: [Cal. Code Regs. tit. 10 § 2695.5](https://www.law.cornell.e
 ## 2. Unfair-discrimination testing
 
 AI Governance page, `GET /api/v1/ai/metrics` → `fairness`. By state, reporting channel and line of business:
-straight-through rate, adjuster approval rate, reserve-changed rate and reserve as a share of the amount claimed. Each
+straight-through rate, adjuster approval rate, reserve-changed rate, reserve as a share of the amount claimed, and the
+share of claims the fraud anomaly score did not flag (`FRAUD_ANOMALY` is the adverse outcome). Each
 rate is compared with the best group's; a ratio below 0.80 is flagged **Review** (the "four-fifths rule"); groups with
 fewer than 5 cases are not compared. The engine holds no protected attributes and should not, so this tests proxies
 only. It is a monitoring framework in the spirit of the NAIC AI bulletin and Colorado SB21-169, not a finding.

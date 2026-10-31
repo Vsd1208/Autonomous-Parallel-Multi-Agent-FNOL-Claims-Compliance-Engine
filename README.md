@@ -44,6 +44,7 @@ flowchart LR
 | Policies, claimants, claim history | **Simulated** seed data | No real customer data | `fnol-mock-guidewire/` |
 | Claim photos | **Real** public-domain photos (NHTSA crash tests, FEMA, CC0) | Realistic input without privacy issues | `demo-scenarios/sample-images/`, [CREDITS.md](CREDITS.md) |
 | Fraud signals | **Real** rules (duplicates, reused photos, claim frequency, early-policy losses, amount above estimate) applied to simulated data | Common fraud patterns an adjuster checks | `IntakeReviewService.java`, `GateConsistencyChecker.java`, `EvidenceStore.java` |
+| Fraud anomaly score | **Real** explainable scorer; **simulated** calibration (fitted on synthetic claims, accuracy on real claims unknown) | No labelled fraud data is public | `FraudAnomalyScorer.java`, `tools/fraud-eval/` |
 | Adjuster authentication | **Simulated**: one shared token | Prototype; real identity is out of scope | `AdjusterTokenFilter.java` |
 | Orchestration, persistence, audit chain | **Real** (Spring Boot, PostgreSQL, Flyway) | The production-shaped part of the system | `FNOLOrchestrator.java`, `AuditService.java` |
 
@@ -126,12 +127,13 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs
 | Advisory review before STP counts as filed (Human Review Point 2) | Done, on by default |
 | Adjuster review with state checks, token, audit event, modify reserve, require investigation (Human Review Point 3) | Done |
 | Failed intakes persisted and escalated (`REJ-…`); duplicates flagged for verification | Done |
+| Fraud anomaly score over six intake features with its top contributors; `FRAUD_ANOMALY` routes to an adjuster and suggests an SIU referral, never denies | Done (calibrated on synthetic data) |
 | Hash-chained audit trail + `chainValid` + PDF report | Done |
 | ClaimCenter draft → decision status, attachments, tracked review actions; sync status with a manual retry endpoint | Done (no scheduled retry job) |
 | Adjuster queue (API + console page) | Done |
 | Console wired to live data; internal intake (phone, agent) with channel selector and photo upload | Done |
 | Policyholder claims portal (separate app on 5174): report a loss, track it with claim + policy number, add requested photos; never sees AI findings, reserve or notes | Done |
-| Reproducible demo (`.env.demo`, `run-all.sh`, 9 scenarios) | Done |
+| Reproducible demo (`.env.demo`, `run-all.sh`, 10 scenarios) | Done |
 | Authentication | Shared adjuster token only (prototype) |
 
 ## Repository structure
@@ -145,7 +147,7 @@ fnol-guardrails/      Input, output, PII and coverage guardrails
 fnol-orchestrator/    FNOLOrchestrator, IntakeReviewService, ExplanationBuilder, STP settings
 fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V17, PDF
 frontend/             React + Vite adjuster workspace (src/) and policyholder portal (portal/)
-demo-scenarios/       Nine scenario payloads, run-all.sh, duplicate script, sample photos
+demo-scenarios/       Ten scenario payloads, run-all.sh, duplicate script, sample photos
 postman/              Request collection
 docs/                 Architecture, ADRs, agents, API, database, Guidewire, traceability
 ```
@@ -163,7 +165,7 @@ Severity from estimated damage: **LOW** ≤ $5,000, **MEDIUM** ≤ $20,000, **HI
 | Claim History | Claim frequency risk LOW or MEDIUM |
 | Subrogation Risk | Score < 70 |
 
-A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `PHOTO_REUSED`, `ATTORNEY_REPRESENTED`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `MODEL_DISAGREEMENT`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`; the last is raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
+A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `PHOTO_REUSED`, `ATTORNEY_REPRESENTED`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `MODEL_DISAGREEMENT`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`, raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`; and `FRAUD_ANOMALY`, raised when the fraud anomaly score reaches its threshold, `fnol.stp.fraud-anomaly-threshold`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
 
 ## API
 
@@ -205,7 +207,7 @@ Prerequisites: Java 17+, Maven 3.9+, Node 18+, Docker.
 
 ```bash
 docker compose --env-file .env.demo up -d --build
-bash demo-scenarios/run-all.sh        # posts all 9 scenarios, exits non-zero on any mismatch
+bash demo-scenarios/run-all.sh        # posts all 10 scenarios, exits non-zero on any mismatch
 ```
 
 If port 5432 is already in use on your machine, add `POSTGRES_HOST_PORT=5433` in front of the compose command.
@@ -233,7 +235,7 @@ npm run build:portal                           # policyholder portal (dist-porta
 
 ## Demo scenarios
 
-Run with mock vision (`.env.demo`). `run-all.sh` substitutes a fresh incident date per run.
+Run with mock vision (`.env.demo`). `run-all.sh` substitutes a fresh incident date per run, 1–28 days ago unless a scenario sets its own range.
 
 | # | File | Expected |
 |---|---|---|
@@ -246,6 +248,7 @@ Run with mock vision (`.env.demo`). `run-all.sh` substitutes a fresh incident da
 | 7 | `scenario_7_home_policy.json` | 200, `PENDING_ADVISORY_REVIEW` (home policy covered by DWELLING) |
 | 8 | `scenario_8_claim_above_estimate.json` | 200, `HUMAN_REVIEW` ($9,000 claimed, above the AI estimate: `CLAIMED_EXCEEDS_AI_ESTIMATE`) |
 | 9 | `scenario_9_home_flood.json` | 200, `HUMAN_REVIEW`, flag `POSSIBLE_FLOOD_EXCLUSION` (flood is excluded from homeowners policies) |
+| 10 | `scenario_10_fraud_anomaly.json` | 200, `HUMAN_REVIEW`, flag `FRAUD_ANOMALY` (reported 45–75 days late, early in the policy, 9.5% above the estimate: no single rule fires, the combination does) |
 
 Real photo sets for the claim form (**Load real photo set**): six crashed vehicles (NHTSA) and five damaged homes, one per
 cause of loss (burst pipe, trees on the roof, hurricane roof, wildfire, river flood; FEMA and CC0 photos). Credits and
@@ -261,6 +264,8 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_ORCHESTRATOR_TIMEOUT_SECONDS` | `10` | Deadline for both branches |
 | `FNOL_ORCHESTRATOR_POOL_SIZE` / `_QUEUE_SIZE` | `8` / `32` | Branch executor bounds (2 tasks per intake) |
 | `FNOL_STP_REQUIRE_ADVISORY_REVIEW` | `true` | STP-eligible claims wait for an adjuster |
+| `FNOL_STP_FRAUD_ANOMALY_ENABLED` | `true` | Fraud anomaly score on or off |
+| `FNOL_STP_FRAUD_ANOMALY_THRESHOLD` | empty (the fitted 5.91) | Score at which `FRAUD_ANOMALY` is raised |
 | `FNOL_ADJUSTER_TOKEN` | empty (all adjuster requests rejected) | Shared secret for adjuster endpoints; also baked into the console build |
 | `FNOL_CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5174` | Allowed browser origins (workspace and portal) |
 | `FNOL_PORTAL_BASE_URL` | `http://localhost:5174` | Portal address used in one-time upload links |
