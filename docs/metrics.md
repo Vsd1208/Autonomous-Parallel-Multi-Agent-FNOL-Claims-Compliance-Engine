@@ -102,11 +102,11 @@ unknown.
 
 | Metric | Value | Date | Command |
 |---|---|---|---|
-| Backend tests | 253 passed, 0 failed before this round's changes (fnol-agents 84, fnol-orchestrator 72, fnol-api 61, fnol-guardrails 13, fnol-mock-guidewire 13, fnol-enrichment 10); current count in [AUDIT.md](AUDIT.md#5-after) | 31 Oct 2026 | `mvn -B verify` |
-| Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-orchestrator 93%, fnol-mock-guidewire 93%, fnol-agents 85%, fnol-api 78%, fnol-enrichment 65% | 31 Oct 2026 | `mvn -B verify`, then `*/target/site/jacoco/index.html` |
+| Backend tests | **272 passed**, 0 failed (fnol-agents 84, fnol-orchestrator 80, fnol-api 64, fnol-mock-guidewire 19, fnol-guardrails 13, fnol-enrichment 12; fnol-common has none) | 31 Oct 2026 | `mvn -B clean verify` |
+| Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-orchestrator 93%, fnol-mock-guidewire 93%, fnol-agents 85%, fnol-api 79%, fnol-enrichment 66% | 31 Oct 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
 | Build warnings | 0 | 31 Oct 2026 | `mvn -B verify` |
 
-These rows are updated at the end of each change set; the final values are in [AUDIT.md](AUDIT.md#5-after).
+Update these rows whenever the test suite changes.
 
 ## 7. Fraud anomaly score (synthetic data only)
 

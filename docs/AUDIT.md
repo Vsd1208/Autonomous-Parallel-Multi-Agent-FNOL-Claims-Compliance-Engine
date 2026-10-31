@@ -16,20 +16,20 @@ the repository.
 
 ## 1. Rubric scorecard
 
-Scores are 1 (weak) to 5 (strong). The "After" column is filled in at the end of the work ([section 5](#5-after)).
+Scores are 1 (weak) to 5 (strong). "After" is the score once this branch's changes are in; the evidence for each change is in [section 5](#5-after).
 
-| # | Criterion | Before | Evidence | What a skeptical judge would say | Fix |
+| # | Criterion | Before | After | Evidence | What a skeptical judge would say | Fix |
 |---|---|---|---|---|---|
-| a | Insurance-domain understanding | 4 | Reserve on the ClaimCenter exposure, `min(claimed, AI estimate) − deductible`, capped at the limit (`fnol-agents/.../ReserveCalculatorAgent.java:13-17`); cited claim clock per state (`docs/legal-compliance.md` §1, `claim-regulations.json`); subrogation with recovery limitation deadline; attorney-representation routing; flood exclusion flag; acknowledgement letter | "Lots of insurance terms, but where is it explained how these fit an FNOL lifecycle? No bodily injury, total loss or liability split." | `docs/DOMAIN.md`: lifecycle, terms, mapping to classes; state the scope (first-party property damage, AUTO and HOME) |
-| b | Real versus hardcoded models | 4 | Gemini called for real (`GeminiVisionProvider`); second-opinion CLIP head trained in `tools/second-opinion`; trust score fitted and measured leave-one-image-out (`tools/vision-eval/trust_score.py`); `MockVisionProvider` is deterministic for demos and tests | "50 photos is small; are the dollar estimates real? Which numbers come from which run?" | `docs/metrics.md` as the single source of truth with sample size, run and caveat per number; keep "dollar estimates not validated" prominent |
-| c | Fraud detection depth | 2 | Duplicate FNOL (`DuplicateSubmissionRecorder`), photo reuse by SHA-256 / dHash (`EvidenceStore.java:132`), claim frequency and incident-near-policy-start (`IntakeReviewService.java:26-27,71`), claimed-above-estimate (`GateConsistencyChecker.java:92`) | "Every fraud signal is a hand-written rule. Nothing combines them or is measured." | Phase 4: an explainable anomaly score over intake features, measured on a documented synthetic set, routing only (`FRAUD_ANOMALY`) |
-| d | Real versus simulated data and integrations | 3 | Honest statement in `docs/guidewire-integration.md`; seeded mock policies; real NHTSA/FEMA/CC0 photos with credits | "README says deadlines are synthetic, the legal doc says they are cited. The mock uses `/cc/rest/claim/v1/...` paths: are those Guidewire's real ones?" | A "What is real vs simulated" table at the top of the README; reword the mock paths as "modelled on, not verified against" unless verified |
-| e | Code quality and tests | 4 | 253 tests across 6 modules, deterministic providers, Testcontainers-free | "No CI, no coverage report, a committed `.pyc`, an encoding warning, `FNOLOrchestrator` is 732 lines, `ApiExceptionHandler` lives inside `FNOLController.java`" | CI workflow with JaCoCo report and badge; fix the encoding warning; remove build artefacts |
-| f | Architecture and resilience | 4 | Two branches on a bounded executor under one deadline with interrupting cancel (`FNOLOrchestrator.java:34`); failed intakes saved as `REJ-…` (ADR-008); best-effort ClaimCenter calls with `cc_sync_status`; fail-closed redaction | "The idempotency guard's memory layer is per JVM; there is no retry job; Guidewire clients have no contract tests" | Contract tests for the Guidewire clients with configurable base URL and auth; document limits in `docs/ROADMAP.md` |
-| g | Security and privacy | 3 | SSRF-safe evidence loading (`EvidenceImageLoader.java:26-31`); PII redaction + guardrail; face/plate blurring before the external model; portal separate from the workspace and without the adjuster token; hash-chained audit | "A shared adjuster token baked into a browser bundle; `adjusterId` comes from the request body; portal tracking has no rate limit" | Keep these in Known limits (already partly there); list them in `ROADMAP.md` as next steps. Not fixed here: real authentication is a larger change |
-| h | Explainability and governance | 4 | Six-factor WHY panel (`ExplanationBuilder`); SHA-256 audit chain (`AuditService.java:19`); model cards with NAIC bulletin mapping; four-fifths fairness monitor (`AiGovernanceService.java:183-195`); adjuster feedback stored next to the AI view | "Fairness is monitoring of proxies only; the trust score's calibration error is still high" | Already stated honestly in `docs/model-cards.md`; extend fairness wording to cover the new fraud score |
-| i | Usefulness to an insurer | 3 | Governance page reports leakage kept from over-payment, routing, adjuster agreement, acknowledgement on time | "What does this save an insurer? No business case." | Business-case section in `DOMAIN.md` from measured outputs only (Phase 5, needs approval) |
-| j | Presentation and clarity of the repo | 2 | `README.md` is 228 lines and starts with a governance statement; no problem statement, picture, results or "real vs simulated" on the first screen; several stale numbers (section 2); `docs/SPRINT_PLAN.md` has broken characters (`???`, `�`); no licence; no CI badge | "I cannot tell in five minutes what it does, what is real, and how well it works" | Phase 2 README top rewrite; `docs/metrics.md`; fix every inconsistency; `ROADMAP.md`; licence (needs the team's choice) |
+| a | Insurance-domain understanding | 4 | 5 | Reserve on the ClaimCenter exposure, `min(claimed, AI estimate) − deductible`, capped at the limit (`fnol-agents/.../ReserveCalculatorAgent.java:13-17`); cited claim clock per state (`docs/legal-compliance.md` §1, `claim-regulations.json`); subrogation with recovery limitation deadline; attorney-representation routing; flood exclusion flag; acknowledgement letter | "Lots of insurance terms, but where is it explained how these fit an FNOL lifecycle? No bodily injury, total loss or liability split." | `docs/DOMAIN.md`: lifecycle, terms, mapping to classes; state the scope (first-party property damage, AUTO and HOME) |
+| b | Real versus hardcoded models | 4 | 4 | Gemini called for real (`GeminiVisionProvider`); second-opinion CLIP head trained in `tools/second-opinion`; trust score fitted and measured leave-one-image-out (`tools/vision-eval/trust_score.py`); `MockVisionProvider` is deterministic for demos and tests | "50 photos is small; are the dollar estimates real? Which numbers come from which run?" | `docs/metrics.md` as the single source of truth with sample size, run and caveat per number; keep "dollar estimates not validated" prominent |
+| c | Fraud detection depth | 2 | 3 | Duplicate FNOL (`DuplicateSubmissionRecorder`), photo reuse by SHA-256 / dHash (`EvidenceStore.java:132`), claim frequency and incident-near-policy-start (`IntakeReviewService.java:26-27,71`), claimed-above-estimate (`GateConsistencyChecker.java:92`) | "Every fraud signal is a hand-written rule. Nothing combines them or is measured." | Phase 4: an explainable anomaly score over intake features, measured on a documented synthetic set, routing only (`FRAUD_ANOMALY`) |
+| d | Real versus simulated data and integrations | 3 | 4 | Honest statement in `docs/guidewire-integration.md`; seeded mock policies; real NHTSA/FEMA/CC0 photos with credits | "README says deadlines are synthetic, the legal doc says they are cited. The mock uses `/cc/rest/claim/v1/...` paths: are those Guidewire's real ones?" | A "What is real vs simulated" table at the top of the README; reword the mock paths as "modelled on, not verified against" unless verified |
+| e | Code quality and tests | 4 | 5 | 253 tests across 6 modules, deterministic providers, Testcontainers-free | "No CI, no coverage report, a committed `.pyc`, an encoding warning, `FNOLOrchestrator` is 732 lines, `ApiExceptionHandler` lives inside `FNOLController.java`" | CI workflow with JaCoCo report and badge; fix the encoding warning; remove build artefacts |
+| f | Architecture and resilience | 4 | 4 | Two branches on a bounded executor under one deadline with interrupting cancel (`FNOLOrchestrator.java:34`); failed intakes saved as `REJ-…` (ADR-008); best-effort ClaimCenter calls with `cc_sync_status`; fail-closed redaction | "The idempotency guard's memory layer is per JVM; there is no retry job; Guidewire clients have no contract tests" | Contract tests for the Guidewire clients with configurable base URL and auth; document limits in `docs/ROADMAP.md` |
+| g | Security and privacy | 3 | 3 | SSRF-safe evidence loading (`EvidenceImageLoader.java:26-31`); PII redaction + guardrail; face/plate blurring before the external model; portal separate from the workspace and without the adjuster token; hash-chained audit | "A shared adjuster token baked into a browser bundle; `adjusterId` comes from the request body; portal tracking has no rate limit" | Keep these in Known limits (already partly there); list them in `ROADMAP.md` as next steps. Not fixed here: real authentication is a larger change |
+| h | Explainability and governance | 4 | 5 | Six-factor WHY panel (`ExplanationBuilder`); SHA-256 audit chain (`AuditService.java:19`); model cards with NAIC bulletin mapping; four-fifths fairness monitor (`AiGovernanceService.java:183-195`); adjuster feedback stored next to the AI view | "Fairness is monitoring of proxies only; the trust score's calibration error is still high" | Already stated honestly in `docs/model-cards.md`; extend fairness wording to cover the new fraud score |
+| i | Usefulness to an insurer | 3 | 4 | Governance page reports leakage kept from over-payment, routing, adjuster agreement, acknowledgement on time | "What does this save an insurer? No business case." | Business-case section in `DOMAIN.md` from measured outputs only (Phase 5, needs approval) |
+| j | Presentation and clarity of the repo | 2 | 4 | `README.md` is 228 lines and starts with a governance statement; no problem statement, picture, results or "real vs simulated" on the first screen; several stale numbers (section 2); `docs/SPRINT_PLAN.md` has broken characters (`???`, `�`); no licence; no CI badge | "I cannot tell in five minutes what it does, what is real, and how well it works" | Phase 2 README top rewrite; `docs/metrics.md`; fix every inconsistency; `ROADMAP.md`; licence (needs the team's choice) |
 
 ## 2. Consistency report
 
@@ -74,17 +74,61 @@ Where docs, README, comments and code disagree. The code is taken as correct.
 
 | Rank | Change | Criteria | Effort | Status |
 |---|---|---|---|---|
-| 1 | Fix every stale number and statement in section 2 | j, d | 1 h | see section 5 |
-| 2 | README first screen: problem, solution, Mermaid diagram, real-vs-simulated table, key results, 3-command quick start | j, d, b | 2 h | see section 5 |
-| 3 | `docs/metrics.md` as the single source of truth for measured numbers | b, j | 1.5 h | see section 5 |
-| 4 | Remove the committed build artefact; fix the encoding warning | e | 0.5 h | see section 5 |
-| 5 | CI workflow (Maven verify + JaCoCo artifact, frontend builds, Python compile check) with README badge | e | 1 h | see section 5 |
-| 6 | `docs/DOMAIN.md`: FNOL lifecycle and insurance terms mapped to classes | a, i | 1.5 h | see section 5 |
-| 7 | Explainable fraud anomaly score with a documented synthetic evaluation and `FRAUD_ANOMALY` routing flag | c | 5 h | see section 5 |
-| 8 | Guidewire: honest "modelled on" wording plus client contract tests with configurable base URL and auth | d, f | 2 h | see section 5 |
-| 9 | Root `CREDITS.md` and a licence (licence needs the team's decision) | j | 0.5 h | see section 5 |
-| 10 | `docs/ROADMAP.md`; mark `SPRINT_PLAN.md` historical and repair its characters | j | 0.5 h | see section 5 |
+| 1 | Fix every stale number and statement in section 2 | j, d | 1 h | Done |
+| 2 | README first screen: problem, solution, Mermaid diagram, real-vs-simulated table, key results, 3-command quick start | j, d, b | 2 h | Done |
+| 3 | `docs/metrics.md` as the single source of truth for measured numbers | b, j | 1.5 h | Done |
+| 4 | Remove the committed build artefact; fix the encoding warning | e | 0.5 h | Done |
+| 5 | CI workflow (Maven verify + JaCoCo artifact, frontend builds, Python compile check) with README badge | e | 1 h | Done; first run on GitHub pending |
+| 6 | `docs/DOMAIN.md`: FNOL lifecycle and insurance terms mapped to classes | a, i | 1.5 h | Done |
+| 7 | Explainable fraud anomaly score with a documented synthetic evaluation and `FRAUD_ANOMALY` routing flag | c | 5 h | Done; calibrated on synthetic data only |
+| 8 | Guidewire: honest "modelled on" wording plus client contract tests with configurable base URL and auth | d, f | 2 h | Done |
+| 9 | Root `CREDITS.md` and a licence (licence needs the team's decision) | j | 0.5 h | Done; MIT, chosen by the team |
+| 10 | `docs/ROADMAP.md`; mark `SPRINT_PLAN.md` historical and repair its characters | j | 0.5 h | Done |
 
 ## 5. After
 
-_Filled in after the work._
+Re-assessed on branch `selection-readiness`, 31 Oct 2026.
+
+**Commands and results**
+
+| Command | Result |
+|---|---|
+| `mvn -B clean verify` | BUILD SUCCESS. **272 tests, 0 failures** (fnol-agents 84, fnol-orchestrator 80, fnol-api 64, fnol-mock-guidewire 19, fnol-guardrails 13, fnol-enrichment 12). **0 build warnings** (was 14). JaCoCo instruction coverage: guardrails 96%, orchestrator 93%, mock-guidewire 93%, agents 85%, api 79%, enrichment 66% |
+| `cd frontend && npm ci && npm run build && npm run build:portal` | Both builds succeed; the portal bundle contains no adjuster token or adjuster endpoint (the CI check) |
+| `python -m compileall -q fnol-vision-ml tools` | Passes (no Python unit tests exist; the model service needs ~1 GB of weights) |
+| `python -P tools/fraud-eval/fraud_eval.py --write-app` | AUC 0.915, precision 40.0%, recall 56.3% at a 5.4% flag rate, on synthetic held-out claims |
+| `python -P tools/vision-eval/gate_ablation.py --run v2-multiphoto --run v3-subject` | Unchanged results (the stale figures were in the README, not the report) |
+| `docker compose --env-file .env.demo up -d --build` + `bash demo-scenarios/run-all.sh` | **Not run**: Docker Desktop was not running. Scenarios 1 and 10 are replayed through the full Spring application by `FraudAnomalyScenarioTest` instead; the other scenarios were not re-run |
+
+**One existing test changed.** `FailurePathAndAuditTest.auditChainDetectsTampering` counted exactly 8 audit records; the
+pipeline now writes a `FraudAnomalyScorer` record, so it expects 9 and also asserts where the new record sits. No test
+was deleted or skipped.
+
+**Evidence per improved score**
+
+| # | Before → After | Evidence |
+|---|---|---|
+| a | 4 → 5 | [DOMAIN.md](DOMAIN.md): the FNOL lifecycle, every insurance term mapped to its class, how a decision is made, and a business case from measured outputs only |
+| b | 4 → 4 | Clearer, not stronger: [metrics.md](metrics.md) gives every figure with run, sample and caveat; the samples are still 50 photos |
+| c | 2 → 3 | `FraudAnomalyScorer` with top contributors, `FRAUD_ANOMALY` routing only, audit record, fairness monitoring, model card 6, demo scenario 10, 11 new tests. Capped at 3 because the calibration is synthetic |
+| d | 3 → 4 | README "What is real and what is simulated" table; claim-clock wording fixed; [guidewire-integration.md](guidewire-integration.md) separates the FNOL draft/submit flow verified against Guidewire's public docs from the unverified child-object paths |
+| e | 4 → 5 | CI workflow (`.github/workflows/ci.yml`) with JaCoCo artifact, 0 warnings, 19 more tests including Guidewire contract tests and a Java/Python parity test. Large classes remain |
+| f | 4 → 4 | Contract tests with configurable base URL and bearer token; the per-JVM idempotency layer and the missing retry job remain ([ROADMAP.md](ROADMAP.md)) |
+| g | 3 → 3 | Unchanged: shared adjuster token, `adjusterId` from the request body, no rate limit on portal tracking (listed in [ROADMAP.md](ROADMAP.md)) |
+| h | 4 → 5 | The fraud score explains itself in the claim's AI Advisory page and audit trail; the four-fifths fairness check covers the fraud flag (`FairnessTest`) |
+| i | 3 → 4 | Business case in [DOMAIN.md §4](DOMAIN.md#4-business-case-from-what-the-system-measures); [stakeholder interview template](STAKEHOLDER_INTERVIEW_TEMPLATE.md), no answers yet |
+| j | 2 → 4 | README first screen (problem, solution, Mermaid diagram, real vs simulated, key results, quick start), CI and licence badges, MIT `LICENSE`, `CREDITS.md`, [ROADMAP.md](ROADMAP.md), `SPRINT_PLAN.md` re-encoded; all 16 inconsistencies in section 2 fixed |
+
+**Not verified**
+
+- The demo stack and `run-all.sh` (Docker not running).
+- The CI workflow and the README badges on GitHub (they run once the branch is pushed).
+- Mermaid rendering on GitHub (standard `flowchart` syntax; not previewed).
+- Fraud score performance on real claims.
+
+**Decisions that need the team**
+
+- Run the stakeholder interviews and record real answers.
+- Review the claim-clock rules with someone qualified in insurance law.
+- Whether to keep the fraud score on by default before it is checked on real claims (it only routes; it can be turned
+  off with `FNOL_STP_FRAUD_ANOMALY_ENABLED=false`).

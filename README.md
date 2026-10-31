@@ -59,7 +59,7 @@ All from small public datasets, not real claims. Every number, with its run, dat
 | Separation of right from wrong answers (AUC): trust score vs Gemini's own confidence | **0.68** vs 0.52 (50 photos) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
 | Gemini damaged area right, lenient / strict | 82% / 56% (50 photos); dollar estimates not validated | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
 | Wrong answers passing every other check that the second opinion caught | 2 of 2 (56 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests, build warnings | 253 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
+| Backend tests, build warnings | 272 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
 
 ### Quick start (no API key needed)
 
