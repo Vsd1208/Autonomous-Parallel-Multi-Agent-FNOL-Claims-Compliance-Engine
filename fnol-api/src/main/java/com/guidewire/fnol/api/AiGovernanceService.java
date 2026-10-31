@@ -192,8 +192,9 @@ public class AiGovernanceService {
     /**
      * Unfair-discrimination testing of the AI's outcomes by group (state, reporting channel, line of business): how
      * often claims went straight through, how often adjusters approved them, adjusters' reserve changes, and reserve as
-     * a share of the amount claimed. Each rate is compared with the best group's (disparity ratio); below 0.80 is
-     * flagged for review. The engine holds no protected attributes (and should not), so this tests proxies only.
+     * a share of the amount claimed, and how often the fraud anomaly score did NOT flag the claim (being flagged is the
+     * adverse outcome, so the favourable rate is compared). Each rate is compared with the best group's (disparity
+     * ratio); below 0.80 is flagged for review. The engine holds no protected attributes (and should not), so this tests proxies only.
      */
     Map<String, Object> fairness(List<ClaimEntity> filed, Map<String, AiView> views, List<AiFeedbackEntity> decisions) {
         Map<String, List<AiFeedbackEntity>> decisionsByClaim = decisions.stream()
@@ -225,10 +226,15 @@ public class AiGovernanceService {
                 row.put("approvalRate", rate(approved, ds.size()));
                 row.put("reserveChangedRate", rate(changed, ds.size()));
                 row.put("reserveToClaimed", mean(ratios));
+                long fraudFlagged = cs.stream().filter(c -> c.gateFlags != null
+                        && List.of(c.gateFlags.split(",")).contains("FRAUD_ANOMALY")).count();
+                row.put("fraudAnomalyRate", rate(fraudFlagged, cs.size()));
+                row.put("fraudClearRate", rate(cs.size() - fraudFlagged, cs.size()));
                 rows.add(row);
             });
             addDisparity(rows, "straightThroughRate", "claims");
             addDisparity(rows, "approvalRate", "decisions");
+            addDisparity(rows, "fraudClearRate", "claims");
             out.put(dimension, rows);
         });
         out.put("method", "Disparity ratio = a group's rate / the highest rate among groups with at least " + MIN_GROUP
