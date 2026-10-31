@@ -29,7 +29,8 @@ historical record in [SPRINT_PLAN.md](SPRINT_PLAN.md); this page replaces it. Me
 | Database-backed idempotency | The in-memory layer is per JVM |
 | Contract tests against a real Guidewire Cloud API sandbox | The mock is modelled on, not verified against, the Cloud API ([guidewire-integration.md](guidewire-integration.md)) |
 | Legal review of the claim clock rules | Three recovery limits are from background knowledge; no lawyer has reviewed the rule set |
-| Stakeholder interviews with claims professionals | To check the pain points and the business case against practice |
+| Stakeholder interviews with claims professionals ([template](STAKEHOLDER_INTERVIEW_TEMPLATE.md)) | To check the pain points and the business case against practice |
+| Fraud score on real labelled claims | Its calibration is synthetic ([model-cards.md](model-cards.md), card 6) |
 
 ## Known limits
 

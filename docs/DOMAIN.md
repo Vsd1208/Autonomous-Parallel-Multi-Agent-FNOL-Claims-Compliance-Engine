@@ -56,3 +56,21 @@ A claim moves through these stages. The engine covers the first four and support
    of business, photo subject, the two vision models, the flood exclusion, the claimed amount against the estimate) and
    explains the recommendation in six factors.
 6. **Who decides?** A licensed adjuster, always by default. The engine recommends and explains.
+
+## 4. Business case (from what the system measures)
+
+This section uses only numbers the repository measures or configures. No industry statistics are quoted, because none
+have been checked against a source; the value for a real insurer is unknown until the engine runs on its claims and
+the [stakeholder interviews](STAKEHOLDER_INTERVIEW_TEMPLATE.md) are done.
+
+| Lever | What the system shows | Source | Assumption behind the benefit |
+|---|---|---|---|
+| **Faster first recommendation** | Both branches finish within the orchestrator deadline of 10 s (configured, `FNOL_ORCHESTRATOR_TIMEOUT_SECONDS`), or the claim goes to a person. Gemini's own call took 4.4 s at the median and 34.4 s at p95 on the free tier, so in evaluation 30% of calls exceeded the app's 8 s read timeout. The legal branch runs in parallel, so it adds no waiting | [metrics.md §1](metrics.md#1-gemini-damage-assessment-vehicle) | A recommendation in seconds is useful only if adjusters act on it sooner; a paid Gemini tier is needed for consistent latency |
+| **Less manual triage** | On the 50 labelled photos, 29 (58%) could go straight through the vision checks with all checks on, 1 of them wrong. By default every claim still gets a human decision | [metrics.md §3](metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) | Real claims send five photos, not one; coverage, amount and intake checks remove more claims; the insurer chooses whether to switch on unreviewed straight-through processing |
+| **Less over-payment (leakage)** | The reserve never exceeds the AI estimate; the AI Governance page totals what claimants asked above the estimate on filed claims (`leakage.amountNotReserved`). Example: demo scenario 8 asks $9,000 against a $4,200 estimate; the reserve is $3,200 after the $1,000 deductible | `AiGovernanceService`, `demo-scenarios/scenario_8_claim_above_estimate.json` | Only a benefit where the estimate is right; repair-cost estimates are **not validated** ([metrics.md](metrics.md#not-measured)), so an adjuster must confirm |
+| **Focused fraud referrals** | On synthetic data, the anomaly score flags 5.4% of claims at 40% precision, against 16.4% at 14% precision for the existing fraud rules | [metrics.md §7](metrics.md#7-fraud-anomaly-score-synthetic-data-only) | Synthetic data only; real precision is unknown |
+| **Fewer missed deadlines** | Acknowledge-by and decide-by dates from cited rules on every claim; the governance page reports acknowledgement on time | [legal-compliance.md](legal-compliance.md) | The rules need legal review; regulations change |
+| **Audit readiness** | Every step is in a SHA-256 hash-chained audit trail with a PDF report; model cards per AI component | `AuditService`, [model-cards.md](model-cards.md) | Value depends on the insurer's regulators and model-risk process |
+
+What would turn this into a real business case: the insurer's own claim volumes, handling cost per claim, current
+cycle times and leakage, and a pilot comparing claims handled with and without the engine.
