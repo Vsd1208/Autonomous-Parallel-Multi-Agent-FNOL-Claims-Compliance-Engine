@@ -31,7 +31,7 @@ Burst-pipe water damage has no labelled photos.
 
 | Head | Measure | Value |
 |---|---|---|
-| Car damaged area | main area right / one of the damaged areas | 64.6% / 80.5% (Gemini: 67% / 91% on its sample) |
+| Car damaged area | main area right / one of the damaged areas | 64.6% / 80.5% (Gemini, current prompt: 56% / 82% on its 50-photo sample; see [docs/metrics.md](../../docs/metrics.md)) |
 | Photo subject | car photos reported as vehicle | 441/441 |
 | Photo subject | home photos reported as building | 48/53 |
 | Home cause of loss (zero-shot) | right | 84.9% |
