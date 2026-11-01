@@ -1,0 +1,221 @@
+package com.guidewire.fnol.api;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guidewire.fnol.api.persistence.ClaimEntity;
+import com.guidewire.fnol.api.persistence.ClaimRepository;
+import com.guidewire.fnol.common.ComplianceBlockException;
+import com.guidewire.fnol.common.CoverageNotEligibleException;
+import com.guidewire.fnol.common.Models.*;
+import com.guidewire.fnol.common.ProcessingTimeoutException;
+import com.guidewire.fnol.enrichment.ClaimCenterClient;
+import com.guidewire.fnol.orchestrator.FNOLOrchestrator;
+import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.ResourceAccessException;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.LocalDate;
+import java.util.HexFormat;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.*;
+
+/**
+ * The AI engine as an extension of the claims system. The claims system owns the claim: when an FNOL is submitted
+ * there it publishes {@code claim.submitted}; this endpoint receives it, reads the FNOL from the claim API, runs the
+ * same analysis as a direct intake and writes the results back onto that claim (note, activities, exposure with the
+ * recommended reserve, documents, routing). The engine keeps its own analysis and audit record under the same claim
+ * number, and stores no raw personal data.
+ *
+ * <p>Events are authenticated by an HMAC-SHA256 signature over the body with a shared secret (no adjuster token),
+ * de-duplicated by claim, and processed in the background so the claims system is answered at once (202). Delivery is
+ * at-least-once: a repeat of an event already handled is acknowledged and ignored. Nothing is dropped: if the analysis
+ * fails, the claim gets an activity for an adjuster and stays in review, and the failure is recorded and audited.
+ */
+@RestController
+@RequestMapping("/api/v1/events")
+class ClaimEventController {
+
+    private static final Logger log = LoggerFactory.getLogger(ClaimEventController.class);
+    static final String SIGNATURE_HEADER = "X-Claims-Signature";
+    static final String EVENT_ID_HEADER = "X-Claims-Event-Id";
+    static final String CLAIM_SUBMITTED = "claim.submitted";
+    /** Claims-system status while a person reviews; the AI never moves a claim further on its own. */
+    static final String IN_REVIEW = "DRAFT_PENDING_REVIEW";
+
+    private final byte[] secret;
+    private final ClaimCenterClient claimCenter;
+    private final FNOLOrchestrator orchestrator;
+    private final ClaimRepository claims;
+    private final AuditService auditService;
+    private final FailedIntakeRecorder failedIntakes;
+    private final DuplicateSubmissionRecorder duplicates;
+    private final EvidenceStore evidence;
+    private final IdempotencyStore idempotency;
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
+    private final ThreadPoolExecutor executor = new ThreadPoolExecutor(2, 4, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(50), r -> {
+                Thread t = new Thread(r, "claim-event");
+                t.setDaemon(true);
+                return t;
+            });
+
+    ClaimEventController(@Value("${fnol.claims-events.secret:}") String secret, ClaimCenterClient claimCenter,
+                         FNOLOrchestrator orchestrator, ClaimRepository claims, AuditService auditService,
+                         FailedIntakeRecorder failedIntakes, DuplicateSubmissionRecorder duplicates,
+                         EvidenceStore evidence, IdempotencyStore idempotency) {
+        this.secret = secret == null ? new byte[0] : secret.getBytes(StandardCharsets.UTF_8);
+        this.claimCenter = claimCenter;
+        this.orchestrator = orchestrator;
+        this.claims = claims;
+        this.auditService = auditService;
+        this.failedIntakes = failedIntakes;
+        this.duplicates = duplicates;
+        this.evidence = evidence;
+        this.idempotency = idempotency;
+    }
+
+    @PreDestroy
+    void shutdown() {
+        executor.shutdown();
+    }
+
+    @PostMapping("/claimcenter")
+    ResponseEntity<Map<String, String>> receive(@RequestBody String body,
+                                                @RequestHeader(value = SIGNATURE_HEADER, required = false) String signature) {
+        if (secret.length == 0) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "EVENTS_NOT_CONFIGURED", "message", "No event signing secret is configured"));
+        }
+        if (!validSignature(body, signature)) {
+            log.warn("[Events] Refused an event with a missing or wrong signature");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "BAD_SIGNATURE", "message", "The event signature is missing or wrong"));
+        }
+        ClaimEvent event;
+        try {
+            event = mapper.readValue(body, ClaimEvent.class);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "BAD_EVENT", "message", "Not a claim event"));
+        }
+        if (!CLAIM_SUBMITTED.equals(event.type()) || event.subject() == null) {
+            return ResponseEntity.accepted().body(Map.of("status", "ignored", "reason", "not a claim.submitted event"));
+        }
+        String claimId = event.subject();
+        if (claims.existsById(claimId) || !inFlight.add(claimId)) {
+            return ResponseEntity.accepted().body(Map.of("status", "duplicate", "claimId", claimId));
+        }
+        try {
+            executor.execute(() -> {
+                try {
+                    analyse(claimId);
+                } finally {
+                    inFlight.remove(claimId);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            inFlight.remove(claimId);
+            // The claims system retries with backoff; nothing is lost.
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "BUSY", "message", "Too many claims in progress; retry later"));
+        }
+        log.info("[Events] claim.submitted {} accepted for analysis (event {})", claimId, event.id());
+        return ResponseEntity.accepted().body(Map.of("status", "accepted", "claimId", claimId));
+    }
+
+    /** Reads the FNOL from the claims system, analyses it and writes the results back onto that claim. */
+    void analyse(String claimId) {
+        FNOLPayload fnol;
+        try {
+            fnol = claimCenter.getFnol(claimId);
+        } catch (RuntimeException e) {
+            log.error("[Events] FNOL for {} could not be read from the claims system; the event will not be retried "
+                    + "by the engine: {}", claimId, e.getMessage());
+            flagForAdjuster(claimId, "AI analysis could not start: the loss report could not be read. Handle this claim "
+                    + "manually.");
+            return;
+        }
+        String policy = fnol.policyNumber();
+        LocalDate date = fnol.incidentDate();
+        if (!idempotency.tryAcquire(policy, date, fnol.state())) {
+            Optional<String> original = duplicates.record(fnol);
+            failedIntakes.record(claimId, fnol, "HUMAN_REVIEW", "DUPLICATE_FNOL",
+                    "Possible duplicate of " + original.orElse("a claim still being processed"));
+            flagForAdjuster(claimId, "Possible duplicate: the same policy, loss date and state were already reported"
+                    + original.map(id -> " as " + id).orElse("") + ". Verify before any action.");
+            return;
+        }
+        FNOLResponse response;
+        try {
+            response = orchestrator.process(fnol, claimId);
+        } catch (RuntimeException e) {
+            idempotency.release(policy, date.toString(), fnol.state());
+            String[] outcome = classify(e);
+            failedIntakes.record(claimId, fnol, outcome[0], outcome[1], outcome[2]);
+            flagForAdjuster(claimId, "AI analysis could not complete (" + outcome[1] + "): " + outcome[2]
+                    + ". Handle this claim manually.");
+            return;
+        }
+        claims.save(ClaimEntity.from(response, fnol));
+        auditService.append(claimId, response.branchB().audit(), AuditService.SYSTEM_ACTOR);
+        evidence.store(claimId, fnol);
+        log.info("[Events] Claim {} analysed and written back: status={}, flags={}", claimId, response.status(),
+                response.gateFlags());
+    }
+
+    /** Status, error code and a reason without personal data, as for a failed direct intake. */
+    static String[] classify(RuntimeException e) {
+        if (e instanceof ComplianceBlockException) {
+            return new String[] {"BLOCKED_COMPLIANCE", "COMPLIANCE_BLOCK", e.getMessage()};
+        }
+        if (e instanceof CoverageNotEligibleException) {
+            return new String[] {"HUMAN_REVIEW", "EXTERNAL_OR_PROCESSING_ERROR", e.getMessage()};
+        }
+        if (e instanceof ProcessingTimeoutException || e instanceof ResourceAccessException) {
+            return new String[] {"HUMAN_REVIEW", "PROCESSING_TIMEOUT", e instanceof ProcessingTimeoutException
+                    ? e.getMessage() : "Guidewire integration call timed out or was unreachable"};
+        }
+        if (e instanceof IllegalArgumentException) {
+            return new String[] {"HUMAN_REVIEW", "VALIDATION_ERROR", "The loss report is incomplete or invalid"};
+        }
+        String reason = e instanceof IllegalStateException && e.getMessage() != null ? e.getMessage()
+                : "Unexpected processing error (" + e.getClass().getSimpleName() + ")";
+        return new String[] {"HUMAN_REVIEW", "EXTERNAL_OR_PROCESSING_ERROR", reason};
+    }
+
+    /** The claim stays in review with an activity telling the adjuster what happened. Best effort. */
+    private void flagForAdjuster(String claimId, String what) {
+        try {
+            claimCenter.patchClaim(claimId, new ClaimPatch(IN_REVIEW, null, null));
+            claimCenter.addActivity(claimId, new CcActivity(null, "Review needed: AI analysis did not complete", what,
+                    "high", LocalDate.now().plusDays(1), null, null, null));
+        } catch (RuntimeException e) {
+            log.error("[Events] Could not flag claim {} in the claims system: {}", claimId, e.getMessage());
+        }
+    }
+
+    private boolean validSignature(String body, String header) {
+        if (header == null || !header.startsWith("sha256=")) {
+            return false;
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret, "HmacSHA256"));
+            byte[] expected = HexFormat.of().formatHex(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)))
+                    .getBytes(StandardCharsets.UTF_8);
+            return MessageDigest.isEqual(expected, header.substring(7).getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+}

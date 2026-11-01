@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { demoScenarios, recentDate } from '../../../src/demoScenarios';
 import { AUTO_ANGLES, HOME_ANGLES, anglesFor } from '../../../src/photoAngles';
@@ -31,6 +31,28 @@ export default function Report() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ title: string; text: string } | null>(null);
   const [receipt, setReceipt] = useState<PortalClaim | null>(null);
+
+  // A claim filed in the claims system is RECEIVED until its checks finish (seconds); then the receipt shows the
+  // dates and the acknowledgement letter. Gives up quietly after a minute: tracking shows the same later.
+  useEffect(() => {
+    if (receipt?.stage !== 'RECEIVED') return;
+    const policyNumber = form.policyNumber.trim().toUpperCase();
+    let tries = 0;
+    const timer = window.setInterval(async () => {
+      tries += 1;
+      try {
+        const latest = await portalApi.track(receipt.claimId, policyNumber);
+        if (latest.stage !== 'RECEIVED') {
+          window.clearInterval(timer);
+          setReceipt({ ...latest, reportedOn: latest.reportedOn ?? receipt.reportedOn });
+        }
+      } catch {
+        // keep the receipt as it is
+      }
+      if (tries >= 30) window.clearInterval(timer);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [receipt?.claimId, receipt?.stage]);
   const [loadingSet, setLoadingSet] = useState(false);
 
   const angles = anglesFor(form.policyNumber);
@@ -165,8 +187,9 @@ export default function Report() {
     return (
       <div className="p-narrow">
         <Alert tone="success" title="Thank you. Your claim has been reported.">
-          Please keep your claim number: <strong>{receipt.claimId}</strong>. We have also filed a written
-          acknowledgement, below.
+          Please keep your claim number: <strong>{receipt.claimId}</strong>. {receipt.letter
+            ? 'We have also filed a written acknowledgement, below.'
+            : 'A written acknowledgement will follow.'}
         </Alert>
         <ClaimStatus claim={receipt} />
         <div className="p-actions">

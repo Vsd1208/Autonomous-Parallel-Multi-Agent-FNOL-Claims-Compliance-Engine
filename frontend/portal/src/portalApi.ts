@@ -18,7 +18,7 @@ export interface PortalClaim {
   lineOfBusiness: 'AUTO' | 'HOME';
   incidentDate: string;
   reportedOn: string | null;
-  stage: 'IN_REVIEW' | 'ACTION_NEEDED' | 'ACCEPTED' | 'DECIDED' | 'CLOSED' | 'SPECIALIST';
+  stage: 'RECEIVED' | 'IN_REVIEW' | 'ACTION_NEEDED' | 'ACCEPTED' | 'DECIDED' | 'CLOSED' | 'SPECIALIST';
   stageTitle: string;
   stageText: string;
   acknowledgedOn: string | null;

@@ -1,0 +1,155 @@
+package com.guidewire.fnol.mock;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guidewire.fnol.common.Models.ClaimEvent;
+import com.guidewire.fnol.common.Models.ClaimPatch;
+import com.guidewire.fnol.common.Models.FNOLPayload;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * The claims system's FNOL reports and its event outbox. A change and the event that reports it are written in one
+ * transaction (transactional outbox), so an event is never lost and never sent for a change that did not happen;
+ * {@link ClaimEventDispatcher} delivers pending events with retries.
+ */
+@Repository
+class ClaimEventOutbox {
+
+    static final String CLAIM_SUBMITTED = "claim.submitted";
+    static final String SOURCE = "claims-system";
+    /** Statuses: DRAFT (being reported), SUBMITTED (reported, AI analysis pending), then the extension's routing. */
+    static final String DRAFT = "DRAFT";
+    static final String SUBMITTED = "SUBMITTED";
+
+    private final JdbcTemplate jdbc;
+    private final ObjectMapper mapper;
+
+    ClaimEventOutbox(JdbcTemplate jdbc, ObjectMapper mapper) {
+        this.jdbc = jdbc;
+        this.mapper = mapper;
+    }
+
+    /** A new draft claim holding the FNOL as reported. */
+    @Transactional
+    void createDraft(String claimId, FNOLPayload fnol) {
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbc.update("""
+                INSERT INTO claimcenter.claims (claim_id, status, policy_number, incident_date, state, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                claimId, DRAFT, fnol.policyNumber(), fnol.incidentDate() == null ? null : Date.valueOf(fnol.incidentDate()),
+                fnol.state(), now, now);
+        jdbc.update("INSERT INTO claimcenter.fnol_reports (claim_id, payload, created_at) VALUES (?, ?, ?)",
+                claimId, json(fnol), now);
+    }
+
+    /**
+     * A claim already reported for the same loss (policy, loss date, state), drafts excepted: a draft is not reported
+     * yet. Used for the duplicate check when a new loss is reported.
+     */
+    Optional<String> reportedClaimFor(FNOLPayload fnol) {
+        return jdbc.queryForList("""
+                SELECT claim_id FROM claimcenter.claims
+                WHERE policy_number = ? AND incident_date = ? AND state = ? AND status <> ? ORDER BY created_at""",
+                String.class, fnol.policyNumber(), Date.valueOf(fnol.incidentDate()), fnol.state(), DRAFT)
+                .stream().findFirst();
+    }
+
+    Optional<FNOLPayload> fnol(String claimId) {
+        return jdbc.query("SELECT payload FROM claimcenter.fnol_reports WHERE claim_id = ?",
+                (rs, i) -> read(rs.getString("payload"), FNOLPayload.class), claimId).stream().findFirst();
+    }
+
+    /**
+     * Submits a draft: status SUBMITTED and a claim.submitted event, together. False when the claim is not a draft
+     * (already submitted, or created another way).
+     */
+    @Transactional
+    boolean submit(String claimId) {
+        int changed = jdbc.update("UPDATE claimcenter.claims SET status = ?, updated_at = ? WHERE claim_id = ? AND status = ?",
+                SUBMITTED, Timestamp.from(Instant.now()), claimId, DRAFT);
+        if (changed == 0) {
+            return false;
+        }
+        FNOLPayload fnol = fnol(claimId).orElseThrow();
+        enqueue(CLAIM_SUBMITTED, claimId, Map.of("claimId", claimId, "policyNumber", fnol.policyNumber(),
+                "channel", fnol.channel() == null ? "UNKNOWN" : fnol.channel()));
+        return true;
+    }
+
+    /** A partial update by an integration (e.g. the AI extension's routing, estimate and recommended reserve). */
+    boolean patch(String claimId, ClaimPatch p) {
+        return jdbc.update("""
+                UPDATE claimcenter.claims SET status = COALESCE(?, status), estimated_damage = COALESCE(?, estimated_damage),
+                    reserve = COALESCE(?, reserve), updated_at = ? WHERE claim_id = ?""",
+                p.status(), p.estimatedDamage(), p.reserve(), Timestamp.from(Instant.now()), claimId) > 0;
+    }
+
+    void enqueue(String type, String claimId, Map<String, Object> data) {
+        Instant now = Instant.now();
+        ClaimEvent event = new ClaimEvent(UUID.randomUUID().toString(), type, SOURCE, now, claimId, data);
+        jdbc.update("""
+                INSERT INTO claimcenter.events (event_id, event_type, claim_id, payload, created_at, next_attempt_at)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                event.id(), type, claimId, json(event), Timestamp.from(now), Timestamp.from(now));
+    }
+
+    record Pending(String eventId, String payload, int attempts) {}
+
+    List<Pending> due(int limit) {
+        return jdbc.query("""
+                SELECT event_id, payload, attempts FROM claimcenter.events
+                WHERE delivered_at IS NULL AND next_attempt_at <= ? ORDER BY created_at LIMIT ?""",
+                (rs, i) -> new Pending(rs.getString("event_id"), rs.getString("payload"), rs.getInt("attempts")),
+                Timestamp.from(Instant.now()), limit);
+    }
+
+    void delivered(String eventId) {
+        jdbc.update("UPDATE claimcenter.events SET delivered_at = ?, attempts = attempts + 1, last_error = NULL WHERE event_id = ?",
+                Timestamp.from(Instant.now()), eventId);
+    }
+
+    /** Exponential backoff: 2, 4, 8 ... seconds, at most 5 minutes between attempts. */
+    void failed(String eventId, int attempts, String error) {
+        long wait = Math.min(300, 1L << Math.min(attempts + 1, 9));
+        jdbc.update("UPDATE claimcenter.events SET attempts = attempts + 1, next_attempt_at = ?, last_error = ? WHERE event_id = ?",
+                Timestamp.from(Instant.now().plus(Duration.ofSeconds(wait))),
+                error == null ? null : error.substring(0, Math.min(500, error.length())), eventId);
+    }
+
+    /** Events for operations: all of them for a claim, or the undelivered ones. */
+    List<Map<String, Object>> list(String claimId, boolean undeliveredOnly) {
+        List<String> where = new java.util.ArrayList<>();
+        if (claimId != null) where.add("claim_id = ?");
+        if (undeliveredOnly) where.add("delivered_at IS NULL");
+        String sql = "SELECT event_id, event_type, claim_id, created_at, attempts, delivered_at, last_error FROM claimcenter.events"
+                + (where.isEmpty() ? "" : " WHERE " + String.join(" AND ", where)) + " ORDER BY created_at";
+        return claimId != null ? jdbc.queryForList(sql, claimId) : jdbc.queryForList(sql);
+    }
+
+    private String json(Object o) {
+        try {
+            return mapper.writeValueAsString(o);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Cannot store as JSON", e);
+        }
+    }
+
+    private <T> T read(String json, Class<T> type) {
+        try {
+            return mapper.readValue(json, type);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Stored FNOL is not readable", e);
+        }
+    }
+}

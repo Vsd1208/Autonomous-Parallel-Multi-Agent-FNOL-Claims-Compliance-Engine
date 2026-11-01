@@ -22,4 +22,25 @@ public interface ClaimCenterClient {
 
     /** Adds a note to the claim. */
     CcNote addNote(String claimId, CcNote note);
+
+    // ── Extension mode: the claims system owns the claim and the FNOL ─────────────────────────────
+
+    /** The FNOL as it was reported to the claims system (loss details, reporter, photos). */
+    default FNOLPayload getFnol(String claimId) {
+        throw new UnsupportedOperationException("getFnol is not supported by this ClaimCenter client");
+    }
+
+    /** Records the AI's routing, estimate and recommended reserve on a claim the claims system already holds. */
+    default void patchClaim(String claimId, ClaimPatch patch) {
+        throw new UnsupportedOperationException("patchClaim is not supported by this ClaimCenter client");
+    }
+
+    /**
+     * Files an FNOL in the claims system: creates the draft claim and submits it (which emits claim.submitted).
+     *
+     * @throws DuplicateLossException when the claims system already holds a claim for the same loss
+     */
+    default ClaimCreateResponse submitFnol(FNOLPayload fnol) {
+        throw new UnsupportedOperationException("submitFnol is not supported by this ClaimCenter client");
+    }
 }

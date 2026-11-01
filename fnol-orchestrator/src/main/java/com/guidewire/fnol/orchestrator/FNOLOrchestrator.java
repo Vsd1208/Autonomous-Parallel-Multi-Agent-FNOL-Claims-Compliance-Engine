@@ -166,6 +166,16 @@ public class FNOLOrchestrator {
      * @throws ProcessingTimeoutException   if the branches exceed the deadline or the executor is full
      */
     public FNOLResponse process(FNOLPayload payload) {
+        return process(payload, null);
+    }
+
+    /**
+     * As an extension of the claims system: the claim already exists there (the FNOL was submitted to it and its
+     * "claim submitted" event started this run), so the results are written onto that claim instead of creating one.
+     *
+     * @param existingClaimId the claims system's claim number, or null to create the claim (direct intake)
+     */
+    public FNOLResponse process(FNOLPayload payload, String existingClaimId) {
 
         // ── Stage 1: Input validation ──────────────────────────────────────────────────
         input.validate(payload);
@@ -255,7 +265,7 @@ public class FNOLOrchestrator {
 
         // ── Stage 5: Reconciliation Safety Gate ──────────────────────────────────────
         return reconcile(payload, policyRecord, branchA, branchB, policyContext, inputFlags, elapsed, highRiskEscalation,
-                reusedFrom, operationalMs.get(), legalMs.get());
+                reusedFrom, operationalMs.get(), legalMs.get(), existingClaimId);
     }
 
     private Policy lookUpPolicy(String policyNumber) {
@@ -500,7 +510,8 @@ public class FNOLOrchestrator {
             boolean highRiskEscalation,
             List<String> reusedFrom,
             long operationalMs,
-            long legalMs
+            long legalMs,
+            String existingClaimId
     ) {
         log.info("[FNOL] Entering Reconciliation Safety Gate — policy={}", payload.policyNumber());
 
@@ -557,16 +568,27 @@ public class FNOLOrchestrator {
         // Gate Step 5: Pre-populate the claim in Guidewire ClaimCenter. It stays a draft until a human
         // decides; only an STP claim with no advisory review goes straight to OPEN (standard process).
         String initialCcStatus = "STRAIGHT_THROUGH_PROCESSING".equals(status) ? "OPEN" : "DRAFT_PENDING_REVIEW";
-        ClaimCreateResponse created = cc.createClaim(new ClaimCreateRequest(
-                payload.policyNumber(),
-                payload.incidentDate(),
-                payload.state(),
-                branchA.damageAssessment().estimatedDamage(),
-                branchA.reserve().recommendedReserve(),
-                initialCcStatus
-        ));
-        String claimId = created.claimId();
-        log.info("[FNOL] Claim pre-populated in ClaimCenter — claimId={}, ccStatus={}", claimId, initialCcStatus);
+        String claimId;
+        if (existingClaimId == null) {
+            ClaimCreateResponse created = cc.createClaim(new ClaimCreateRequest(
+                    payload.policyNumber(),
+                    payload.incidentDate(),
+                    payload.state(),
+                    branchA.damageAssessment().estimatedDamage(),
+                    branchA.reserve().recommendedReserve(),
+                    initialCcStatus
+            ));
+            claimId = created.claimId();
+            log.info("[FNOL] Claim pre-populated in ClaimCenter — claimId={}, ccStatus={}", claimId, initialCcStatus);
+        } else {
+            // Extension mode: the claims system owns the claim; record the AI's estimate, recommended reserve and
+            // routing on it. It stays in review (a draft) until a person decides, exactly as a created claim would.
+            claimId = existingClaimId;
+            cc.patchClaim(claimId, new ClaimPatch(initialCcStatus, branchA.damageAssessment().estimatedDamage(),
+                    branchA.reserve().recommendedReserve()));
+            log.info("[FNOL] AI results recorded on the claims system's claim — claimId={}, ccStatus={}", claimId,
+                    initialCcStatus);
+        }
         String adjusterAdvisory = switch (status) {
             case "STRAIGHT_THROUGH_PROCESSING" -> "Claim meets all STP criteria. Auto-filed. No adjuster action required.";
             case "PENDING_ADVISORY_REVIEW" -> "Claim meets all STP criteria and is pre-populated in ClaimCenter as a draft. "

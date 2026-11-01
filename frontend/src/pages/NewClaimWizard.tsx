@@ -8,7 +8,6 @@ import { AUTO_ANGLES, HOME_ANGLES, anglesFor } from '../photoAngles';
 import { HOME_SET_FILES, SET_FILES, homeSampleSets, sampleSets, vehicleSampleSets } from '../sampleSets';
 import { readPhoto } from '../utils/photos';
 import { ApiError, apiClient } from '../services/apiClient';
-import { claimStore } from '../services/claimStore';
 import { FormData } from '../types';
 
 type Photo = { uri: string; name: string; preview: string };
@@ -171,7 +170,6 @@ export default function NewClaimWizard() {
         evidenceAngles: angles.filter((a) => photos[a.key]).map((a) => a.key),
         claimedAmount: form.claimedAmount.trim() ? Number(form.claimedAmount) : undefined,
       });
-      claimStore.save(response);
       // The reporter gets a confirmation; the claim waits in an adjuster queue and is opened from there.
       setSubmitted({ claimId: response.claimId, status: response.status, policyNumber: form.policyNumber,
         claimedAmount: form.claimedAmount.trim() ? Number(form.claimedAmount) : null,
@@ -414,7 +412,10 @@ function Submitted({ claim, onAnother, onDesktop }: { claim: Submitted; onAnothe
     <>
       <PageTitle title="Claim submitted" />
       <MessageBar tone="success" title={`Claim ${claim.claimId} has been received`}>
-        Keep this number for any contact about the claim. {queue
+        Keep this number for any contact about the claim. {claim.status === 'SUBMITTED'
+          ? <>It is filed in the claims system. The AI analysis runs now and the claim reaches an adjuster queue within
+            seconds; an adjuster will review it and get in touch.</>
+          : queue
           ? <>It is now in the adjuster queue <strong>{queue}</strong>; an adjuster will review it and get in touch.</>
           : <>An adjuster will review it and get in touch.</>}
       </MessageBar>

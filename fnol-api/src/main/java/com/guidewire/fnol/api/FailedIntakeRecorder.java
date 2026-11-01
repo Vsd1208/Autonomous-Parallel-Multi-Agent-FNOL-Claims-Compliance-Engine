@@ -48,8 +48,16 @@ public class FailedIntakeRecorder {
      *         (the original error is still returned to the caller).
      */
     public String record(FNOLPayload payload, String status, String errorCode, String reason) {
+        return record(null, payload, status, errorCode, reason);
+    }
+
+    /**
+     * As {@link #record(FNOLPayload, String, String, String)}, under a given claim number: the claims system already
+     * holds the claim (extension mode), so the failure is recorded against it instead of a new REJ-... ID.
+     */
+    public String record(String existingClaimId, FNOLPayload payload, String status, String errorCode, String reason) {
         try {
-            String claimId = newClaimId();
+            String claimId = existingClaimId != null ? existingClaimId : newClaimId();
             ClaimEntity e = new ClaimEntity();
             e.claimId = claimId;
             e.policyNumber = payload.policyNumber();
@@ -61,7 +69,7 @@ public class FailedIntakeRecorder {
             e.claimedAmount = payload.claimedAmount();
             e.channel = payload.channel();
             e.failureReason = truncate(reason, 500);
-            e.ccSyncStatus = "NOT_FILED";
+            e.ccSyncStatus = existingClaimId != null ? "FILED" : "NOT_FILED";   // the claims system holds it
             e.createdAt = Instant.now();
             e.updatedAt = e.createdAt;
             claims.save(e);

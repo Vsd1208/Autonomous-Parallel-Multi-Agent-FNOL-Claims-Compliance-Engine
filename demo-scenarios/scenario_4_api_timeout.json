@@ -27,5 +27,6 @@
     ]
   },
   "expectedStatus": 504,
-  "expectedError": "PROCESSING_TIMEOUT"
+  "expectedError": "PROCESSING_TIMEOUT",
+  "expectedEventClaimStatus": "HUMAN_REVIEW"
 }

@@ -45,6 +45,10 @@ async function request<T>(path: string, init: RequestInit = {}, adjuster = false
 }
 
 export const apiClient = {
+  /**
+   * Reports a loss. With claims-system events on, it is filed in the claims system (status SUBMITTED) and the AI
+   * analysis follows in the background; otherwise the direct intake answers with the analysed claim's status.
+   */
   submitFNOL: (payload: {
     policyNumber: string;
     incidentDate: string;
@@ -59,7 +63,8 @@ export const apiClient = {
     channel: FormData['channel'];
     claimedAmount?: number;
     evidenceAngles?: string[];
-  }) => request<ClaimResult>('/api/v1/fnol/intake', { method: 'POST', body: JSON.stringify(payload) }, true),
+  }) => request<{ claimId: string; status: string }>('/api/v1/fnol/report',
+    { method: 'POST', body: JSON.stringify(payload) }, true),
 
   getClaimStatus: (claimId: string) =>
     request<ClaimRecord>(`/api/v1/fnol/status/${encodeURIComponent(claimId)}`, {}, true),

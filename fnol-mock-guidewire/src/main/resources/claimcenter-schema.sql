@@ -75,3 +75,26 @@ CREATE TABLE IF NOT EXISTS claimcenter.notes (
 CREATE INDEX IF NOT EXISTS idx_cc_exposures_claim ON claimcenter.exposures (claim_id);
 CREATE INDEX IF NOT EXISTS idx_cc_activities_claim ON claimcenter.activities (claim_id);
 CREATE INDEX IF NOT EXISTS idx_cc_notes_claim ON claimcenter.notes (claim_id);
+
+-- The FNOL as reported (the claims system is the system of record for the loss report: it holds the reporter's
+-- details, as a claims system does; the AI extension reads it but stores no raw personal data).
+CREATE TABLE IF NOT EXISTS claimcenter.fnol_reports (
+    claim_id         VARCHAR(32)    PRIMARY KEY REFERENCES claimcenter.claims (claim_id),
+    payload          TEXT           NOT NULL,
+    created_at       TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+-- Event outbox: written in the same transaction as the change it reports, delivered to subscribers by
+-- EventDispatcher with retries (at-least-once; subscribers de-duplicate by event_id).
+CREATE TABLE IF NOT EXISTS claimcenter.events (
+    event_id         VARCHAR(40)    PRIMARY KEY,
+    event_type       VARCHAR(40)    NOT NULL,
+    claim_id         VARCHAR(32)    NOT NULL,
+    payload          TEXT           NOT NULL,
+    created_at       TIMESTAMP WITH TIME ZONE NOT NULL,
+    attempts         INT            NOT NULL DEFAULT 0,
+    next_attempt_at  TIMESTAMP WITH TIME ZONE NOT NULL,
+    delivered_at     TIMESTAMP WITH TIME ZONE,
+    last_error       VARCHAR(500)
+);
+CREATE INDEX IF NOT EXISTS idx_cc_events_pending ON claimcenter.events (delivered_at, next_attempt_at);

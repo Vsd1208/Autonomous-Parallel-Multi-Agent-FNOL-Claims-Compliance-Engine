@@ -27,5 +27,6 @@
     ]
   },
   "expectedStatus": 422,
-  "expectedError": "COMPLIANCE_BLOCK"
+  "expectedError": "COMPLIANCE_BLOCK",
+  "expectedEventClaimStatus": "BLOCKED_COMPLIANCE"
 }

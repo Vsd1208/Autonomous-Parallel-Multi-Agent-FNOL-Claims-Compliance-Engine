@@ -52,6 +52,18 @@ public class FNOLController {
     void setGovernance(AiGovernanceService governance) {
         this.governance = governance;
     }
+    /** Reports new losses to the claims system when its events are configured; optional for the same reason. */
+    private ClaimsSystemIntake claimsSystemIntake;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setClaimsSystemIntake(ClaimsSystemIntake claimsSystemIntake) {
+        this.claimsSystemIntake = claimsSystemIntake;
+    }
+
+    /** True when new losses go to the claims system first and the analysis follows its event. */
+    boolean reportsToClaimsSystem() {
+        return claimsSystemIntake != null && claimsSystemIntake.enabled();
+    }
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     /** Request attribute carrying the REJ-... ID of a failed intake into the error response. */
@@ -98,10 +110,27 @@ public class FNOLController {
     // ── Health ──────────────────────────────────────────────────────────────
     @GetMapping("/health")
     Map<String, String> health() {
-        return Map.of("status", "UP");
+        // intake: CLAIMS_SYSTEM (losses are filed in the claims system, analysis follows its event) or DIRECT
+        return Map.of("status", "UP", "intake", reportsToClaimsSystem() ? ClaimsSystemIntake.CLAIMS_SYSTEM
+                : ClaimsSystemIntake.DIRECT);
     }
 
-    // ── FNOL Intake ─────────────────────────────────────────────────────────
+    // ── Report a loss (agent taking a phone call, partner channel) ────────────
+    /**
+     * Files a loss the way the organisation runs: in the claims system, which owns the claim; the AI analysis
+     * follows its claim.submitted event and is written back onto the claim. Answers at once with the claim number
+     * and SUBMITTED. Without claims-system events, it runs the direct intake and answers with that claim's status.
+     */
+    @PostMapping("/fnol/report")
+    ClaimCreateResponse report(@Valid @RequestBody FNOLPayload payload, HttpServletRequest request) {
+        if (reportsToClaimsSystem()) {
+            return claimsSystemIntake.report(payload);
+        }
+        FNOLResponse response = intake(payload, request);
+        return new ClaimCreateResponse(response.claimId(), response.status());
+    }
+
+    // ── FNOL Intake (direct: analyse, then file the claim) ───────────────────
     @PostMapping("/fnol/intake")
     FNOLResponse intake(@Valid @RequestBody FNOLPayload payload, HttpServletRequest request) {
 
@@ -494,6 +523,12 @@ class ApiExceptionHandler {
     ResponseEntity<ApiError> duplicate(DuplicateFNOLException e, HttpServletRequest r) {
         return ResponseEntity.status(409).body(
                 new ApiError(Instant.now(), 409, "DUPLICATE_FNOL", e.getMessage(), r.getRequestURI(), escalatedId(r)));
+    }
+
+    @ExceptionHandler(ClaimsSystemUnavailableException.class)
+    ResponseEntity<ApiError> claimsSystemDown(ClaimsSystemUnavailableException e, HttpServletRequest r) {
+        return ResponseEntity.status(503).body(
+                new ApiError(Instant.now(), 503, "CLAIMS_SYSTEM_UNAVAILABLE", e.getMessage(), r.getRequestURI()));
     }
 
     @ExceptionHandler(ClaimIdConflictException.class)

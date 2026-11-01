@@ -21,6 +21,9 @@ fnol:
     # Shared secret for adjuster-only endpoints (review, audit, audit/pdf, explanation, queue).
     # Empty means those endpoints reject every request.
     adjuster-token: ${FNOL_ADJUSTER_TOKEN:}
+  claims-events:
+    # Shared secret the claims system signs its events with (HMAC-SHA256). Empty: events are refused (503).
+    secret: ${CLAIMS_EVENT_SECRET:}
   cors:
     # Adjuster workspace (5173) and policyholder portal (5174)
     allowed-origins: ${FNOL_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}

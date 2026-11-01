@@ -5,6 +5,13 @@
 # Needs: bash, curl, awk, sed, grep. Start the stack with mock vision first:
 #   docker compose --env-file .env.demo up -d --build
 #
+# Two passes (INTAKE=direct, claims-system or both; default both):
+#   direct         POST /fnol/intake: the engine analyses the loss, then files the claim, and answers with the result.
+#   claims-system  POST /fnol/report: the loss is filed in the claims system first, which announces it; the engine
+#                  analyses it in the background and writes the results back. The script waits for the analysis,
+#                  then checks the same outcomes. A failed analysis is not an HTTP error here: the claim is filed
+#                  and stays in review ("expectedEventClaimStatus"), and the claims system's claim is checked too.
+#
 # Each scenario gets a fresh random incident date 1-28 days ago (a scenario can set its own range with
 # "daysAgoMin" / "daysAgoMax"), so the script can be re-run without tripping the duplicate check (a
 # DUPLICATE_FNOL on a first submission is retried with another date). Most losses are reported within
@@ -12,6 +19,9 @@
 set -uo pipefail
 
 API_URL="${API_URL:-http://localhost:8080}"
+# The claims system (mock), for checking what was written back onto its claim.
+CC_URL="${CC_URL:-http://localhost:9090}"
+INTAKE="${INTAKE:-both}"
 # Internal intake needs the adjuster token (.env.demo sets demo-adjuster-token). Policyholders use the portal.
 ADJUSTER_TOKEN="${ADJUSTER_TOKEN:-demo-adjuster-token}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,12 +46,16 @@ json_string() {   # first "key":"value" in a JSON response
   grep -oE "\"$2\":\"[^\"]*\"" <<<"$1" | head -1 | sed -E 's/.*:"([^"]*)"/\1/'
 }
 
-post() {   # post <json>  ->  sets HTTP_CODE and BODY
+post() {   # post <json> [path]  ->  sets HTTP_CODE and BODY
   local out
-  out=$(curl -s --max-time 40 -w $'\n%{http_code}' -X POST "$API_URL/api/v1/fnol/intake" \
+  out=$(curl -s --max-time 40 -w $'\n%{http_code}' -X POST "$API_URL${2:-/api/v1/fnol/intake}" \
     -H "Content-Type: application/json" -H "X-Adjuster-Token: $ADJUSTER_TOKEN" -d "$1")
   HTTP_CODE="${out##*$'\n'}"
   BODY="${out%$'\n'*}"
+}
+
+api_get() {   # api_get <path>  ->  body (empty on an error status)
+  curl -sf --max-time 10 -H "X-Adjuster-Token: $ADJUSTER_TOKEN" "$API_URL$1"
 }
 
 check() {   # check <scenario> <what> <expected> <actual>
@@ -54,16 +68,94 @@ check() {   # check <scenario> <what> <expected> <actual>
   fi
 }
 
-# Posts a scenario with a fresh date; on a date collision (409 on first submit) tries another date.
-submit_fresh() {
-  local file="$1" attempt lo hi
+has_flag() {   # has_flag <scenario> <field> <flag> <json>: the flag in a JSON array or a comma-separated string
+  if [[ -z "$3" ]]; then return; fi
+  if grep -qE "\"$2\":(\[[^]]*\"$3\"|\"([^\"]*,)?$3(,[^\"]*)?\")" <<<"$4"; then PASSES=$((PASSES + 1));
+  else FAILURES=$((FAILURES + 1)); echo "  FAIL [$1] $2: expected $3"; fi
+}
+
+# Posts a scenario with a fresh date; on a date collision (409 on first submit) tries the next date, so every date
+# in the range is tried once (from a random start) before giving up.
+submit_fresh() {   # submit_fresh <file> [path]
+  local file="$1" k lo hi n start
   lo=$(expected "$file" daysAgoMin); lo=${lo:-1}
   hi=$(expected "$file" daysAgoMax); hi=${hi:-28}
-  for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    DATE=$(days_ago $((lo + RANDOM % (hi - lo + 1))))
+  n=$((hi - lo + 1)); start=$((RANDOM % n))
+  for ((k = 0; k < n; k++)); do
+    DATE=$(days_ago $((lo + (start + k) % n)))
     PAYLOAD=$(payload_with_date "$file" "$DATE")
-    post "$PAYLOAD"
+    post "$PAYLOAD" "${2:-}"
     if [[ "$HTTP_CODE" != "409" ]]; then return; fi
+  done
+  echo "  Every loss date $lo-$hi days ago is already used on this policy; reset the demo database to re-run."
+}
+
+check_duplicate() {   # check_duplicate <scenario> <file> [path]: the same report again is refused
+  local dup
+  dup=$(expected "$2" expectedDuplicateStatus)
+  if [[ -n "$dup" ]]; then
+    post "$PAYLOAD" "${3:-}"
+    check "$1" "duplicate HTTP status" "$dup" "$HTTP_CODE"
+    check "$1" "duplicate error" "$(expected "$2" expectedDuplicateError)" "$(json_string "$BODY" error)"
+  fi
+}
+
+run_direct() {
+  echo "### Direct intake: the engine analyses, then files the claim"
+  for file in "$DIR"/scenario_*.json; do
+    name=$(basename "$file" .json)
+    echo "== $name"
+    submit_fresh "$file"
+
+    check "$name" "HTTP status" "$(expected "$file" expectedStatus)" "$HTTP_CODE"
+    check "$name" "error" "$(expected "$file" expectedError)" "$(json_string "$BODY" error)"
+    check "$name" "claim status" "$(expected "$file" expectedClaimStatus)" "$(json_string "$BODY" status)"
+    check "$name" "decision" "$(expected "$file" expectedDecision)" "$(json_string "$BODY" decision)"
+    has_flag "$name" inputFlags "$(expected "$file" expectedInputFlag)" "$BODY"
+    has_flag "$name" gateFlags "$(expected "$file" expectedGateFlag)" "$BODY"
+    check_duplicate "$name" "$file"
+  done
+}
+
+run_claims_system() {
+  echo "### Through the claims system: filed there first, analysed from its event, results written back"
+  local file name id status row cc_status want i
+  for file in "$DIR"/scenario_*.json; do
+    name=$(basename "$file" .json)
+    echo "== $name (claims system)"
+    submit_fresh "$file" /api/v1/fnol/report
+    check "$name" "report HTTP status" "200" "$HTTP_CODE"
+    check "$name" "filed status" "SUBMITTED" "$(json_string "$BODY" status)"
+    id=$(json_string "$BODY" claimId)
+    [[ -z "$id" ]] && continue
+
+    row=""
+    for i in $(seq 1 80); do   # up to 40 s: the analysis deadline is 10 s
+      row=$(api_get "/api/v1/fnol/status/$id") && [[ -n "$row" ]] && break
+      sleep 0.5
+    done
+    if [[ -z "$row" ]]; then
+      FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] no analysis for $id after 40 s"; continue
+    fi
+
+    want=$(expected "$file" expectedEventClaimStatus)
+    check "$name" "claim status" "${want:-$(expected "$file" expectedClaimStatus)}" "$(json_string "$row" status)"
+    check "$name" "decision" "$(expected "$file" expectedDecision)" \
+      "$(json_string "$(api_get "/api/v1/fnol/$id/explanation")" decision)"
+    has_flag "$name" inputFlags "$(expected "$file" expectedInputFlag)" "$row"
+    has_flag "$name" gateFlags "$(expected "$file" expectedGateFlag)" "$row"
+
+    # Written back: the claims system's claim has left SUBMITTED (routing set, or held for review).
+    cc_status=""
+    for i in $(seq 1 20); do
+      cc_status=$(json_string "$(curl -s --max-time 5 "$CC_URL/cc/claims/$id")" status)
+      [[ -n "$cc_status" && "$cc_status" != "SUBMITTED" ]] && break
+      sleep 0.5
+    done
+    if [[ -n "$cc_status" && "$cc_status" != "SUBMITTED" ]]; then PASSES=$((PASSES + 1));
+    else FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] claims system claim $id not updated (status '$cc_status')"; fi
+
+    check_duplicate "$name" "$file" /api/v1/fnol/report
   done
 }
 
@@ -72,35 +164,19 @@ if ! curl -s --max-time 5 "$API_URL/api/v1/health" | grep -q UP; then
   exit 2
 fi
 
-for file in "$DIR"/scenario_*.json; do
-  name=$(basename "$file" .json)
-  echo "== $name"
-  submit_fresh "$file"
-
-  check "$name" "HTTP status" "$(expected "$file" expectedStatus)" "$HTTP_CODE"
-  check "$name" "error" "$(expected "$file" expectedError)" "$(json_string "$BODY" error)"
-  check "$name" "claim status" "$(expected "$file" expectedClaimStatus)" "$(json_string "$BODY" status)"
-  check "$name" "decision" "$(expected "$file" expectedDecision)" "$(json_string "$BODY" decision)"
-
-  flag=$(expected "$file" expectedInputFlag)
-  if [[ -n "$flag" ]]; then
-    if grep -qE "\"inputFlags\":\[[^]]*\"$flag\"" <<<"$BODY"; then PASSES=$((PASSES + 1));
-    else FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] inputFlags: expected $flag"; fi
+if [[ "$INTAKE" == "direct" || "$INTAKE" == "both" ]]; then
+  run_direct
+fi
+if [[ "$INTAKE" == "claims-system" || "$INTAKE" == "both" ]]; then
+  if curl -s --max-time 5 "$API_URL/api/v1/health" | grep -q '"intake":"CLAIMS_SYSTEM"'; then
+    echo
+    run_claims_system
+  else
+    echo
+    echo "Claims-system pass skipped: the API reports direct intake (set CLAIMS_EVENT_SECRET on both services)."
+    [[ "$INTAKE" == "claims-system" ]] && FAILURES=$((FAILURES + 1))
   fi
-
-  gate=$(expected "$file" expectedGateFlag)
-  if [[ -n "$gate" ]]; then
-    if grep -qE "\"gateFlags\":\[[^]]*\"$gate\"" <<<"$BODY"; then PASSES=$((PASSES + 1));
-    else FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] gateFlags: expected $gate"; fi
-  fi
-
-  dup=$(expected "$file" expectedDuplicateStatus)
-  if [[ -n "$dup" ]]; then
-    post "$PAYLOAD"
-    check "$name" "duplicate HTTP status" "$dup" "$HTTP_CODE"
-    check "$name" "duplicate error" "$(expected "$file" expectedDuplicateError)" "$(json_string "$BODY" error)"
-  fi
-done
+fi
 
 echo
 echo "Checks passed: $PASSES, failed: $FAILURES"

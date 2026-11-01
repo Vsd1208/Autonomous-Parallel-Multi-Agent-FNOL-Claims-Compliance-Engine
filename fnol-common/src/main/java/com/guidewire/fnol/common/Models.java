@@ -574,6 +574,26 @@ public final class Models {
         }
     }
 
+    /**
+     * A partial update of a claim the claims system already holds (PATCH): what the AI extension records on it.
+     * Null fields are left unchanged.
+     */
+    public record ClaimPatch(
+            String status,
+            BigDecimal estimatedDamage,
+            BigDecimal reserve
+    ) {}
+
+    /** A claims-system event as delivered to subscribers (modelled on CloudEvents; field names as in that spec). */
+    public record ClaimEvent(
+            String id,
+            String type,              // e.g. claim.submitted
+            String source,
+            Instant time,
+            String subject,           // the claim number
+            Map<String, Object> data
+    ) {}
+
     public record ClaimCreateResponse(
             String claimId,
             String status

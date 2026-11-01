@@ -28,7 +28,7 @@ class ClaimCenterPersistenceTest {
                 "jdbc:h2:mem:cc-" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", "");
         new ResourceDatabasePopulator(new ClassPathResource("claimcenter-schema.sql")).execute(db);
 
-        ClaimCenterController first = new ClaimCenterController(new ClaimCenterStore(new JdbcTemplate(db), mapper), 1);
+        ClaimCenterController first = new ClaimCenterController(new ClaimCenterStore(new JdbcTemplate(db), mapper), new ClaimEventOutbox(new JdbcTemplate(db), mapper), 1);
         String id = first.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 8, 16), "CA",
                 new BigDecimal("4200"), new BigDecimal("4830"), "DRAFT_PENDING_REVIEW")).claimId();
         first.attach(id, new ClaimAttachment("ai-assessment.json", "application/json", Map.of("severity", "LOW")));
@@ -36,7 +36,7 @@ class ClaimCenterPersistenceTest {
                 "ADJ-001", null));
 
         // A new controller on the same database is what the service sees after a restart.
-        ClaimCenterController restarted = new ClaimCenterController(new ClaimCenterStore(new JdbcTemplate(db), mapper), 1);
+        ClaimCenterController restarted = new ClaimCenterController(new ClaimCenterStore(new JdbcTemplate(db), mapper), new ClaimEventOutbox(new JdbcTemplate(db), mapper), 1);
 
         Claim reloaded = restarted.get(id);
         assertThat(reloaded.status()).isEqualTo("PENDING_INFORMATION");
@@ -60,7 +60,7 @@ class ClaimCenterPersistenceTest {
         DriverManagerDataSource db = new DriverManagerDataSource(
                 "jdbc:h2:mem:cc-" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", "");
         new ResourceDatabasePopulator(new ClassPathResource("claimcenter-schema.sql")).execute(db);
-        return new ClaimCenterController(new ClaimCenterStore(new JdbcTemplate(db), mapper), 1);
+        return new ClaimCenterController(new ClaimCenterStore(new JdbcTemplate(db), mapper), new ClaimEventOutbox(new JdbcTemplate(db), mapper), 1);
     }
 
     @Test

@@ -12,3 +12,10 @@ spring:
     init:
       mode: always
       schema-locations: classpath:claimcenter-schema.sql
+
+# Events (claim.submitted ...) are delivered to these subscribers, signed with the shared secret.
+claims:
+  events:
+    subscribers: ${CLAIMS_EVENT_SUBSCRIBERS:}
+    secret: ${CLAIMS_EVENT_SECRET:}
+    poll-ms: ${CLAIMS_EVENT_POLL_MS:1000}

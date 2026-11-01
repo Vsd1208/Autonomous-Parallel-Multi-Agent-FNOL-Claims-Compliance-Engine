@@ -6,7 +6,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -16,6 +18,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @SpringBootApplication
+@EnableScheduling
 public class MockGuidewireApplication {
     public static void main(String[] args) {
         SpringApplication.run(MockGuidewireApplication.class, args);
@@ -58,6 +61,7 @@ class ClaimCenterController {
     private static final Logger log = LoggerFactory.getLogger(ClaimCenterController.class);
 
     private final ClaimCenterStore store;
+    private final ClaimEventOutbox outbox;
     private final AtomicInteger sequence;
 
     /**
@@ -65,8 +69,10 @@ class ClaimCenterController {
      * after the highest stored claim. MOCK_CC_START_SEQUENCE only raises the first number (e.g. for an empty
      * in-memory database while the FNOL database already holds claims).
      */
-    ClaimCenterController(ClaimCenterStore store, @Value("${MOCK_CC_START_SEQUENCE:1}") int startSequence) {
+    ClaimCenterController(ClaimCenterStore store, ClaimEventOutbox outbox,
+                          @Value("${MOCK_CC_START_SEQUENCE:1}") int startSequence) {
         this.store = store;
+        this.outbox = outbox;
         int highest = store.highestClaimNumber();
         this.sequence = new AtomicInteger(Math.max(startSequence, highest + 1));
         log.info("[MockCC] {} stored claim number(s) up to {}; next is {}", highest > 0 ? "Found" : "No",
@@ -108,6 +114,79 @@ class ClaimCenterController {
         }
         store.attach(claimId, attachment);
         return attachment;
+    }
+
+    // ── FNOL: the claims system is the system of record. A loss is reported here (draft), then submitted, which
+    //    emits claim.submitted; the AI extension reacts and writes its results back onto the claim. Modelled on the
+    //    Cloud API's create-draft-then-submit flow; paths and payloads are this project's, not verified. ──
+
+    @PostMapping("/cc/rest/claim/v1/claims")
+    @ResponseStatus(HttpStatus.CREATED)
+    ClaimCreateResponse reportLoss(@RequestBody FNOLPayload fnol) {
+        if (fnol.policyNumber() == null || fnol.incidentDate() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "policyNumber and incidentDate are required");
+        }
+        // Duplicate check at the system of record (modelled on a claims system's duplicate-claim search): the same
+        // loss reported again is refused, and the original claim gets an activity so a person verifies it.
+        Optional<String> original = outbox.reportedClaimFor(fnol);
+        if (original.isPresent()) {
+            store.addActivity(original.get(), new CcActivity(null, "Verify possible duplicate report",
+                    "The same loss (policy, loss date, state) was reported again and refused as a duplicate. Check "
+                            + "whether it is a second, separate loss.", "high", java.time.LocalDate.now().plusDays(1),
+                    null, null, null));
+            log.info("[MockCC] Duplicate report of {} refused", original.get());
+            throw new DuplicateLossException(original.get());
+        }
+        String id = "CLM-2026-%06d".formatted(sequence.getAndIncrement());
+        outbox.createDraft(id, fnol);
+        log.info("[MockCC] FNOL reported as draft {} on policy {}", id, fnol.policyNumber());
+        return new ClaimCreateResponse(id, ClaimEventOutbox.DRAFT);
+    }
+
+    static class DuplicateLossException extends RuntimeException {
+        final String originalClaimId;
+        DuplicateLossException(String originalClaimId) {
+            super("This loss has already been reported as " + originalClaimId);
+            this.originalClaimId = originalClaimId;
+        }
+    }
+
+    /** 409 naming the claim the loss was first reported as. */
+    @ExceptionHandler(DuplicateLossException.class)
+    ResponseEntity<Map<String, String>> duplicate(DuplicateLossException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "DUPLICATE_FNOL",
+                "message", e.getMessage(), "claimId", e.originalClaimId));
+    }
+
+    @PostMapping("/cc/rest/claim/v1/claims/{claimId}/submit")
+    ClaimCreateResponse submit(@PathVariable("claimId") String claimId) {
+        requireClaim(claimId);
+        if (!outbox.submit(claimId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a draft claim can be submitted");
+        }
+        log.info("[MockCC] Claim {} submitted; claim.submitted queued for subscribers", claimId);
+        return new ClaimCreateResponse(claimId, ClaimEventOutbox.SUBMITTED);
+    }
+
+    @GetMapping("/cc/rest/claim/v1/claims/{claimId}/fnol")
+    FNOLPayload fnol(@PathVariable("claimId") String claimId) {
+        return outbox.fnol(claimId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No FNOL report for this claim"));
+    }
+
+    @PatchMapping("/cc/rest/claim/v1/claims/{claimId}")
+    Claim patch(@PathVariable("claimId") String claimId, @RequestBody ClaimPatch patch) {
+        if (!outbox.patch(claimId, patch)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Synthetic claim not found");
+        }
+        return get(claimId);
+    }
+
+    /** Operations view of the event outbox: a claim's events, or the ones not delivered yet. */
+    @GetMapping("/cc/events")
+    List<Map<String, Object>> events(@RequestParam(name = "claimId", required = false) String claimId,
+                                     @RequestParam(name = "undelivered", defaultValue = "false") boolean undelivered) {
+        return outbox.list(claimId, undelivered);
     }
 
     // ── Claim child objects, on paths modelled on (not verified against) the ClaimCenter Cloud API claim resources ──

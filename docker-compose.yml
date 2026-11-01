@@ -34,6 +34,11 @@ services:
       MOCK_CC_DB_URL: jdbc:postgresql://postgres:5432/fnol
       MOCK_CC_DB_USERNAME: fnol
       MOCK_CC_DB_PASSWORD: fnol
+      # The claims system publishes claim.submitted to the AI extension, which writes its analysis back.
+      CLAIMS_EVENT_SUBSCRIBERS: "${CLAIMS_EVENT_SUBSCRIBERS:-http://fnol-api:8080/api/v1/events/claimcenter}"
+      # Shared secret that signs claims-system events (HMAC-SHA256). The default is for local runs only:
+      # anything beyond a laptop demo must set its own CLAIMS_EVENT_SECRET, the same on both services.
+      CLAIMS_EVENT_SECRET: "${CLAIMS_EVENT_SECRET:-local-dev-event-secret}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +83,9 @@ services:
       # One-time upload links sent to claimants open the portal
       FNOL_PORTAL_BASE_URL: "${FNOL_PORTAL_BASE_URL:-http://localhost:5174}"
       FNOL_EVIDENCE_ALLOWED_HOSTS: "${FNOL_EVIDENCE_ALLOWED_HOSTS:-}"
+      # Shared secret that signs claims-system events (HMAC-SHA256). The default is for local runs only:
+      # anything beyond a laptop demo must set its own CLAIMS_EVENT_SECRET, the same on both services.
+      CLAIMS_EVENT_SECRET: "${CLAIMS_EVENT_SECRET:-local-dev-event-secret}"
       # Second-opinion model; empty turns it off (the MODEL_DISAGREEMENT check then never runs).
       FNOL_SECOND_OPINION_URL: "${FNOL_SECOND_OPINION_URL:-http://vision-ml:8090}"
       # Faces and licence plates are blurred here before any photo goes to Gemini. With REQUIRED=true no photo is
