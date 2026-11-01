@@ -91,7 +91,10 @@ class FraudAnomalyScenarioTest {
     @Test
     @DisplayName("Scenario 10 across its date range raises FRAUD_ANOMALY with its top contributors")
     void fraudScenarioIsFlagged() throws Exception {
-        for (int daysAgo : new int[] {45, 75}) {
+        // Both ends of the range run-all.sh picks from (daysAgoMin / daysAgoMax in the scenario file).
+        JsonNode scenario = objectMapper.readTree(Files.readString(Path.of("..", "demo-scenarios",
+                "scenario_10_fraud_anomaly.json")));
+        for (int daysAgo : new int[] {scenario.path("daysAgoMin").asInt(), scenario.path("daysAgoMax").asInt()}) {
             JsonNode r = run("scenario_10_fraud_anomaly.json", daysAgo);
             assertThat(r.path("inputFlags")).isEmpty();
             assertThat(r.path("gateFlags").toString()).contains("FRAUD_ANOMALY");
