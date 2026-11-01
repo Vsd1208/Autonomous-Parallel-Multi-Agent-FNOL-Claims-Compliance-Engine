@@ -149,7 +149,8 @@ def main():
         run(todo, labels, key, prompt, args, out_path, gap, cfg)
     except DailyQuotaExhausted as e:
         print(f"Stopped: daily quota used up ({e}). Run again tomorrow to continue; nothing was lost.")
-    answered = sum(1 for l in open(out_path, encoding="utf-8") if l.strip()) if os.path.exists(out_path) else 0
+    answered = sum(1 for l in open(out_path, encoding="utf-8") if l.strip() and "prediction" in json.loads(l)) \
+        if os.path.exists(out_path) else 0
     print(f"{answered}/{len(sample)} images answered so far.")
 
 

@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -38,7 +39,9 @@ class SecondOpinionAgentTest {
                 .andExpect(jsonPath("$.angles[1]").value("CLOSE_UP"))
                 .andRespond(withSuccess("""
                         {"model": "second-opinion v1", "damageProbabilities": {"FLOOD": 0.81, "WIND_STORM": 0.19},
-                         "subjectProbabilities": {"BUILDING": 0.93, "VEHICLE": 0.07}}""", MediaType.APPLICATION_JSON));
+                         "subjectProbabilities": {"BUILDING": 0.93, "VEHICLE": 0.07},
+                         "propertyTypeProbabilities": {"RESIDENTIAL": 0.88, "COMMERCIAL": 0.09, "OTHER_PROPERTY": 0.03}}""",
+                        MediaType.APPLICATION_JSON));
         SecondOpinionAgent agent = new SecondOpinionAgent("http://vision-ml:8090", rest, new EvidenceImageLoader(List.of()));
 
         SecondOpinion so = agent.start(payload(List.of(PHOTO, "mock://photo/x.jpg", PHOTO),
@@ -49,6 +52,28 @@ class SecondOpinionAgentTest {
         assertThat(so.probabilityOf("FLOOD")).isEqualByComparingTo("0.81");
         assertThat(so.probabilityOf("FRONT_BUMPER")).isNull();
         assertThat(so.subjectProbabilities()).containsKey("BUILDING");
+        assertThat(so.propertyTypeProbabilities()).containsEntry("RESIDENTIAL", new BigDecimal("0.88"));
+    }
+
+    @Test
+    @DisplayName("Parses the visible damage extent of a vehicle claim; an older model without it gives null")
+    void parsesExtent() throws Exception {
+        RestTemplate rest = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(rest).build();
+        server.expect(requestTo("http://vision-ml:8090/v1/second-opinion")).andRespond(withSuccess("""
+                {"model": "second-opinion v2", "damageProbabilities": {"FRONT_BUMPER": 0.7, "SIDE_PANEL": 0.3},
+                 "subjectProbabilities": {"VEHICLE": 0.98}, "extent": {"band": "LARGE", "share": 0.21}}""",
+                MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://vision-ml:8090/v1/second-opinion")).andRespond(withSuccess("""
+                {"model": "second-opinion v1", "damageProbabilities": {"FRONT_BUMPER": 0.7},
+                 "subjectProbabilities": {"VEHICLE": 0.98}}""", MediaType.APPLICATION_JSON));
+        SecondOpinionAgent agent = new SecondOpinionAgent("http://vision-ml:8090", rest, new EvidenceImageLoader(List.of()));
+
+        SecondOpinion v2 = agent.start(payload(List.of(PHOTO), List.of("CLOSE_UP")), "AUTO").get();
+        assertThat(v2.extent().band()).isEqualTo("LARGE");
+        assertThat(v2.extent().share()).isEqualByComparingTo("0.21");
+        assertThat(agent.start(payload(List.of(PHOTO), List.of("CLOSE_UP")), "AUTO").get().extent()).isNull();
+        server.verify();
     }
 
     @Test

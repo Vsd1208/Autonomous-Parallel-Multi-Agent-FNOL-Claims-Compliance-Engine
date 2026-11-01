@@ -36,11 +36,27 @@ Keywords in the first evidence URI: `blurry` → confidence 0.61; `severe` → M
 
 ### `SecondOpinionAgent`
 Asks the second-opinion vision model (`fnol-vision-ml`, `fnol.second-opinion.url`) about the same photos, loaded through
-the same `EvidenceImageLoader` checks, in parallel with Gemini. The model is CLIP ViT-B/32 with a logistic-regression head
-trained on CC0 car-damage photos (damaged area) and zero-shot heads for the photo subject and the home cause of loss
-(`tools/second-opinion`). Branch A waits at most 2.5 s for it after Gemini and coverage are done; off, unreachable, slow
+the same `EvidenceImageLoader` checks, in parallel with Gemini. The model is CLIP ViT-B/32 + DINOv2-base embeddings with
+a logistic-regression head trained on CC0 car-damage photos (damaged area), a ridge head for the visible damage extent
+(SMALL / MEDIUM / LARGE, not a cost) and zero-shot CLIP heads for the photo subject and the home cause of loss
+(`tools/second-opinion`). Branch A waits at most 2.5 s for it after Gemini and coverage are done (10 s when Gemini could not answer, since the on-premise model is then the only reader; never past the claim's overall deadline); off, unreachable, slow
 or no uploaded photo gives `secondOpinion: null` and the claim is handled as without it. When it gives Gemini's damage
-type less than `fnol.stp.second-opinion-min-probability` (0.15) the gate raises `MODEL_DISAGREEMENT`.
+type less than `fnol.stp.second-opinion-min-probability` (0.10) the gate raises `MODEL_DISAGREEMENT`.
+
+### `OnPremiseVision`
+When Gemini cannot answer on usable photos (quota, outage, no key, unreadable reply), a vehicle claim used to get a
+placeholder ("UNKNOWN"). Branch A now puts the on-premise model's reading in its place: damaged area, probabilities and
+photo subject, with `visionSource` "on-premise …". The estimate and severity stay placeholders (no cost data), the
+trust score and the fraud score's disagreement feature are not applied to it, and the gate raises `ON_PREMISE_VISION`,
+so an adjuster always confirms.
+
+### `RepairCostEstimator`
+For a vehicle claim, the dollar range for the damaged area at the visible extent the on-premise model saw
+(`repair-cost-ranges.json`: published AAA, Consumer Reports and CCC figures, each with its source; or, once it beats
+them on real claims, `repair-cost-learned.json` from `tools/cost-eval/fit_costs.py`). Branch A step A7 attaches it to
+the claim (`branchA.repairCost`), prices on-premise readings from it and recalculates their reserve, and the gate raises
+`ESTIMATE_OUTSIDE_PUBLISHED_RANGE` when Gemini's estimate is more than 4x outside it. Each adjuster decision stores the
+real repair cost (inspection or adjuster) for the next fit.
 
 ### `TrustScorer`
 Replaces Gemini's self-reported confidence (nearly constant, AUC about 0.5) with a calibrated trust score, the
@@ -77,7 +93,7 @@ Regex redaction of SSN (`***-**-****`), DOB (`**/**/****`), MRN (`[REDACTED_MRN]
 `applySeverity` adds Branch A's severity points — MINOR 5 / MODERATE 15 / SEVERE 25 (other values 15) — caps the score at 100, sets `INVESTIGATE` at 70 or more (else `MONITOR`) and adds a referral note. A rear-end claim with a police report and MODERATE damage scores 70, so it goes to a human for subrogation.
 
 ### `GateConsistencyChecker`
-Cross-checks the branches and the policy: `SEVERITY_ESTIMATE_MISMATCH` (severity label vs. estimate band: MINOR < $2,000, MODERATE ≤ $10,000, else SEVERE), `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH` (vehicle damage on a HOME policy, property damage on AUTO), `MODEL_DISAGREEMENT` (the second-opinion model gives Gemini's damage type less than 0.15; on labelled car photos it caught the one confident wrong answer no other check stops, `tools/second-opinion/README.md`), `PHOTO_SUBJECT_MISMATCH` (`photoSubject` is not what the line insures: VEHICLE for AUTO, BUILDING for HOME; e.g. a house on an auto policy, a car or a boat on a home policy, or no damaged property; on a HOME policy, OTHER_PROPERTY such as a fence asks the adjuster to check other-structures or personal-property cover), `POSSIBLE_FLOOD_EXCLUSION` (FLOOD on a HOME policy: standard homeowners policies exclude flood, so an adjuster confirms the cause of loss; the AI never denies), `CONFIDENCE_PHOTO_QUALITY_MISMATCH` (confidence ≥ 0.85 on a BLURRY/UNUSABLE photo), `AMBIGUOUS_DAMAGE_TYPE` (gap between the two highest damage-type probabilities below `fnol.stp.min-probability-margin`, default 0.30; on labelled photos every wrong answer that passed the confidence factor was below it, see `tools/vision-eval/README.md`), `CLAIMED_EXCEEDS_AI_ESTIMATE` (amount claimed more than `fnol.stp.claimed-amount-tolerance`, default 10%, above the AI estimate: the adjuster requests more photos, investigates, or approves at the AI estimate). `RESERVE_EXCEEDS_COVERAGE_LIMIT` now means the loss after the deductible is above the limit (the reserve itself is capped). Flags block STP and add an explanation note.
+Cross-checks the branches and the policy: `SEVERITY_ESTIMATE_MISMATCH` (severity label vs. estimate band: MINOR < $2,000, MODERATE ≤ $10,000, else SEVERE), `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH` (vehicle damage on a HOME policy, property damage on AUTO), `ON_PREMISE_VISION` (Gemini was unavailable and the on-premise model read the photos; priced from the repair-cost range), `ESTIMATE_OUTSIDE_PUBLISHED_RANGE` (Gemini's estimate more than 4x outside the repair-cost range for the area and extent), `MODEL_DISAGREEMENT` (the second-opinion model gives Gemini's damage type less than 0.10; on labelled car photos it caught the one confident wrong answer no other check stops, `tools/second-opinion/README.md`), `PHOTO_SUBJECT_MISMATCH` (`photoSubject` is not what the line insures: VEHICLE for AUTO, BUILDING for HOME; e.g. a house on an auto policy, a car or a boat on a home policy, or no damaged property; on a HOME policy, OTHER_PROPERTY such as a fence asks the adjuster to check other-structures or personal-property cover), `POSSIBLE_FLOOD_EXCLUSION` (FLOOD on a HOME policy: standard homeowners policies exclude flood, so an adjuster confirms the cause of loss; the AI never denies), `CONFIDENCE_PHOTO_QUALITY_MISMATCH` (confidence ≥ 0.85 on a BLURRY/UNUSABLE photo), `AMBIGUOUS_DAMAGE_TYPE` (gap between the two highest damage-type probabilities below `fnol.stp.min-probability-margin`, default 0.30; on labelled photos every wrong answer that passed the confidence factor was below it, see `tools/vision-eval/README.md`), `CLAIMED_EXCEEDS_AI_ESTIMATE` (amount claimed more than `fnol.stp.claimed-amount-tolerance`, default 10%, above the AI estimate: the adjuster requests more photos, investigates, or approves at the AI estimate). `RESERVE_EXCEEDS_COVERAGE_LIMIT` now means the loss after the deductible is above the limit (the reserve itself is capped). Flags block STP and add an explanation note.
 
 ### `FraudAnomalyScorer`
 Sums one-sided robust z-scores of six intake features (amount claimed / AI estimate, days from policy start to loss,

@@ -6,8 +6,12 @@ import com.guidewire.fnol.api.persistence.AiFeedbackEntity;
 import com.guidewire.fnol.api.persistence.AiFeedbackRepository;
 import com.guidewire.fnol.api.persistence.ClaimEntity;
 import com.guidewire.fnol.api.persistence.ClaimRepository;
+import com.guidewire.fnol.api.persistence.InspectionEntity;
+import com.guidewire.fnol.api.persistence.InspectionRepository;
+import com.guidewire.fnol.common.Models.AdjusterReviewRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -34,6 +38,13 @@ public class AiGovernanceService {
     private final AiFeedbackRepository feedback;
     private final ClaimRepository claims;
     private final ObjectMapper mapper;
+    private InspectionRepository inspections;
+
+    static final String INVESTIGATION_DECISION = "INVESTIGATION_REQUIRED";
+    /** The investigator's reported cost on a claim sent to investigation: evidence, and it outranks other figures. */
+    static final String INVESTIGATION = "INVESTIGATION";
+    /** A figure entered on a claim under investigation before the investigator reported: kept, never learned from. */
+    static final String HELD = "INVESTIGATION_HOLD";
 
     public AiGovernanceService(AiFeedbackRepository feedback, ClaimRepository claims, ObjectMapper mapper) {
         this.feedback = feedback;
@@ -41,10 +52,15 @@ public class AiGovernanceService {
         this.mapper = mapper;
     }
 
+    @Autowired(required = false)
+    public void setInspections(InspectionRepository inspections) {
+        this.inspections = inspections;
+    }
+
     /** The AI's view of a claim, read from the analysis stored at intake. */
     record AiView(String line, String damageType, String status, BigDecimal reserve, BigDecimal confidence,
                   BigDecimal rawConfidence, BigDecimal margin, BigDecimal agreement, String subject, JsonNode privacy,
-                  String visionSource) {}
+                  String visionSource, BigDecimal estimate, String extentBand, BigDecimal tableEstimate) {}
 
     AiView view(ClaimEntity claim) {
         JsonNode a = parse(claim.analysisJson);
@@ -57,12 +73,24 @@ public class AiGovernanceService {
                 : decimal(a.path("branchA").path("secondOpinion").path("damageProbabilities").path(type));
         return new AiView(line, type, text(a, "status"), claim.reserve, decimal(d.path("confidence")),
                 decimal(d.path("rawConfidence")), margin(d.path("damageTypeProbabilities")), agreement,
-                text(d, "photoSubject"), d.path("privacy"), text(d, "visionSource"));
+                text(d, "photoSubject"), d.path("privacy"), text(d, "visionSource"), decimal(d.path("estimatedDamage")),
+                text(a.path("branchA").path("secondOpinion").path("extent"), "band"),
+                decimal(a.path("branchA").path("repairCost").path("estimate")));
     }
 
-    /** Records an adjuster decision next to the AI's view. Never throws: the decision itself is already saved. */
     public void recordDecision(ClaimEntity claim, String decision, String adjusterId, BigDecimal adjusterReserve,
                                String confirmedDamageType) {
+        recordDecision(claim, decision, adjusterId, adjusterReserve, confirmedDamageType, null, null);
+    }
+
+    /**
+     * Records an adjuster decision next to the AI's view, with the repair cost when one is known: the adjuster's figure
+     * and what it rests on (invoice, body-shop estimate, inspection, or their own judgement), else the latest completed
+     * inspection's accident-related amount. Only evidence-backed costs teach the cost model (fit_costs.py); a judgement
+     * is kept for the record. Never throws: the decision itself is already saved.
+     */
+    public void recordDecision(ClaimEntity claim, String decision, String adjusterId, BigDecimal adjusterReserve,
+                               String confirmedDamageType, BigDecimal finalRepairCost, String repairCostSource) {
         try {
             AiView ai = view(claim);
             AiFeedbackEntity f = new AiFeedbackEntity();
@@ -81,12 +109,89 @@ public class AiGovernanceService {
             f.photoSubject = ai.subject();
             f.visionSource = ai.visionSource();
             f.gateFlags = claim.gateFlags;
+            f.aiEstimate = ai.estimate();
+            f.extentBand = ai.extentBand();
+            f.publishedEstimate = ai.tableEstimate();
+            // A claim sent to investigation learns only from the investigator's offline findings: until they report,
+            // any figure is held; once they have, their figure is the claim's label, whatever is entered later.
+            // Sending it to investigation now starts a new one: only a report from here on counts.
+            Instant investigated = INVESTIGATION_DECISION.equals(decision) ? Instant.now()
+                    : investigationStarted(claim.claimId);
+            if (investigated != null) {
+                BigDecimal found = investigatedCost(claim.claimId, investigated);
+                if (found != null) {
+                    f.finalRepairCost = found;
+                    f.costSource = INVESTIGATION;
+                } else if (finalRepairCost != null) {
+                    f.finalRepairCost = finalRepairCost;
+                    f.costSource = HELD;
+                }
+            } else if (finalRepairCost != null) {
+                f.finalRepairCost = finalRepairCost;
+                // No stated evidence counts as judgement, so an unverified figure can never teach the model.
+                f.costSource = repairCostSource == null ? "ADJUSTER_JUDGEMENT" : repairCostSource;
+            } else {
+                BigDecimal inspected = inspectedCost(claim.claimId);
+                if (inspected != null) {
+                    f.finalRepairCost = inspected;
+                    f.costSource = "INSPECTION";
+                }
+            }
             f.adjusterId = adjusterId;
             f.decidedAt = Instant.now();
             feedback.save(f);
         } catch (RuntimeException e) {
             log.warn("[AI governance] Feedback not recorded for claimId={}: {}", claim.claimId, e.getMessage());
         }
+    }
+
+    /** When the claim was first sent to investigation, or null if it never was. */
+    Instant investigationStarted(String claimId) {
+        if (feedback == null) return null;
+        return feedback.findByClaimIdOrderByDecidedAtAsc(claimId).stream()
+                .filter(f -> INVESTIGATION_DECISION.equals(f.adjusterDecision)).map(f -> f.decidedAt)
+                .findFirst().orElse(null);
+    }
+
+    /** The accident-related amount of the latest inspection completed since the investigation started, or null. */
+    BigDecimal investigatedCost(String claimId, Instant since) {
+        if (inspections == null) return null;
+        BigDecimal latest = null;
+        for (InspectionEntity i : inspections.findByClaimIdOrderByAssignedAtAsc(claimId)) {
+            if ("COMPLETED".equals(i.status) && i.accidentRelatedAmount != null && i.completedAt != null
+                    && !i.completedAt.isBefore(since)) {
+                latest = i.accidentRelatedAmount;
+            }
+        }
+        return latest;
+    }
+
+    /**
+     * The investigator reported on a claim under investigation: their accident-related amount becomes the claim's
+     * repair-cost label (source INVESTIGATION) on its latest feedback row, replacing a held figure. Runs in its own
+     * transaction, so a failure here can never roll back the inspector's report.
+     */
+    @org.springframework.transaction.annotation.Transactional(
+            propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void recordInvestigationFindings(String claimId, BigDecimal accidentRelatedAmount, Instant reportedAt) {
+        Instant started = investigationStarted(claimId);
+        if (started == null || accidentRelatedAmount == null || reportedAt.isBefore(started)) return;
+        List<AiFeedbackEntity> rows = feedback.findByClaimIdOrderByDecidedAtAsc(claimId);
+        AiFeedbackEntity latest = rows.get(rows.size() - 1);
+        latest.finalRepairCost = accidentRelatedAmount;
+        latest.costSource = INVESTIGATION;
+        feedback.save(latest);
+        log.info("[AI governance] Investigation findings recorded as the repair-cost label for claimId={}", claimId);
+    }
+
+    /** The accident-related amount of the claim's latest completed inspection, or null. */
+    BigDecimal inspectedCost(String claimId) {
+        if (inspections == null) return null;
+        BigDecimal latest = null;
+        for (InspectionEntity i : inspections.findByClaimIdOrderByAssignedAtAsc(claimId)) {
+            if ("COMPLETED".equals(i.status) && i.accidentRelatedAmount != null) latest = i.accidentRelatedAmount;
+        }
+        return latest;
     }
 
     public List<AiFeedbackEntity> feedback() {
@@ -143,6 +248,7 @@ public class AiGovernanceService {
         agreement.put("byDecision", decisions.stream().collect(Collectors.groupingBy(f -> f.adjusterDecision,
                 TreeMap::new, Collectors.counting())));
         out.put("agreement", agreement);
+        out.put("repairCost", repairCostAccuracy(decisions));
 
         // Privacy: what was sent to the external model.
         int sent = 0, withheld = 0, faces = 0, plates = 0, redactedClaims = 0;
@@ -175,12 +281,59 @@ public class AiGovernanceService {
             row.put("meanConfidence", mean(vs.stream().map(AiView::confidence).toList()));
             row.put("hedgedShare", share(vs, v -> HEDGED.contains(v.damageType())));
             row.put("secondOpinionLowShare", share(vs.stream().filter(v -> v.agreement() != null).toList(),
-                    v -> v.agreement().compareTo(new BigDecimal("0.15")) < 0));
+                    v -> v.agreement().compareTo(new BigDecimal("0.10")) < 0));   // fnol.stp.second-opinion-min-probability
             drift.add(row);
         });
         out.put("drift", drift);
         out.put("deadlines", deadlineCompliance(filed));
         out.put("fairness", fairness(filed, views, decisions));
+        return out;
+    }
+
+    /**
+     * How close repair estimates come to the repair costs recorded with decisions: counts by source, and, on the
+     * evidence-backed costs only (invoice, body-shop estimate, inspection), the median absolute percentage error and
+     * how many were within 25%, for the AI's estimate and for the repair-cost table's. The evidence-backed costs are
+     * what tools/cost-eval/fit_costs.py learns from; adjusters' judgements are counted but not used.
+     */
+    static Map<String, Object> repairCostAccuracy(List<AiFeedbackEntity> decisions) {
+        // One label per claim: its latest decision with a cost (decisions arrive oldest first).
+        Map<Object, AiFeedbackEntity> latestPerClaim = new LinkedHashMap<>();
+        for (AiFeedbackEntity f : decisions) {
+            if (f.finalRepairCost == null || f.finalRepairCost.signum() <= 0) continue;
+            Object key = f.claimId != null ? f.claimId : f;
+            latestPerClaim.remove(key);
+            latestPerClaim.put(key, f);
+        }
+        List<AiFeedbackEntity> withCost = List.copyOf(latestPerClaim.values());
+        List<AiFeedbackEntity> evidence = withCost.stream()
+                .filter(f -> AdjusterReviewRequest.EVIDENCE_SOURCES.contains(f.costSource)).toList();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("claimsWithRepairCost", withCost.size());
+        out.put("evidenceBacked", evidence.size());
+        out.put("bySource", withCost.stream().collect(Collectors.groupingBy(
+                f -> f.costSource == null ? "UNKNOWN" : f.costSource, TreeMap::new, Collectors.counting())));
+        out.put("ai", errorSummary(evidence, f -> f.aiEstimate));
+        out.put("costTable", errorSummary(evidence, f -> f.publishedEstimate));
+        return out;
+    }
+
+    private static Map<String, Object> errorSummary(List<AiFeedbackEntity> known,
+                                                    java.util.function.Function<AiFeedbackEntity, BigDecimal> estimate) {
+        List<Double> errors = new ArrayList<>();
+        for (AiFeedbackEntity f : known) {
+            BigDecimal e = estimate.apply(f);
+            if (e == null) continue;
+            errors.add(Math.abs(e.doubleValue() - f.finalRepairCost.doubleValue()) / f.finalRepairCost.doubleValue());
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("claims", errors.size());
+        if (errors.isEmpty()) return out;
+        Collections.sort(errors);
+        double median = errors.size() % 2 == 1 ? errors.get(errors.size() / 2)
+                : (errors.get(errors.size() / 2 - 1) + errors.get(errors.size() / 2)) / 2;
+        out.put("medianAbsPercentError", BigDecimal.valueOf(median * 100).setScale(1, RoundingMode.HALF_UP));
+        out.put("within25Percent", errors.stream().filter(x -> x <= 0.25).count());
         return out;
     }
 

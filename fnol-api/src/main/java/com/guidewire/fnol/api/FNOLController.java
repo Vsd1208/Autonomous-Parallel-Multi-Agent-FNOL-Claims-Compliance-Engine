@@ -381,6 +381,12 @@ public class FNOLController {
         if (!ADJUSTER_DECISIONS.contains(decision)) {
             throw new IllegalArgumentException("Unsupported adjuster decision: " + request.decision());
         }
+        String costSource = request.repairCostSource() == null || request.repairCostSource().isBlank() ? null
+                : request.repairCostSource().trim().toUpperCase(Locale.ROOT);
+        if (costSource != null && !AdjusterReviewRequest.REPAIR_COST_SOURCES.contains(costSource)) {
+            throw new IllegalArgumentException("repairCostSource must be one of "
+                    + new TreeSet<>(AdjusterReviewRequest.REPAIR_COST_SOURCES));
+        }
         // Human Review Point 3 "modify findings": an adjusted reserve must say why.
         if (request.adjustedReserve() != null
                 && (request.overrideReason() == null || request.overrideReason().isBlank())) {
@@ -416,7 +422,7 @@ public class FNOLController {
         // Feedback loop: the decision next to what the AI said (metrics and new labelled data).
         if (governance != null) {
             governance.recordDecision(updated, decision, request.adjusterId(), request.adjustedReserve(),
-                    request.confirmedDamageType());
+                    request.confirmedDamageType(), request.finalRepairCost(), costSource);
         }
         return ResponseEntity.ok(new AdjusterReviewResponse(
                 updated.claimId,

@@ -2,6 +2,7 @@ package com.guidewire.fnol.orchestrator;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guidewire.fnol.agents.OnPremiseVision;
 import com.guidewire.fnol.common.Models.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -114,7 +115,8 @@ public class FraudAnomalyScorer {
                 : (double) ChronoUnit.DAYS.between(policy.effectiveDate(), payload.incidentDate()));
         x.put("reportLagDays", (double) ChronoUnit.DAYS.between(payload.incidentDate(), today));
         x.put("priorClaims12m", history == null ? null : (double) history.claimsLast12Months());
-        SecondOpinion so = branchA.secondOpinion();
+        // On-premise answers come from the second opinion itself, so there is no disagreement to measure.
+        SecondOpinion so = OnPremiseVision.isOnPremise(branchA.damageAssessment()) ? null : branchA.secondOpinion();
         BigDecimal agreement = so == null ? null : so.probabilityOf(branchA.damageAssessment().damageType());
         x.put("secondOpinionDisagreement", agreement == null ? null : 1 - agreement.doubleValue());
         x.put("photoReused", photoReused);

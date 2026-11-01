@@ -20,7 +20,7 @@ output is written to the claim's tamper-evident audit chain.
 | **Measured on** | 66 labelled car-damage photos (Humans in the Loop, CC0), one photo per call, current prompt (run `v3-subject`); 33 more under the previous prompt. |
 | **Results** | Damaged area right (any damaged area / the main one): **82% / 58%**. Car photos recognised as a vehicle: 66/66. With all checks on, wrong answers that could reach straight-through processing fall from 11 to 1 of 66. |
 | **Confidence** | Its self-reported confidence is about 0.9 for nearly every answer and does not separate right from wrong (AUC 0.57). It is not used as the AI confidence once the trust score ships (card 3). |
-| **Known failure modes** | Hedges ("multiple areas") on unclear photos; occasionally a confident wrong area (photo 1153: front bumper for side-panel damage at a 0.70 probability margin). Dollar estimates and severity are **not validated** (no dataset with repair costs). The property prompt (HOME) has not been evaluated yet (53 labelled FEMA photos are prepared). |
+| **Known failure modes** | Hedges ("multiple areas") on unclear photos; occasionally a confident wrong area (photo 1153: front bumper for side-panel damage at a 0.70 probability margin). Dollar estimates and severity are **not validated** (no dataset with repair costs); against published repair-cost ranges its median estimate is 2.7x the midpoint, and 3 of 41 are more than 4x outside (flag `ESTIMATE_OUTSIDE_PUBLISHED_RANGE`, see the repair-cost card). The property prompt (HOME) has not been evaluated yet (53 labelled FEMA photos are prepared). |
 | **Controls** | Probability-margin check (`AMBIGUOUS_DAMAGE_TYPE`), second-opinion check (`MODEL_DISAGREEMENT`), photo-subject check, severity/estimate consistency, reserve capped at the lower of claim and estimate, flood exclusion flag, fallback to a human on any error or timeout. |
 | **Human decision** | Every claim: straight-through-eligible claims still wait for an adjuster to confirm by default; everything else goes to the adjuster queue with the reasons. |
 
@@ -28,13 +28,23 @@ output is written to the claim's tamper-evident audit chain.
 
 | | |
 |---|---|
-| **Purpose** | An independent view of the same photos. When it gives Gemini's answer less than 15%, the claim goes to an adjuster (`MODEL_DISAGREEMENT`). It never decides on its own. |
-| **Type** | CLIP ViT-B/32 image encoder (LAION, MIT licence, safetensors weights) with a logistic-regression head for the vehicle area; zero-shot heads for the photo subject and the home cause of loss. Served by `fnol-vision-ml` on the insurer's own infrastructure. |
-| **Training data** | 441 car-damage photos with damage outlines (Humans in the Loop, CC0); labels derived from the outlines. |
-| **Results (out-of-fold)** | Vehicle area right (main / any): 65% / 81%. Home cause of loss (zero-shot, 53 FEMA photos): 85%. Photo subject: 441/441 car photos as vehicle, 48/53 home photos as building. |
-| **As a check on Gemini** | Of 66 Gemini answers that pass the confidence and margin checks, it flagged **both wrong ones** (2/2) and 4 of 6 with the wrong main area, while sending 4 right answers to an adjuster. |
-| **Known failure modes** | Weak on windshields (6 training photos; no properly licensed photos found to add). On laboratory crash-test photos (NHTSA) it named the right area first for 1 of 6. The 0.15 threshold has not been checked on home claims. |
+| **Purpose** | An independent view of the same photos. When it gives Gemini's answer less than 10%, the claim goes to an adjuster (`MODEL_DISAGREEMENT`). When Gemini cannot answer, it reads vehicle photos on its own (`ON_PREMISE_VISION`, always to an adjuster). It never decides on its own. |
+| **Type** | Two image encoders side by side, LAION CLIP ViT-B/32 (MIT) and Meta DINOv2-base (Apache-2.0), safetensors weights, chosen by benchmark over four encoders and three combinations; logistic-regression head for the vehicle area and ridge regression for the visible damage extent; trained CLIP heads for the property cause of loss and property type; a zero-shot CLIP head for the photo subject. Served by `fnol-vision-ml` on the insurer's own infrastructure: photos never leave. |
+| **Training data** | Cars: 734 photos, 441 with damage outlines (Humans in the Loop, CC0) + 293 from CC BY 4.0 Roboflow Universe datasets, each reviewed by eye (watermarked stock photos excluded). Property: 307 public-domain FEMA photos, each reviewed by eye. |
+| **Results (out-of-fold)** | Vehicle area right (main / any): 78% / 87% (CC0-only model: 72% / 86%); windshields 45/51. Visible extent SMALL / MEDIUM / LARGE right 55% (chance 33%). Property cause of loss 93% (zero-shot 80%); property type 90% (zero-shot 86%). Photo subject: 734/734 car photos as vehicle. |
+| **As a check on Gemini** | Of 66 Gemini answers that pass the confidence and margin checks, it flagged **both wrong ones** (2/2) and 4 of 6 with the wrong main area, while sending 9 right answers to an adjuster (threshold 0.10). |
+| **Known failure modes** | Side panels are the weakest car area. On NHTSA crash-test close-ups it names the right area first for 4 of 6. The CC BY photos' origin is unverified beyond the uploader's licence (some were scraped stock photos; those with a visible watermark were excluded). Commercial property has no fire or fallen-tree photos; burst pipes cannot be learned (no photos). Claims without a close-up use a CLIP-only head (67% / 81%) for speed. Damage types (dent, scratch, ...) are not shipped: AUC 0.57-0.68. The extent measures how much of the photo is damaged, so a close-up looks LARGE; it is not a cost by itself (the repair-cost card turns area + extent into a sourced range). The 0.10 threshold has not been checked on home claims. |
 | **Human decision** | It only adds a flag and a note; the adjuster sees both models' answers side by side. |
+
+## 2a. Repair-cost range
+
+| | |
+|---|---|
+| **Purpose** | A dollar range for a damaged vehicle area at the visible extent the on-premise model saw. Prices claims the on-premise model read (Gemini unavailable) and flags a Gemini estimate more than 4x outside it. It never pays or denies. |
+| **Type** | A lookup table (`repair-cost-ranges.json`, `RepairCostEstimator`) of published US figures with sources (AAA, Consumer Reports, CCC); estimate = the range's geometric mean. Replaced cell by cell by costs learned from this insurer's claims once that is more accurate out of sample (`tools/cost-eval/fit_costs.py`). |
+| **Evidence** | Every figure is quoted from its source with a link. Which figure applies to which extent band is an assumption. No real repair costs exist in the project yet, so its accuracy is **unknown**; the decision form and inspections now collect them. |
+| **Known failure modes** | Ranges are wide (a front bumper with LARGE damage: $4,818-$11,708). Vehicle make, ADAS sensors and local labour rates are not used. The extent depends on photo framing. Gemini's estimates average 2.7x the midpoints: one of the two is off, and only real costs will tell which. |
+| **Human decision** | The range and its sources are shown to the adjuster, who sets the final reserve. A repair cost they record with evidence (invoice, body-shop estimate, inspection) teaches the next version; their judgement alone is kept but not learned from. On a claim sent to investigation, figures are held and the investigator's offline cost is what it learns. |
 
 ## 3. Trust score (calibrated AI confidence)
 

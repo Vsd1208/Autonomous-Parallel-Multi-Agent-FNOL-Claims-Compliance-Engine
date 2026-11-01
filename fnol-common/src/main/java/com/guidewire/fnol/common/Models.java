@@ -236,6 +236,12 @@ public final class Models {
                     damageTypeProbabilities, rawConfidence, photoSubject, p, visionSource);
         }
 
+        /** The same assessment with a different repair estimate and the severity band that goes with it. */
+        public DamageAssessment withEstimate(BigDecimal estimate, String newSeverity) {
+            return new DamageAssessment(damageType, newSeverity, estimate, confidence, photoQuality,
+                    damageTypeProbabilities, rawConfidence, photoSubject, privacy, visionSource);
+        }
+
         /** The same assessment marked with the model, prompt and settings that produced it (for feedback refits). */
         public DamageAssessment withVisionSource(String source) {
             return new DamageAssessment(damageType, severity, estimatedDamage, confidence, photoQuality,
@@ -354,23 +360,65 @@ public final class Models {
             DamageAssessment damageAssessment,
             PolicyValidationResult coverage,
             ReserveResult reserve,
-            SecondOpinion secondOpinion        // null when the second-opinion model is off, unreachable or had no photo
+            SecondOpinion secondOpinion,       // null when the second-opinion model is off, unreachable or had no photo
+            RepairCostRange repairCost         // null for home claims and areas without a cost range
     ) {
         public BranchAResult(DamageAssessment damageAssessment, PolicyValidationResult coverage, ReserveResult reserve) {
-            this(damageAssessment, coverage, reserve, null);
+            this(damageAssessment, coverage, reserve, null, null);
+        }
+
+        public BranchAResult(DamageAssessment damageAssessment, PolicyValidationResult coverage, ReserveResult reserve,
+                             SecondOpinion secondOpinion) {
+            this(damageAssessment, coverage, reserve, secondOpinion, null);
         }
     }
+
+    /**
+     * What repairing this damaged area usually costs, for the visible extent the on-premise model saw
+     * (repair-cost-ranges.json). basis PUBLISHED: published US figures with their sources, mapped to the extent band by
+     * this project (an assumption); LEARNED: fitted on this insurer's inspected and adjuster-confirmed costs
+     * (tools/cost-eval/fit_costs.py). The estimate is the range's geometric mean (PUBLISHED) or the fitted value.
+     */
+    public record RepairCostRange(
+            String area,
+            String extentBand,                 // SMALL | MEDIUM | LARGE, or null when the extent was not measured
+            BigDecimal low,
+            BigDecimal high,
+            BigDecimal estimate,
+            String basis,                      // PUBLISHED | LEARNED
+            String mapping,                    // which published figures apply and why, or how many claims it learned from
+            List<String> sources               // URLs of the published figures; empty for LEARNED
+    ) {}
 
     /**
      * A second, independently trained vision model's view of the same photos (fnol-vision-ml): probabilities for the
      * damaged area (AUTO) or cause of loss (HOME), and for what the photos show. Used to catch Gemini's confident
      * mistakes (gate flag MODEL_DISAGREEMENT); it never decides on its own.
      */
+    /**
+     * Visible damage extent from the on-premise model: the share of the photo covered by damage, banded into thirds of
+     * the labelled photos (SMALL / MEDIUM / LARGE). It also depends on how close the photo was taken; it is not a cost.
+     */
+    public record DamageExtent(String band, BigDecimal share) {}
+
     public record SecondOpinion(
             String model,
             Map<String, BigDecimal> damageProbabilities,
-            Map<String, BigDecimal> subjectProbabilities
+            Map<String, BigDecimal> subjectProbabilities,
+            DamageExtent extent,                          // AUTO only, null when the model has no extent head
+            // HOME only: RESIDENTIAL / COMMERCIAL / OTHER_PROPERTY, trained on reviewed FEMA photos; null otherwise
+            Map<String, BigDecimal> propertyTypeProbabilities
     ) {
+        public SecondOpinion(String model, Map<String, BigDecimal> damageProbabilities,
+                             Map<String, BigDecimal> subjectProbabilities) {
+            this(model, damageProbabilities, subjectProbabilities, null, null);
+        }
+
+        public SecondOpinion(String model, Map<String, BigDecimal> damageProbabilities,
+                             Map<String, BigDecimal> subjectProbabilities, DamageExtent extent) {
+            this(model, damageProbabilities, subjectProbabilities, extent, null);
+        }
+
         /** Probability the second opinion gives a damage type, or null when the type is not one of its classes. */
         public BigDecimal probabilityOf(String damageType) {
             return damageProbabilities == null ? null : damageProbabilities.get(damageType);
@@ -469,15 +517,35 @@ public final class Models {
             String notes,
             @PositiveOrZero BigDecimal adjustedReserve,
             @Size(max = 500) String overrideReason,
-            @Size(max = 40) String confirmedDamageType   // optional: the damaged area / cause the adjuster confirmed
+            @Size(max = 40) String confirmedDamageType,  // optional: the damaged area / cause the adjuster confirmed
+            // optional: the repair cost the adjuster settled on (body-shop invoice or estimate), before the deductible;
+            // with an inspection, its accident-related amount is used when this is empty. Teaches the cost model.
+            @PositiveOrZero BigDecimal finalRepairCost,
+            // what finalRepairCost rests on: INVOICE, BODY_SHOP_ESTIMATE or INSPECTION (evidence: the cost model learns
+            // from these) or ADJUSTER_JUDGEMENT (recorded, never learned from); empty with a cost = ADJUSTER_JUDGEMENT
+            @Size(max = 20) String repairCostSource
     ) {
+        /**
+         * Sources backed by a document, an inspection or an investigation; only these teach the repair-cost model.
+         * INVESTIGATION (the investigator's reported cost on a claim sent to investigation) is set by the system.
+         */
+        public static final Set<String> EVIDENCE_SOURCES =
+                Set.of("INVOICE", "BODY_SHOP_ESTIMATE", "INSPECTION", "INVESTIGATION");
+        public static final Set<String> REPAIR_COST_SOURCES =
+                Set.of("INVOICE", "BODY_SHOP_ESTIMATE", "INSPECTION", "ADJUSTER_JUDGEMENT");
+
         public AdjusterReviewRequest(String decision, String adjusterId, String notes) {
-            this(decision, adjusterId, notes, null, null, null);
+            this(decision, adjusterId, notes, null, null, null, null, null);
         }
 
         public AdjusterReviewRequest(String decision, String adjusterId, String notes, BigDecimal adjustedReserve,
                                      String overrideReason) {
-            this(decision, adjusterId, notes, adjustedReserve, overrideReason, null);
+            this(decision, adjusterId, notes, adjustedReserve, overrideReason, null, null, null);
+        }
+
+        public AdjusterReviewRequest(String decision, String adjusterId, String notes, BigDecimal adjustedReserve,
+                                     String overrideReason, String confirmedDamageType) {
+            this(decision, adjusterId, notes, adjustedReserve, overrideReason, confirmedDamageType, null, null);
         }
     }
 

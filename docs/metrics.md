@@ -87,18 +87,72 @@ has no class for.
 
 ## 4. Second-opinion model (trained in this project)
 
-CLIP ViT-B/32 embeddings + logistic regression; 5-fold stratified cross-validation, seed 7, every number out-of-fold.
-Measured 30 Oct 2026. Command: `cd tools/second-opinion && python -P build_model.py`. Reports:
+CLIP ViT-B/32 + DINOv2-base embeddings side by side + logistic regression (regularisation chosen inside each training
+fold); 5-fold stratified cross-validation, seed 7, every number out-of-fold. Measured 1 Nov 2026. Commands:
+`cd tools/second-opinion && python -P benchmark_encoders.py --encoders clip-b32,dinov2-b,siglip-b16,clip-l14,clip-b32+dinov2-b,siglip-b16+dinov2-b,clip-l14+dinov2-b`
+(encoder choice), `python -P build_model.py` (model), `python -P compare_gemini.py --run v2-multiphoto --run v3-subject`.
+Reports: [report-encoders.md](../tools/second-opinion/results/report-encoders.md),
 [report-second-opinion.md](../tools/second-opinion/results/report-second-opinion.md),
 [disagreement.md](../tools/second-opinion/results/disagreement.md).
 
+**Encoder choice (441 car photos, same folds):**
+
+| Encoder | Licence | Main area right | Log loss | Strict vs CLIP B/32 (95% range) |
+|---|---|---|---|---|
+| CLIP ViT-B/32 (previous model) | MIT | 66.7% | 0.729 | baseline |
+| DINOv2-base | Apache-2.0 | 69.8% | 0.618 | +3.2% (−1.4% to +7.7%) |
+| SigLIP-base | Apache-2.0 | 63.5% | 0.759 | −3.2% (−7.7% to +1.1%) |
+| CLIP ViT-L/14 | MIT | 66.9% | 0.731 | +0.2% (−4.1% to +4.5%) |
+| **CLIP B/32 + DINOv2-base (shipped)** | MIT + Apache-2.0 | **71.9%** | **0.608** | **+5.2% (+2.0% to +8.6%)** |
+| SigLIP + DINOv2 | Apache-2.0 | 67.8% | 0.640 | +1.1% (−3.2% to +5.4%) |
+| CLIP L/14 + DINOv2 | MIT + Apache-2.0 | 68.5% | 0.623 | +1.8% (−2.5% to +6.1%) |
+
+The combination is the only one whose accuracy gain excludes zero. The shipped model before this change used CLIP
+alone with a fixed regularisation (64.6% / 80.5%).
+
+**More photos (1 Nov 2026).** Cars: 1,085 candidates from three CC BY 4.0 Roboflow Universe datasets (augmented copies and
+near-duplicates of the CC0 set removed); a class-balanced 420 were reviewed one by one on contact sheets: 127 excluded (63
+carry a stock-photo or other owner's watermark, so the uploader could not license them; 64 unclear), 36 relabelled,
+293 kept. Property: 707 FEMA photos found by caption search; all reviewed, 407 excluded (mostly people, paperwork,
+temporary housing or scenery rather than damage), 15 relabelled, 300 kept, plus 7 from the earlier home set: 307. The
+review decisions are kept in `tools/vision-eval/roboflow_review.json` and `property_review.json`.
+
+**Speed (inside the `vision-ml` container, 2 CPU threads, 5 real photos, 5 calls each, 1 Nov 2026).** DINOv2 on every
+photo of a claim was too slow (2.4 s median, 6.6 s worst, against Branch A's 2.5 s wait), so DINOv2 reads only the
+close-up, and a claim without a close-up uses a CLIP-only head (tuned the same way: 66.7% / 81.2% out-of-fold):
+
+| Claim | Head | Median | Worst |
+|---|---|---|---|
+| With a close-up | CLIP + DINOv2 | 0.89 s | 1.37 s |
+| Without a close-up | CLIP only | 0.48 s | 0.49 s |
+
+**Different photo style.** On the close-ups of the six NHTSA crash-test sets in `demo-scenarios/sample-images`
+(laboratory photos, unlike the training set) the CC0-trained model named the right area first for 5 of 6 (CLIP alone:
+1 of 6); the model trained on all 734 photos gets **4 of 6** (the Corolla side impact is now called rear at 41%; the
+Civic rear impact is still called side panel, now with rear at 11%). Six photos are too few to tell these apart.
+
 | Metric | Value | Sample | Caveat |
 |---|---|---|---|
-| Car damaged area, strict / lenient | 64.6% / 80.5% | 441 car photos (CC0) | Weaker than Gemini alone; 6 windshield photos only |
-| Car photos reported as vehicle | 441/441 | 441 | Zero-shot |
+| Car damaged area, strict / lenient | **78.3% / 87.2%** | 734 car photos: 441 CC0 + 293 reviewed CC BY 4.0 | Windshields 45/51 (were 1 of 6). On the 441 CC0 photos alone 72.6% / 85.9% (71.9% / 86.2% when trained on them only). 1 Nov 2026 |
+| Car damaged area, log loss / Brier | 0.484 / 0.293 | 734 | Lower is better; CC0-only model 0.608 / 0.388 |
+| Car damaged area, CLIP-only head (claims without a close-up) | 72.6% / 82.2% | 734 | Used for speed |
+| Visible damage extent: rank correlation with the true share of the photo damaged / SMALL-MEDIUM-LARGE right / off by two bands | 0.64 / 55% / 2% | 441 CC0 (only they have damage outlines) | Share of the photo, so it also depends on how close the photo was taken; not a cost. Chance 33% |
+| Car photos reported as vehicle | 734/734 | 734 | Zero-shot |
 | Home photos reported as building | 48/53 | 53 FEMA photos | Zero-shot |
-| Home cause of loss | 84.9% | 53 FEMA photos | Zero-shot, hand-reviewed labels |
-| As a check on Gemini (threshold 0.15): answers flagged / lenient-wrong caught / strict-wrong caught / right answers sent to an adjuster | 6/66, **2/2**, 4/6, 4 | 66 Gemini answers that pass the confidence and margin checks (runs `v2-multiphoto` + `v3-subject`, 31 Oct 2026) | Two wrong answers is too few to estimate a catch rate |
+| Property cause of loss (flood, fire, wind, fallen tree), **trained** head | **92.8%** (balanced 90.0%) | 307 reviewed FEMA photos, out-of-fold | Zero-shot head on the same photos: 79.8% (+13.0 points, 95% range +8.5 to +17.6). Fallen tree 14/18. No burst-pipe photos exist, so WATER_DAMAGE is not a class |
+| Property type (residential, commercial, other property), trained head | **89.9%** | 307 (231 / 35 / 41) | Zero-shot: 85.7% (+4.2, range +0.3 to +8.1). Commercial 22/35; commercial has no fire or fallen-tree photos |
+| As a check on Gemini (threshold 0.10): answers flagged / lenient-wrong caught / strict-wrong caught / right answers sent to an adjuster | 11/66, **2/2**, 4/6, 9 | 66 Gemini answers that pass the confidence and margin checks (runs `v2-multiphoto` + `v3-subject`) | Two wrong answers is too few to estimate a catch rate. The wrong answers get 0.00 and 0.03; 0.05 would flag 7 with the same catches, but 0.10 keeps a margin |
+| Damage types (dent, scratch, broken part, ...) | AUC 0.57-0.68 per type; Brier only 0-11% better than guessing each type's frequency | 441 (`damage_details.py`) | **Not shipped**: whole-photo embeddings do not capture damage type well |
+
+**Trust score after the change.** The trust score's second-opinion input now comes from the new model. Re-fitting it
+(`trust_score.py --run v3-subject --write-app`) did not pass the shipping rules (Brier 0.1173 vs 0.1162 for the current
+coefficients; with the 734-photo model 0.1174 vs 0.1163), so the app keeps its current trust score; with the new model's outputs it measures AUC 0.73, Brier
+0.116, calibration error 0.067 on the 66 answers (the current coefficients were fitted on these same answers, so this
+is partly in-sample).
+
+**On-premise vision.** When Gemini cannot answer on usable vehicle photos (quota, outage, no key), the car head's
+reading replaces the "UNKNOWN" placeholder (`OnPremiseVision`), with the flag `ON_PREMISE_VISION` that always sends the
+claim to an adjuster; the claim is priced from the published repair-cost range (§8), not a placeholder.
 
 ## 5. Privacy redaction
 
@@ -118,7 +172,7 @@ unknown.
 
 | Metric | Value | Date | Command |
 |---|---|---|---|
-| Backend tests | **275 passed**, 0 failed (fnol-agents 85, fnol-orchestrator 82, fnol-api 64, fnol-mock-guidewire 19, fnol-guardrails 13, fnol-enrichment 12; fnol-common has none) | 31 Oct 2026 | `mvn -B clean verify` |
+| Backend tests | **294 passed**, 0 failed (fnol-agents 93, fnol-orchestrator 87, fnol-api 70, fnol-mock-guidewire 19, fnol-guardrails 13, fnol-enrichment 12; fnol-common has none) | 1 Nov 2026 | `mvn -B test` |
 | Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-orchestrator 93%, fnol-mock-guidewire 93%, fnol-agents 85%, fnol-api 79%, fnol-enrichment 66% | 31 Oct 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
 | Build warnings | 0 | 31 Oct 2026 | `mvn -B verify` |
 
@@ -129,29 +183,60 @@ Update these rows whenever the test suite changes.
 **These numbers are on synthetic data.** The generator encodes this project's assumptions about fraud, so these
 figures show the score recovers the patterns it was designed for; **performance on real claims is unknown.** One input
 is real: genuine claims' second-opinion disagreement is drawn from the model's out-of-fold outputs on the 441 labelled
-car photos (median 0.51; the first, fully synthetic version assumed 0.27 and nearly flagged an ordinary live claim).
+car photos (now 734; median 0.18 with the current model, 0.31 with the CC0-only CLIP + DINOv2 model, 0.51 with the
+CLIP-only one; the first, fully synthetic version assumed 0.27 and nearly flagged an ordinary live claim).
 Command: `cd tools/fraud-eval && python -P fraud_eval.py`; report:
 [tools/fraud-eval/results/report.md](../tools/fraud-eval/results/report.md). Seed 20261031, 20,000 claims (4% fraud),
-fitted without labels on one half and evaluated on the other (10,000 claims, 409 fraudulent). Refitted 31 Oct 2026.
+fitted without labels on one half and evaluated on the other (10,000 claims, 409 fraudulent). Refitted 1 Nov 2026 on
+the new second-opinion model's outputs.
 
 | Method | Claims flagged | Precision | Recall |
 |---|---|---|---|
-| Anomaly score ≥ 5.86 (5% referral budget) | 5.2% | **44.7%** | 57.2% |
-| Existing fraud rules (photo reused, high claim frequency, loss < 30 days after policy start) | 16.4% | 14.5% | 58.4% |
-| Fraud rules + claimed > 10% above estimate + model disagreement | 36.5% | 9.6% | 85.8% |
-| Fraud rules or anomaly score | 18.5% | 16.8% | 75.8% |
+| Anomaly score ≥ 6.74 (5% referral budget) | 5.0% | **44.4%** | 55.1% |
+| Existing fraud rules (photo reused, high claim frequency, loss < 30 days after policy start) | 16.7% | 14.3% | 59.0% |
+| Fraud rules + claimed > 10% above estimate + model disagreement | 39.2% | 8.9% | 85.9% |
+| Fraud rules or anomaly score | 18.8% | 16.1% | 74.8% |
 
-Separation of fraudulent from genuine claims (AUC): **0.93**. Fraud with a single pattern: score 27%, rules 48%; with
-two or more patterns: score 79%, rules 66%. The score complements the rules; it does not replace them.
+Separation of fraudulent from genuine claims (AUC): **0.92**. Fraud with a single pattern: score 23%, rules 45%; with
+two or more patterns: score 79%, rules 70%. The score complements the rules; it does not replace them.
 
 **Percentile calibration.** Each claim's score is also reported as a percentile of the reference claims ("more unusual
-than 97% of reference claims"). On held-out claims the share above each percentile matches: 50th → 50.6% above
-(expected 50%), 80th → 20.6% (20%), 90th → 10.7% (10%), 95th → 5.2% (5%), 99th → 0.9% (1%). This is calibration
+than 97% of reference claims"). On held-out claims the share above each percentile matches: 50th → 50.4% above
+(expected 50%), 80th → 21.0% (20%), 90th → 10.4% (10%), 95th → 5.0% (5%), 99th → 1.2% (1%). This is calibration
 against the reference population, not a probability of fraud; that needs labelled real claims.
 
 **Live check (31 Oct 2026, real Gemini).** Claim `CLM-2026-000034` (F-150 photos, policy 176 days old, reported after
 8 days, second opinion at 70% disagreement) scored 5.90 against 5.91 with the first version; with the refit its score is
 below 4.5 (regression test `FraudAnomalyScorerTest.typicalRealClaimIsNotFlagged`).
+
+## 8. Repair-cost estimates
+
+No dataset in this project pairs photos with real repair costs, so **no dollar estimate is validated yet**, Gemini's
+included. Details and sources: [tools/cost-eval/README.md](../tools/cost-eval/README.md).
+
+**Published ranges (in use).** `repair-cost-ranges.json`: per vehicle area and visible-extent band, a range built only
+from quoted AAA (2018, 2023, windshield), Consumer Reports (2017, 2021) and CCC (2025 average $4,818) figures, retrieved
+1 Nov 2026. Which figure applies to which band is this project's mapping, an assumption.
+
+**Gemini's estimates against the ranges** (`tools/cost-eval/check_gemini_estimates.py --run v3-subject`, 1 Nov 2026):
+
+| Measure | Value | Sample |
+|---|---|---|
+| Answers naming an area with a range | 41 of 66 | MULTIPLE / UNKNOWN / ROOF have none |
+| Gemini's estimate inside the range | 17/41 | |
+| Gemini's median estimate / range midpoint | 2.7x | |
+| Flagged at 2x / 3x / **4x (used)** / 5x outside | 12 / 6 / **3** / 3 of 41 | `ESTIMATE_OUTSIDE_PUBLISHED_RANGE` |
+
+Caveat: without true costs this shows disagreement, not who is right.
+
+**Learning from real costs.** Each decision now stores the repair cost next to the AI's estimate (`V18`), with what it
+rests on: invoice, body-shop estimate or inspection (evidence, learned from) or the adjuster's judgement (recorded, never
+learned from, so the model cannot learn its own guesses). On a claim sent to investigation every figure is held until
+the investigator reports; their offline cost (earlier damage excluded) is then the claim's label. One label per claim. A changed reserve proposes a repair cost (reserve +
+deductible) for the adjuster to confirm; `tools/cost-eval/fit_costs.py` fits area x band costs
+shrunk toward the published table and replaces it only if it is more accurate out of sample on at least 50 claims.
+Recorded so far: none with a real cost (the app has no real claims). Synthetic self-test (300 claims, hidden per-area
+bias): leave-one-out median error 34% learned vs 50% published, which only shows the method recovers a known pattern.
 
 ## Not measured
 

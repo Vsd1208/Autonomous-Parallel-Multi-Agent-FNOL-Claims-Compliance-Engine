@@ -117,11 +117,18 @@ class FraudAnomalyScorerTest {
     void typicalRealClaimIsNotFlagged() throws Exception {
         // Live claim CLM-2026-000034, 31 Oct 2026: F-150 photos, policy 176 days old, reported after 8 days, asked
         // $2,500 against a $15,000 estimate. With the old synthetic disagreement profile it scored 5.90 against 5.91.
+        // 0.70 was that claim's disagreement with the CLIP-only second opinion; it is not typical for the current model
+        // (median 0.18), so it now adds points, but the claim stays below the threshold.
         FraudAnomaly a = new FraudAnomalyScorer(params(), stp).score(claim(2500 / 15000.0, 176.0, 8.0, 0.0, 0.70, false));
         assertThat(a.anomalous()).isFalse();
-        assertThat(a.score()).isLessThan(new BigDecimal("4.5"));
-        // The real second-opinion disagreement of a correct answer (median 0.51) adds nothing.
-        assertThat(new FraudAnomalyScorer(params(), stp).score(claim(null, null, null, null, 0.51, false)).score())
+        assertThat(a.score()).isLessThan(a.threshold());
+        // The typical (median) real second-opinion disagreement the score was fitted on adds nothing.
+        double typical = 0;
+        for (JsonNode f : params().path("features")) {
+            if (f.path("name").asText().equals("secondOpinionDisagreement")) typical = f.path("median").asDouble();
+        }
+        assertThat(typical).isBetween(0.05, 0.95);
+        assertThat(new FraudAnomalyScorer(params(), stp).score(claim(null, null, null, null, typical, false)).score())
                 .isEqualByComparingTo("0");
     }
 }

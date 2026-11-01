@@ -103,8 +103,8 @@ python -P gate_ablation.py --run v2-multiphoto --run v3-subject      # writes re
 | | + `AMBIGUOUS_DAMAGE_TYPE` (+ severity, + subject) | 42 | 2 / 4 | 14 |
 
 With the second-opinion check as well (`tools/second-opinion/compare_gemini.py`, both runs): of the 66 answers that
-pass the confidence and margin checks, 2 are wrong (lenient), and the second opinion (below 0.15 for Gemini's area)
-flags both, at the cost of 4 right answers sent to an adjuster. Replayed on `v3-subject` alone, one wrong answer still
+pass the confidence and margin checks, 2 are wrong (lenient), and the second opinion (below 0.10 for Gemini's area,
+CLIP + DINOv2 model) flags both, at the cost of 5 right answers sent to an adjuster. Replayed on `v3-subject` alone, one wrong answer still
 gets through with every check on (photo 1336, a confident "multiple areas" answer the second opinion cannot check);
 see "Final result at 66 photos" below and [docs/metrics.md](../../docs/metrics.md).
 

@@ -52,6 +52,28 @@ public class AiFeedbackEntity {
     @Column(length = 500)
     public String gateFlags;
 
+    /** The real repair cost (before the deductible): an inspection's accident-related amount or the adjuster's figure. */
+    public BigDecimal finalRepairCost;
+
+    /**
+     * What the final repair cost rests on: INVOICE, BODY_SHOP_ESTIMATE, INSPECTION, INVESTIGATION (evidence: the cost
+     * model learns from these), ADJUSTER_JUDGEMENT (kept, never learned from) or INVESTIGATION_HOLD (a figure
+     * entered on a claim sent to investigation, held until the investigator reports; never learned from); null when
+     * no cost was known.
+     */
+    @Column(length = 20)
+    public String costSource;
+
+    /** What the AI estimated (Gemini, or the published range for an on-premise reading). */
+    public BigDecimal aiEstimate;
+
+    /** The on-premise model's visible-extent band (SMALL / MEDIUM / LARGE); null when not measured. */
+    @Column(length = 10)
+    public String extentBand;
+
+    /** The repair-cost table's estimate for the area and band (published or learned), for comparison. */
+    public BigDecimal publishedEstimate;
+
     @Column(length = 64)
     public String adjusterId;
 

@@ -46,7 +46,7 @@ class FairnessTest {
         }
         for (ClaimEntity c : claims) {
             views.put(c.claimId, new AiGovernanceService.AiView("AUTO", "FRONT_BUMPER", c.status, BigDecimal.ONE,
-                    null, null, null, null, null, null, null));
+                    null, null, null, null, null, null, null, null, null, null));
         }
 
         Map<String, Object> fairness = service.fairness(claims, views, List.of());

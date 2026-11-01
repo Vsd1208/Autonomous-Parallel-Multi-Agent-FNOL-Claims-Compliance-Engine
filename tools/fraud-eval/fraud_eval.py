@@ -95,7 +95,8 @@ def fraudulent(rng):
             c["priorClaims6m"] = binomial(rng, c["priorClaims12m"], 0.6)
         elif p == "photoMismatch":
             # Photos that do not show this loss: the second opinion barely supports the claimed area. The two wrong
-            # Gemini answers measured in tools/second-opinion both had a disagreement of 0.87.
+            # Gemini answers measured in tools/second-opinion had a disagreement of 0.87 (CLIP-only model) and 0.99
+            # (CLIP + DINOv2).
             c["secondOpinionDisagreement"] = rng.uniform(0.80, 0.99)
         elif p == "photoReused":
             c["photoReused"] = 1

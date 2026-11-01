@@ -18,10 +18,11 @@ this project's own assumptions:
 - **Genuine claims:** claimed amount close to the photo estimate; mostly older policies, with 15% of genuine losses
   in a policy's first six months; usually reported within days, with 10% reported 1–6 weeks late; few prior claims;
   reused photos are rare (0.3%). **Real, not assumed:** the second-opinion disagreement is drawn from the model's
-  out-of-fold outputs on the 441 labelled car photos (`second-opinion-disagreement.json`, median 0.51).
+  out-of-fold outputs on the 441 labelled car photos (`second-opinion-disagreement.json`, written by
+  `tools/second-opinion/build_model.py`; 734 values, median 0.18 with the current model).
 - **Fraudulent claims:** each has one to three of six patterns: an inflated amount, a loss soon after the policy
   starts, a late report, a repeat claimant, photos the second opinion barely supports (disagreement 0.80–0.99; the two
-  wrong Gemini answers measured had 0.87), a reused photo. The other
+  wrong Gemini answers measured had 0.87 with the CLIP-only model, 0.99 with CLIP + DINOv2), a reused photo. The other
   features are drawn as for genuine claims.
 
 So the evaluation shows that the score recovers the patterns it was designed for. **It says nothing about how well

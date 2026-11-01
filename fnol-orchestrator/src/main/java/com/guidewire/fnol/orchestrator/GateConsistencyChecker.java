@@ -1,5 +1,7 @@
 package com.guidewire.fnol.orchestrator;
 
+import com.guidewire.fnol.agents.OnPremiseVision;
+import com.guidewire.fnol.agents.RepairCostEstimator;
 import com.guidewire.fnol.agents.VisionConfidenceCalibrator;
 import com.guidewire.fnol.common.Models.*;
 import org.springframework.stereotype.Component;
@@ -49,6 +51,18 @@ public class GateConsistencyChecker {
      * other vision check stops (tools/second-opinion/results/disagreement.md).
      */
     public static final String MODEL_DISAGREEMENT = "MODEL_DISAGREEMENT";
+    /**
+     * Gemini could not answer, so the on-premise model (fnol-vision-ml) read the photos instead (OnPremiseVision).
+     * Its damaged area is shown, but the estimate is a placeholder, so an adjuster always confirms.
+     */
+    public static final String ON_PREMISE_VISION = "ON_PREMISE_VISION";
+    /**
+     * Gemini's dollar estimate is more than RepairCostEstimator.TOLERANCE (4x) outside the repair-cost range for the
+     * damaged area and visible extent. Replayed on 41 Gemini answers with a range it fired on 3
+     * (tools/cost-eval/results/gemini-estimates-v3-subject.md); no true costs exist yet, so it asks for a check, it
+     * does not say which figure is right.
+     */
+    public static final String ESTIMATE_OUTSIDE_PUBLISHED_RANGE = "ESTIMATE_OUTSIDE_PUBLISHED_RANGE";
     /** High vision confidence reported for a photo it rated blurry or unusable. */
     public static final String CONFIDENCE_PHOTO_QUALITY_MISMATCH = "CONFIDENCE_PHOTO_QUALITY_MISMATCH";
 
@@ -101,10 +115,18 @@ public class GateConsistencyChecker {
         if (damage.photoSubject() != null && expectedSubject != null && !expectedSubject.equals(damage.photoSubject())) {
             flags.add(PHOTO_SUBJECT_MISMATCH);
         }
-        SecondOpinion second = branchA.secondOpinion();
-        BigDecimal agreement = second == null ? null : second.probabilityOf(damage.damageType());
-        if (agreement != null && agreement.compareTo(stp.getSecondOpinionMinProbability()) < 0) {
-            flags.add(MODEL_DISAGREEMENT);
+        if (OnPremiseVision.isOnPremise(damage)) {
+            flags.add(ON_PREMISE_VISION);
+        } else {
+            if (RepairCostEstimator.farOutside(damage.estimatedDamage(), branchA.repairCost())) {
+                flags.add(ESTIMATE_OUTSIDE_PUBLISHED_RANGE);
+            }
+            // A second opinion compared with itself says nothing, so only Gemini's answers are checked.
+            SecondOpinion second = branchA.secondOpinion();
+            BigDecimal agreement = second == null ? null : second.probabilityOf(damage.damageType());
+            if (agreement != null && agreement.compareTo(stp.getSecondOpinionMinProbability()) < 0) {
+                flags.add(MODEL_DISAGREEMENT);
+            }
         }
         if ("HOME".equals(line) && "FLOOD".equals(damage.damageType())) {
             flags.add(POSSIBLE_FLOOD_EXCLUSION);

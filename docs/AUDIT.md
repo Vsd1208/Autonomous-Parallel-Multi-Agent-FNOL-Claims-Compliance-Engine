@@ -93,10 +93,10 @@ Re-assessed on branch `selection-readiness`, 31 Oct 2026.
 
 | Command | Result |
 |---|---|
-| `mvn -B clean verify` | BUILD SUCCESS. **275 tests, 0 failures** (fnol-agents 85, fnol-orchestrator 82, fnol-api 64, fnol-mock-guidewire 19, fnol-guardrails 13, fnol-enrichment 12). **0 build warnings** (was 14). JaCoCo instruction coverage: guardrails 96%, orchestrator 93%, mock-guidewire 93%, agents 85%, api 79%, enrichment 66% |
+| `mvn -B clean verify` | BUILD SUCCESS. **294 tests, 0 failures** (fnol-agents 93, fnol-orchestrator 87, fnol-api 70, fnol-mock-guidewire 19, fnol-guardrails 13, fnol-enrichment 12; 1 Nov 2026, after the on-premise vision and repair-cost changes). **0 build warnings** (was 14). JaCoCo instruction coverage: guardrails 96%, orchestrator 93%, mock-guidewire 93%, agents 85%, api 79%, enrichment 66% |
 | `cd frontend && npm ci && npm run build && npm run build:portal` | Both builds succeed; the portal bundle contains no adjuster token or adjuster endpoint (the CI check) |
 | `python -m compileall -q fnol-vision-ml tools` | Passes (no Python unit tests exist; the model service needs ~1 GB of weights) |
-| `python -P tools/fraud-eval/fraud_eval.py --write-app` | AUC 0.927, precision 44.7%, recall 57.2% at a 5.2% flag rate, on synthetic held-out claims (after the refit on real second-opinion outputs; the first version gave AUC 0.915, 40.0%, 56.3%) |
+| `python -P tools/fraud-eval/fraud_eval.py --write-app` | AUC 0.923, precision 44.2%, recall 57.2% at a 5.3% flag rate, on synthetic held-out claims (after the refit on real second-opinion outputs; the first version gave AUC 0.915, 40.0%, 56.3%) |
 | `python -P tools/vision-eval/gate_ablation.py --run v2-multiphoto --run v3-subject` | Unchanged results (the stale figures were in the README, not the report) |
 | `docker compose … up -d` with mock vision + `bash demo-scenarios/run-all.sh` (31 Oct 2026, after the merge) | **All 10 scenarios, 29/29 checks passed** |
 | GitHub Actions CI | Passed on the pull request and on `main` after the merge |

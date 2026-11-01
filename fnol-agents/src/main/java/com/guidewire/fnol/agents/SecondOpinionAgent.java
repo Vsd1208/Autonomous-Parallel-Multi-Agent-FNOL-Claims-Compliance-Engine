@@ -3,6 +3,7 @@ package com.guidewire.fnol.agents;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.guidewire.fnol.agents.EvidenceImageLoader.EvidenceRejectedException;
 import com.guidewire.fnol.agents.EvidenceImageLoader.ImageData;
+import com.guidewire.fnol.common.Models.DamageExtent;
 import com.guidewire.fnol.common.Models.FNOLPayload;
 import com.guidewire.fnol.common.Models.SecondOpinion;
 import org.slf4j.Logger;
@@ -44,7 +45,7 @@ public class SecondOpinionAgent {
 
     @Autowired
     public SecondOpinionAgent(@Value("${fnol.second-opinion.url:}") String url,
-                              @Value("${fnol.second-opinion.read-timeout-ms:4000}") long readTimeoutMs,
+                              @Value("${fnol.second-opinion.read-timeout-ms:12000}") long readTimeoutMs,
                               RestTemplateBuilder builder,
                               EvidenceImageLoader evidence) {
         this(url, builder.setConnectTimeout(Duration.ofSeconds(2)).setReadTimeout(Duration.ofMillis(readTimeoutMs))
@@ -108,9 +109,14 @@ public class SecondOpinionAgent {
         if (body == null) {
             return null;
         }
+        JsonNode ext = body.path("extent");
+        DamageExtent extent = ext.hasNonNull("band") && ext.hasNonNull("share")
+                ? new DamageExtent(ext.get("band").asText(), ext.get("share").decimalValue()) : null;
         SecondOpinion result = new SecondOpinion(body.path("model").asText(),
-                probabilities(body.path("damageProbabilities")), probabilities(body.path("subjectProbabilities")));
-        log.info("[SecondOpinion] {} photo(s), line={}, damage={}", images.size(), line, result.damageProbabilities());
+                probabilities(body.path("damageProbabilities")), probabilities(body.path("subjectProbabilities")), extent,
+                body.hasNonNull("propertyTypeProbabilities") ? probabilities(body.path("propertyTypeProbabilities")) : null);
+        log.info("[SecondOpinion] {} photo(s), line={}, damage={}, extent={}", images.size(), line,
+                result.damageProbabilities(), extent == null ? "-" : extent.band());
         return result;
     }
 

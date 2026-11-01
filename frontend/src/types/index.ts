@@ -10,6 +10,8 @@ export interface DamageAssessment {
   photoSubject?: string | null;
   /** What left the system for the external model. */
   privacy?: { photosSent: number; photosWithheld: number; facesBlurred: number; platesBlurred: number; redacted: boolean } | null;
+  /** Which model answered; "on-premise …" when Gemini was unavailable and the on-premise model read the photos. */
+  visionSource?: string | null;
 }
 
 export interface Coverage {
@@ -41,12 +43,30 @@ export interface BranchAResult {
   reserve: Reserve;
   /** Independently trained vision model's view of the same photos; null when it was not available. */
   secondOpinion?: SecondOpinion | null;
+  /** What repairing this area usually costs at the visible extent (vehicle claims); null when unknown. */
+  repairCost?: RepairCostRange | null;
+}
+
+export interface RepairCostRange {
+  area: string;
+  extentBand?: 'SMALL' | 'MEDIUM' | 'LARGE' | null;
+  low: number;
+  high: number;
+  estimate: number;
+  /** PUBLISHED: published US figures with sources; LEARNED: fitted on this insurer's real repair costs. */
+  basis: 'PUBLISHED' | 'LEARNED';
+  mapping: string;
+  sources: string[];
 }
 
 export interface SecondOpinion {
   model: string;
   damageProbabilities: Record<string, number>;
   subjectProbabilities: Record<string, number>;
+  /** Share of the photo covered by damage, banded SMALL / MEDIUM / LARGE (vehicle claims). Not a cost. */
+  extent?: { band: 'SMALL' | 'MEDIUM' | 'LARGE'; share: number } | null;
+  /** Home claims: RESIDENTIAL / COMMERCIAL / OTHER_PROPERTY, trained on reviewed FEMA photos. */
+  propertyTypeProbabilities?: Record<string, number> | null;
 }
 
 export interface PiiInfo {
@@ -301,7 +321,13 @@ export interface AdjusterReviewRequest {
   overrideReason?: string;
   /** The damaged area / cause of loss the adjuster confirmed (feeds the AI feedback loop). */
   confirmedDamageType?: string;
+  /** The repair cost before the deductible; teaches the repair-cost model when it rests on evidence. */
+  finalRepairCost?: number;
+  repairCostSource?: RepairCostSource;
 }
+
+/** INVOICE, BODY_SHOP_ESTIMATE and INSPECTION are evidence (learned from); ADJUSTER_JUDGEMENT is kept, not learned. */
+export type RepairCostSource = 'INVOICE' | 'BODY_SHOP_ESTIMATE' | 'INSPECTION' | 'ADJUSTER_JUDGEMENT';
 
 export interface AdjusterReviewResponse {
   claimId: string;
@@ -379,6 +405,11 @@ export interface AiMetrics {
     decisions: number; damageTypeConfirmed: number; damageTypeAgreed: number;
     straightThroughEligibleDecided: number; straightThroughEligibleApproved: number;
     reserveChanged: number; meanReserveChange: number; byDecision: Record<string, number>;
+  };
+  repairCost?: {
+    claimsWithRepairCost: number; evidenceBacked: number; bySource: Record<string, number>;
+    ai: { claims: number; medianAbsPercentError?: number; within25Percent?: number };
+    costTable: { claims: number; medianAbsPercentError?: number; within25Percent?: number };
   };
   privacy: { photosSent: number; photosWithheld: number; facesBlurred: number; platesBlurred: number; claimsRedacted: number };
   drift: { week: string; claims: number; meanMargin: number | null; meanConfidence: number | null;
