@@ -10,7 +10,7 @@ import { angleLabel, anglesFor } from '../photoAngles';
 import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionResult } from '../components/Inspection';
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
-import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, SecondOpinion } from '../types';
+import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 
@@ -198,6 +198,8 @@ const FLAG_TEXT: Record<string, string> = {
   DAMAGE_TYPE_LINE_MISMATCH: "The damage does not fit the policy's line of business.",
   ATTORNEY_REPRESENTED: 'The claimant mentions legal counsel: communicate through the attorney; litigation queue.',
   MODEL_DISAGREEMENT: 'The independently trained second-opinion model disagrees with Gemini about the damage.',
+  ON_PREMISE_VISION: 'Gemini was unavailable, so the on-premise vision model read the photos; the estimate comes from the repair-cost range. Confirm it.',
+  ESTIMATE_OUTSIDE_PUBLISHED_RANGE: "Gemini's dollar estimate is more than 4x outside the repair-cost range for this area and extent. Check it.",
   PHOTO_REUSED: 'A photo matches one already submitted on another claim (possibly resized).',
   PHOTO_SUBJECT_MISMATCH: 'The photos do not show what the policy insures (e.g. a house on an auto policy).',
   POSSIBLE_FLOOD_EXCLUSION: 'The photos show flood, which standard homeowners policies exclude. Confirm the cause of loss.',
@@ -348,6 +350,7 @@ function FraudAnomalyPanel({ fraud }: { fraud: FraudAnomaly }) {
     <Panel title="Fraud Anomaly Score (advisory)" flush>
       <DetailView rows={[
         ['Score', `${fraud.score} points (flag at ${fraud.threshold})`],
+        ['Compared with reference claims', fraud.percentile != null ? `More unusual than ${fraud.percentile}%` : null],
         ['Result', <StatusChip value={fraud.anomalous ? 'REVIEW' : 'PASS'} />],
         ['What it means', fraud.anomalous
           ? 'Several intake details are unusual together. Consider a referral to the special investigations unit.'
@@ -380,6 +383,9 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
   if (!a) return (<><PageTitle title="Loss Details" />{photos}<NoBranchDetails /></>);
   const d = a.damageAssessment;
   const probs = Object.entries(d.damageTypeProbabilities ?? {}).sort((x, y) => y[1] - x[1]);
+  const onPremise = d.visionSource?.startsWith('on-premise ') ?? false;
+  const extent = a.secondOpinion?.extent;
+  const cost = a.repairCost;
   return (
     <>
       <PageTitle title="Loss Details" subtitle="Branch A: what the AI saw in the photo, and coverage verification" />
@@ -387,9 +393,17 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
         {photos}
         <Panel title="Damage Assessment">
           <DetailView rows={[
+            ['Read by', onPremise ? 'On-premise vision model (Gemini unavailable; photos stayed in-house)'
+              : d.visionSource ? 'Gemini' : null],
             ['Damage type', humanize(d.damageType)],
-            ['Severity', humanize(d.severity)],
-            ['Estimated damage', money(d.estimatedDamage)],
+            ['Severity', onPremise ? 'Not assessed' : humanize(d.severity)],
+            ['Visible damage extent', extent
+              ? `${humanize(extent.band)} (about ${Math.round(extent.share * 100)}% of the photo; not a cost)` : null],
+            ['Estimated damage', onPremise
+              ? (cost ? `${money(d.estimatedDamage)} (from the repair-cost range below; confirm it)`
+                : `${money(d.estimatedDamage)} (placeholder: set it from the photos)`)
+              : money(d.estimatedDamage)],
+            ['Repair-cost range', cost ? <RepairCostCell key="c" cost={cost} /> : null],
             ['AI confidence', d.rawConfidence != null
               ? `${Number(d.confidence).toFixed(2)} (model said ${Number(d.rawConfidence).toFixed(2)})`
               : Number(d.confidence).toFixed(2)],
@@ -426,7 +440,7 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
           </ListView>
         </Panel>
       )}
-      <SecondOpinionPanel geminiType={d.damageType} second={a.secondOpinion} />
+      <SecondOpinionPanel geminiType={d.damageType} second={a.secondOpinion} onPremise={onPremise} />
     </>
   );
 }
@@ -466,7 +480,7 @@ function DecisionTrail({ claim }: { claim: DashboardClaim }) {
               <li><strong>{humanize(d.damageType)}</strong>, {humanize(d.severity).toLowerCase()}, estimate {money(d.estimatedDamage)}
                 {' '}(Gemini; confidence {Number(d.confidence).toFixed(2)}{d.rawConfidence != null ? ', calibrated' : ''})</li>
               <li>{so ? (agreement != null
-                ? `Second-opinion model gives that ${(agreement * 100).toFixed(1)}%${agreement < 0.15 ? ': it disagrees' : ''}`
+                ? `Second-opinion model gives that ${(agreement * 100).toFixed(1)}%${agreement < 0.10 ? ': it disagrees' : ''}`
                 : 'Second-opinion model has no view on this damage type')
                 : 'Second-opinion model not available for this claim'}</li>
               <li>{d.privacy
@@ -534,11 +548,37 @@ function DAMAGE_CHOICES(coverage?: string): string[] {
     : ['FRONT_BUMPER', 'REAR_BUMPER', 'SIDE_PANEL', 'WINDSHIELD', 'ROOF', 'MULTIPLE', 'UNKNOWN'];
 }
 
+/** What a repair cost can rest on; the first three are evidence and teach the cost model. */
+const REPAIR_COST_SOURCES: [RepairCostSource, string][] = [
+  ['INVOICE', 'Repair invoice'],
+  ['BODY_SHOP_ESTIMATE', 'Body-shop estimate'],
+  ['INSPECTION', 'Inspection'],
+  ['ADJUSTER_JUDGEMENT', 'My judgement (not used for training)'],
+];
+
+/** The repair-cost range for the damaged area and extent, with where it comes from. */
+function RepairCostCell({ cost }: { cost: RepairCostRange }) {
+  return (
+    <span>
+      {money(cost.low)} – {money(cost.high)}{cost.extentBand ? ` for ${humanize(cost.extentBand).toLowerCase()} visible damage` : ''}
+      <span className="muted">
+        {cost.basis === 'LEARNED'
+          ? ` · learned from this insurer's own repair costs: ${cost.mapping}`
+          : ` · published US figures (${cost.mapping}): `}
+        {cost.basis === 'PUBLISHED' && cost.sources.map((u, i) => (
+          <a key={u} href={u} target="_blank" rel="noreferrer">{i ? ', ' : ''}[{i + 1}]</a>
+        ))}
+      </span>
+    </span>
+  );
+}
+
 /** The independently trained model's view of the same photos, next to Gemini's answer. */
-function SecondOpinionPanel({ geminiType, second }: { geminiType: string; second?: SecondOpinion | null }) {
+function SecondOpinionPanel({ geminiType, second, onPremise = false }:
+  { geminiType: string; second?: SecondOpinion | null; onPremise?: boolean }) {
   if (!second) {
     return (
-      <Panel title="Second Opinion (trained model)">
+      <Panel title="Second Opinion (on-premise model)">
         <p className="muted">Not available for this claim: the model was off or unreachable, or there was no uploaded photo.</p>
       </Panel>
     );
@@ -547,15 +587,25 @@ function SecondOpinionPanel({ geminiType, second }: { geminiType: string; second
   const agreement = second.damageProbabilities[geminiType];
   const subject = Object.entries(second.subjectProbabilities).sort((x, y) => y[1] - x[1])[0];
   return (
-    <Panel title="Second Opinion (trained model)" flush>
+    <Panel title={onPremise ? 'On-Premise Vision (Gemini unavailable)' : 'Second Opinion (on-premise model)'} flush>
       <div className="panel-body">
-        <DetailView columns={2} rows={[
+        <DetailView columns={2} rows={onPremise ? [
+          ['Damaged area', ranked.length ? `${humanize(ranked[0][0])} (${Math.round(ranked[0][1] * 100)}%)` : '—'],
+          ['Photos show', subject ? `${humanize(subject[0])} (${Math.round(subject[1] * 100)}%)` : '—'],
+          ['Visible damage extent', second.extent ? humanize(second.extent.band) : '—'],
+        ] : [
           ['Gemini says', humanize(geminiType)],
           ['Second opinion gives that', agreement != null ? `${(agreement * 100).toFixed(1)}%` : 'Not one of its classes'],
           ['Second opinion favours', ranked.length ? `${humanize(ranked[0][0])} (${Math.round(ranked[0][1] * 100)}%)` : '—'],
           ['Photos show', subject ? `${humanize(subject[0])} (${Math.round(subject[1] * 100)}%)` : '—'],
+          ['Visible damage extent', second.extent ? humanize(second.extent.band) : null],
+          ['Property type', second.propertyTypeProbabilities
+            ? Object.entries(second.propertyTypeProbabilities).sort((x, y) => y[1] - x[1]).slice(0, 1)
+              .map(([t, p]) => `${humanize(t)} (${Math.round(p * 100)}%)`)[0] : null],
         ]} />
-        <p className="hint">{second.model}. Trained separately from Gemini; below 15% for Gemini's answer the claim goes to an adjuster.</p>
+        <p className="hint">{second.model}. Runs on our own servers: the photos never leave. {onPremise
+          ? 'Gemini could not answer, so this model read the photos; it does not estimate cost, and an adjuster confirms.'
+          : "Trained separately from Gemini; below 10% for Gemini's answer the claim goes to an adjuster."}</p>
       </div>
       <ListView head={['Second opinion', 'Probability', '']}>
         {ranked.map(([type, p]) => (
@@ -780,6 +830,22 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
   const [requestingPhotos, setRequestingPhotos] = useState(false);
   const aiType = claim.branchA?.damageAssessment.damageType ?? '';
   const [confirmedType, setConfirmedType] = useState(aiType);
+  // The repair cost (before the deductible) and what it rests on. Only evidence (invoice, body-shop estimate,
+  // inspection) teaches the repair-cost model; the adjuster's judgement is recorded but never learned from.
+  const inspected = latest?.accidentRelatedAmount ?? null;
+  const [repairCost, setRepairCost] = useState(inspected != null ? String(inspected) : '');
+  const [costSource, setCostSource] = useState<RepairCostSource | ''>(inspected != null ? 'INSPECTION' : '');
+  const [costTouched, setCostTouched] = useState(false);   // the adjuster typed a cost: stop proposing one
+  const [costDerived, setCostDerived] = useState(false);   // the cost shown was derived from the reserve
+  useEffect(() => {
+    setRepairCost(inspected != null ? String(inspected) : '');
+    setCostSource(inspected != null ? 'INSPECTION' : '');
+    setCostTouched(false);
+    setCostDerived(false);
+  }, [inspected]);
+  const finalCost = repairCost.trim() === '' ? null : Number(repairCost);
+  const invalidCost = finalCost != null && !(finalCost >= 0);
+  const sourceMissing = finalCost != null && !costSource;
 
   useEffect(() => {
     setFinalAmount(recommended != null ? String(recommended) : '');
@@ -791,9 +857,25 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
   const invalidAmount = final != null && !(final >= 0);
   const changed = final != null && recommended != null && final !== Number(recommended);
   const reasonMissing = changed && !reason.trim();
+
+  // A changed reserve implies a repair cost: reserve + deductible (unless the claimed amount or the limit capped it).
+  // It is proposed for the adjuster to confirm, as their judgement until they name the evidence behind it.
+  useEffect(() => {
+    if (costTouched || inspected != null) return;
+    if (changed && final != null) {
+      setRepairCost(String(final + Number(deductible ?? 0)));
+      setCostSource((s) => s || 'ADJUSTER_JUDGEMENT');
+      setCostDerived(true);
+    } else if (costDerived) {
+      setRepairCost('');
+      setCostSource('');
+      setCostDerived(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changed, final, deductible, costTouched, inspected]);
   const claimedOverEstimate = (claim.gateFlags ?? []).includes('CLAIMED_EXCEEDS_AI_ESTIMATE')
     || (claimed != null && estimate != null && claimed > estimate);
-  const blocked = busy || !reviewable || !adjusterId.trim() || invalidAmount || reasonMissing;
+  const blocked = busy || !reviewable || !adjusterId.trim() || invalidAmount || reasonMissing || invalidCost || sourceMissing;
 
   /**
    * The final amount is sent as the adjuster's reserve whenever it differs from the AI's figure. Equal to the
@@ -812,7 +894,8 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
       } : {};
       const text = notes.trim() || quickNote || '';
       const res = await apiClient.submitAdjusterReview(claim.claimId,
-        { decision, adjusterId, notes: text, ...override, confirmedDamageType: confirmedType || undefined });
+        { decision, adjusterId, notes: text, ...override, confirmedDamageType: confirmedType || undefined,
+          finalRepairCost: finalCost ?? undefined, repairCostSource: finalCost != null ? costSource || undefined : undefined });
       claimStore.updateStatus(claim.claimId, res.status);
       setSaved(`${humanize(res.adjusterDecision)} saved at ${new Date(res.reviewedAt).toLocaleString()}`);
       onChanged();
@@ -912,6 +995,32 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
               </select>
             </label>
           )}
+          <label className="field">
+            <span className="field-label">Final repair cost before deductible ($), if known</span>
+            <input type="number" min="0" step="1" value={repairCost} disabled={!reviewable}
+              onChange={(e) => { setRepairCost(e.target.value); setCostTouched(true); setCostDerived(false); }}
+              placeholder="Invoice, body-shop estimate or inspection" />
+            {costDerived && (
+              <span className="hint">Derived from your reserve: {money(final)} + {money(deductible)} deductible. Correct it if
+                the claimed amount or the coverage limit capped the reserve.</span>
+            )}
+          </label>
+          <label className="field">
+            <span className="field-label">The repair cost is based on{finalCost != null && <span className="required"> *</span>}</span>
+            <select value={costSource} disabled={!reviewable || finalCost == null}
+              onChange={(e) => setCostSource(e.target.value as RepairCostSource | '')}>
+              <option value="">Choose</option>
+              {REPAIR_COST_SOURCES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+            {finalCost != null && costSource && (
+              <span className="hint">{claim.status === 'INVESTIGATION_REQUIRED'
+                ? "Under investigation: this figure is held. The investigator's reported cost trains the model instead."
+                : costSource === 'ADJUSTER_JUDGEMENT'
+                  ? 'Recorded, but not used to train the cost model: only evidence is.'
+                  : 'Teaches the cost model (with other claims; it changes only when it beats the current estimates). '
+                    + 'Sending the claim to investigation holds it until the investigator reports.'}</span>
+            )}
+          </label>
           <label className="field">
             <span className="field-label">Adjuster ID<span className="required"> *</span></span>
             <input value={adjusterId} onChange={(e) => setAdjusterId(e.target.value)} disabled={!reviewable} />

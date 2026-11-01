@@ -17,9 +17,12 @@ this project's own assumptions:
 
 - **Genuine claims:** claimed amount close to the photo estimate; mostly older policies, with 15% of genuine losses
   in a policy's first six months; usually reported within days, with 10% reported 1–6 weeks late; few prior claims;
-  the second-opinion model mostly agrees with the AI damage type; reused photos are rare (0.3%).
+  reused photos are rare (0.3%). **Real, not assumed:** the second-opinion disagreement is drawn from the model's
+  out-of-fold outputs on the 441 labelled car photos (`second-opinion-disagreement.json`, written by
+  `tools/second-opinion/build_model.py`; 734 values, median 0.18 with the current model).
 - **Fraudulent claims:** each has one to three of six patterns: an inflated amount, a loss soon after the policy
-  starts, a late report, a repeat claimant, photos the second opinion disagrees with, a reused photo. The other
+  starts, a late report, a repeat claimant, photos the second opinion barely supports (disagreement 0.80–0.99; the two
+  wrong Gemini answers measured had 0.87 with the CLIP-only model, 0.99 with CLIP + DINOv2), a reused photo. The other
   features are drawn as for genuine claims.
 
 So the evaluation shows that the score recovers the patterns it was designed for. **It says nothing about how well
@@ -36,6 +39,12 @@ the same formula; a parity test checks the Java scores against reference cases t
 Features: amount claimed / AI estimate, days from policy start to loss, days from loss to report, claims in the last
 12 months, the second opinion's disagreement with the AI damage type, reused photo. **Not used, by design:** reporting
 channel, time of day, state or ZIP code, and any personal or demographic attribute.
+
+The first version drew the disagreement from an assumed distribution (median 0.27). On a live claim with real photos the
+second opinion's usual ~70% disagreement then pushed an ordinary claim to 5.90 against a 5.91 threshold; fitting this
+feature on real outputs fixed it.
+
+Each claim also gets a **percentile** against the training scores (`referenceQuantiles`), checked on held-out claims.
 
 ## Results
 

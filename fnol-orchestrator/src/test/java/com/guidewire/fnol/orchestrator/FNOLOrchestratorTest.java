@@ -1,5 +1,6 @@
 package com.guidewire.fnol.orchestrator;
 
+import com.guidewire.fnol.agents.OnPremiseVision;
 import com.guidewire.fnol.agents.SecondOpinionAgent;
 import com.guidewire.fnol.agents.VisionProvider;
 import com.guidewire.fnol.common.Models.*;
@@ -388,10 +389,113 @@ class FNOLOrchestratorTest {
     }
 
     @Test
+    @DisplayName("Gemini unavailable: the on-premise model reads the photos, and the claim goes to an adjuster")
+    void process_geminiUnavailableUsesOnPremiseVision() {
+        SecondOpinion local = new SecondOpinion("second-opinion v2 (CLIP + dinov2-base)",
+                Map.of("SIDE_PANEL", new BigDecimal("0.81"), "FRONT_BUMPER", new BigDecimal("0.12"),
+                        "REAR_BUMPER", new BigDecimal("0.06"), "WINDSHIELD", new BigDecimal("0.01")),
+                Map.of("VEHICLE", new BigDecimal("0.97")), new DamageExtent("MEDIUM", new BigDecimal("0.07")));
+        // GeminiVisionProvider's placeholder after a failed call (quota, outage) on usable photos.
+        fixture.vision = p -> new DamageAssessment("UNKNOWN", "MODERATE", new BigDecimal("3500"),
+                new BigDecimal("0.60"), "UNKNOWN", Map.of("UNKNOWN", BigDecimal.ONE));
+        FNOLOrchestrator withModel = fixture.build();
+        withModel.setSecondOpinion(new SecondOpinionAgent("http://vision-ml:8090", null, null) {
+            @Override
+            public CompletableFuture<SecondOpinion> start(FNOLPayload payload, String line) {
+                return CompletableFuture.completedFuture(local);
+            }
+        });
+
+        FNOLResponse response = withModel.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000"));
+
+        DamageAssessment d = response.branchA().damageAssessment();
+        assertThat(d.damageType()).isEqualTo("SIDE_PANEL");
+        assertThat(d.visionSource()).startsWith(OnPremiseVision.SOURCE_PREFIX);
+        assertThat(response.gateFlags()).contains(GateConsistencyChecker.ON_PREMISE_VISION)
+                .doesNotContain(GateConsistencyChecker.MODEL_DISAGREEMENT);
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(response.notes()).anyMatch(n -> n.contains("on-premise vision model read the photos: SIDE_PANEL (81% likely)")
+                && n.contains("visible damage extent MEDIUM") && n.contains("published repair costs"));
+        // Priced from the published range for a side panel with MEDIUM visible damage ($200-$4,818): geometric mean
+        // $980 instead of the $3,500 placeholder, and the reserve follows: min(claimed $3,000, $980) - deductible.
+        assertThat(response.branchA().repairCost().basis()).isEqualTo("PUBLISHED");
+        assertThat(d.estimatedDamage()).isEqualByComparingTo("980");
+        assertThat(d.severity()).isEqualTo("MINOR");
+        assertThat(response.branchA().reserve().settlementBasis()).isEqualByComparingTo("980");
+    }
+
+    @Test
+    @DisplayName("Gemini unavailable: a slow on-premise reading (3 s, past the usual 2.5 s) is still waited for")
+    void process_geminiUnavailableWaitsLongerForOnPremiseVision() {
+        SecondOpinion local = new SecondOpinion("second-opinion v2", Map.of("FRONT_BUMPER", new BigDecimal("0.88"),
+                "SIDE_PANEL", new BigDecimal("0.12")), Map.of("VEHICLE", new BigDecimal("0.97")),
+                new DamageExtent("SMALL", new BigDecimal("0.02")));
+        fixture.vision = p -> new DamageAssessment("UNKNOWN", "MODERATE", new BigDecimal("3500"),
+                new BigDecimal("0.60"), "UNKNOWN", Map.of("UNKNOWN", BigDecimal.ONE));
+        FNOLOrchestrator withModel = fixture.build();
+        withModel.setSecondOpinion(new SecondOpinionAgent("http://vision-ml:8090", null, null) {
+            @Override
+            public CompletableFuture<SecondOpinion> start(FNOLPayload payload, String line) {
+                return CompletableFuture.supplyAsync(() -> local,
+                        CompletableFuture.delayedExecutor(3, TimeUnit.SECONDS));
+            }
+        });
+        FNOLResponse response = withModel.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000"));
+        assertThat(response.branchA().damageAssessment().damageType()).isEqualTo("FRONT_BUMPER");
+        assertThat(response.gateFlags()).contains(GateConsistencyChecker.ON_PREMISE_VISION);
+    }
+
+    @Test
+    @DisplayName("Gemini unavailable and the on-premise model hangs: the wait stops before the claim's deadline, no timeout")
+    void process_slowOnPremiseVisionNeverTimesOutTheClaim() {
+        fixture.properties.setTimeoutSeconds(3);
+        fixture.vision = p -> new DamageAssessment("UNKNOWN", "MODERATE", new BigDecimal("3500"),
+                new BigDecimal("0.60"), "UNKNOWN", Map.of("UNKNOWN", BigDecimal.ONE));
+        FNOLOrchestrator withModel = fixture.build();
+        withModel.setSecondOpinion(new SecondOpinionAgent("http://vision-ml:8090", null, null) {
+            @Override
+            public CompletableFuture<SecondOpinion> start(FNOLPayload payload, String line) {
+                return new CompletableFuture<>();   // never completes
+            }
+        });
+        long started = System.nanoTime();
+        FNOLResponse response = withModel.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000"));
+        assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(3000);
+        assertThat(response.branchA().damageAssessment().damageType()).isEqualTo("UNKNOWN");   // without the reading
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+    }
+
+    @Test
+    @DisplayName("A Gemini estimate far outside the repair-cost range for what the photos show is flagged for a check")
+    void process_estimateFarOutsidePublishedRange() {
+        // The mock answers FRONT_BUMPER at $4,200; the second opinion sees SMALL damage ($50-$1,000): 4,200 > 4 x 1,000.
+        SecondOpinion small = new SecondOpinion("second-opinion v2",
+                Map.of("FRONT_BUMPER", new BigDecimal("0.90"), "SIDE_PANEL", new BigDecimal("0.10")),
+                Map.of("VEHICLE", new BigDecimal("0.97")), new DamageExtent("SMALL", new BigDecimal("0.02")));
+        FNOLOrchestrator withModel = fixture.build();
+        withModel.setSecondOpinion(new SecondOpinionAgent("http://vision-ml:8090", null, null) {
+            @Override
+            public CompletableFuture<SecondOpinion> start(FNOLPayload payload, String line) {
+                return CompletableFuture.completedFuture(small);
+            }
+        });
+        FNOLResponse response = withModel.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
+                "Scraped a pole in a parking garage.", "3000"));
+        assertThat(response.branchA().damageAssessment().estimatedDamage()).isEqualByComparingTo("4200");
+        assertThat(response.gateFlags()).contains(GateConsistencyChecker.ESTIMATE_OUTSIDE_PUBLISHED_RANGE);
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(response.notes()).anyMatch(n -> n.contains("Gemini estimates $4200 for FRONT_BUMPER with SMALL visible damage")
+                && n.contains("$50-$1000"));
+    }
+
+    @Test
     @DisplayName("Second opinion: asked in Branch A; disagreement sends the claim to an adjuster with both models' answers")
     void process_secondOpinionDisagreementGoesToAdjuster() {
         SecondOpinion disagrees = new SecondOpinion("second-opinion v1",
-                Map.of("FRONT_BUMPER", new BigDecimal("0.13"), "SIDE_PANEL", new BigDecimal("0.84"),
+                Map.of("FRONT_BUMPER", new BigDecimal("0.08"), "SIDE_PANEL", new BigDecimal("0.89"),
                         "REAR_BUMPER", new BigDecimal("0.02"), "WINDSHIELD", new BigDecimal("0.01")),
                 Map.of("VEHICLE", new BigDecimal("0.97")));
         FNOLOrchestrator withModel = fixture.build();
@@ -410,7 +514,7 @@ class FNOLOrchestratorTest {
         assertThat(response.gateFlags()).containsExactly(GateConsistencyChecker.MODEL_DISAGREEMENT);
         assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
         assertThat(response.notes()).anyMatch(n -> n.contains("Gemini says FRONT_BUMPER")
-                && n.contains("gives that only 13.0%") && n.contains("favours SIDE_PANEL (84%)"));
+                && n.contains("gives that only 8.0%") && n.contains("favours SIDE_PANEL (89%)"));
         // Without the model the same claim is STP-eligible.
         assertThat(orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
                 "Scraped a pole in a parking garage.", "3000")).gateFlags()).isEmpty();

@@ -26,7 +26,9 @@ class FraudAnomalyOrchestratorTest {
     private static FNOLPayload unusualButRuleClean() {
         FNOLPayload p = OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole while parking.",
                 "4600");
-        return new FNOLPayload(p.policyNumber(), LocalDate.now().minusDays(60), p.state(), p.description(),
+        // Reported 80 days late on a policy about 100 days old at the loss, asking a little above the estimate: no
+        // single rule fires, together they are unusual.
+        return new FNOLPayload(p.policyNumber(), LocalDate.now().minusDays(80), p.state(), p.description(),
                 p.claimantName(), p.claimantDob(), p.claimantSsn(), p.evidenceUris(), p.channel(), null, null,
                 p.claimedAmount(), p.evidenceAngles());
     }

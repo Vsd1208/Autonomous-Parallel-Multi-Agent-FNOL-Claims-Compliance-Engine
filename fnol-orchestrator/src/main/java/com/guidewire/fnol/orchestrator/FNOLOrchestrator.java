@@ -70,6 +70,7 @@ public class FNOLOrchestrator {
     private FraudAnomalyScorer fraudScorer = FraudAnomalyScorer.none();
     /** Independent vision model (fnol-vision-ml), asked in parallel with Gemini; disabled unless configured. */
     private SecondOpinionAgent secondOpinion = SecondOpinionAgent.disabled();
+    private RepairCostEstimator repairCosts = new RepairCostEstimator();
     private final PolicyValidatorAgent policy;
     private final ReserveCalculatorAgent reserve;
 
@@ -204,8 +205,11 @@ public class FNOLOrchestrator {
         // The decision clock of most states starts at a complete proof of loss: not yet when photos are missing.
         boolean proofOfLossComplete = !inputFlags.contains(IntakeReviewService.MISSING_EVIDENCE)
                 && !inputFlags.contains(IntakeReviewService.INCOMPLETE_PHOTO_SET);
+        // One overall deadline for both branches, from submission; Branch A also uses it to cap its waits.
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         try {
-            futureA = executor.submit(() -> timed(operationalMs, () -> runOperationalAI(payload, policyRecord.policyType())));
+            futureA = executor.submit(() -> timed(operationalMs,
+                    () -> runOperationalAI(payload, policyRecord.policyType(), deadlineNanos)));
         } catch (RejectedExecutionException e) {
             throw capacityExceeded(payload, e);
         }
@@ -218,7 +222,6 @@ public class FNOLOrchestrator {
         }
 
         // ── Stage 4: Await both branches against one overall deadline ─────────────────
-        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         BranchAResult branchA;
         BranchBResult branchB;
         try {
@@ -278,6 +281,38 @@ public class FNOLOrchestrator {
         return "Gemini says " + type + ", but the independently trained second-opinion model gives that only "
                 + so.probabilityOf(type).movePointRight(2).setScale(1, java.math.RoundingMode.HALF_UP)
                 + "% and favours " + top + "; check the photos before relying on the damage type or estimate.";
+    }
+
+    /** Explains ON_PREMISE_VISION: what the on-premise model saw, and what it cannot tell. */
+    static String onPremiseNote(BranchAResult branchA) {
+        DamageAssessment d = branchA.damageAssessment();
+        DamageExtent extent = branchA.secondOpinion() == null ? null : branchA.secondOpinion().extent();
+        return "Gemini was unavailable, so the on-premise vision model read the photos: " + d.damageType() + " ("
+                + d.confidence().movePointRight(2).setScale(0, java.math.RoundingMode.HALF_UP) + "% likely)"
+                + (extent == null ? "" : ", visible damage extent " + extent.band()) + ". "
+                + (branchA.repairCost() == null
+                    ? "It does not estimate cost, so the $" + d.estimatedDamage() + " estimate is a placeholder; "
+                        + "set the estimate from the photos or an inspection."
+                    : "The $" + d.estimatedDamage() + " estimate is " + costBasis(branchA.repairCost())
+                        + "; confirm it from the photos or an inspection.");
+    }
+
+    /** Where a repair-cost range comes from, in one phrase. */
+    static String costBasis(RepairCostRange r) {
+        String span = "$" + r.low() + "-$" + r.high();
+        return "LEARNED".equals(r.basis())
+                ? "learned from this insurer's own repair costs (" + span + ")"
+                : "the middle of published repair costs for this area" + (r.extentBand() == null ? "" : " and extent")
+                        + " (" + span + ", " + r.sources().size() + " sources)";
+    }
+
+    /** Explains ESTIMATE_OUTSIDE_PUBLISHED_RANGE: Gemini's dollars against the range for what the photos show. */
+    static String costRangeNote(BranchAResult branchA) {
+        RepairCostRange r = branchA.repairCost();
+        return "Gemini estimates $" + branchA.damageAssessment().estimatedDamage() + " for " + r.area()
+                + (r.extentBand() == null ? "" : " with " + r.extentBand() + " visible damage")
+                + ", more than " + (int) RepairCostEstimator.TOLERANCE + "x outside " + costBasis(r)
+                + ". Check the estimate against the photos or an inspection before relying on it.";
     }
 
     /** Explains PHOTO_SUBJECT_MISMATCH: what the photos show versus what the policy insures. */
@@ -344,10 +379,23 @@ public class FNOLOrchestrator {
         this.secondOpinion = secondOpinion;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRepairCosts(RepairCostEstimator repairCosts) {
+        this.repairCosts = repairCosts;
+    }
+
     /** How long Branch A waits for the second opinion after Gemini and coverage are done. */
     static final long SECOND_OPINION_WAIT_MS = 2500;
+    /**
+     * The wait when Gemini could not answer: the on-premise model is then the only reader, so it gets longer. Measured
+     * in the vision-ml container: about 1 s warm, 3-10 s on the first call after the container sat idle.
+     */
+    static final long ON_PREMISE_WAIT_MS = 10_000;
 
-    private BranchAResult runOperationalAI(FNOLPayload payload, String lineOfBusiness) {
+    /** Time kept back from the overall deadline for Branch A's steps after the second opinion (cost range, reserve). */
+    static final long BRANCH_A_FINISH_MS = 500;
+
+    private BranchAResult runOperationalAI(FNOLPayload payload, String lineOfBusiness, long deadlineNanos) {
         log.debug("[Branch A — Operational AI] Starting — policy={}", payload.policyNumber());
         // Step A0: ask the second-opinion model now, so it runs while Gemini works
         CompletableFuture<SecondOpinion> second = secondOpinion.start(payload, lineOfBusiness);
@@ -369,17 +417,45 @@ public class FNOLOrchestrator {
         // Step A4: collect the second opinion; a slow or failed one is dropped, never waited for past the deadline
         SecondOpinion opinion;
         try {
-            opinion = second.get(SECOND_OPINION_WAIT_MS, TimeUnit.MILLISECONDS);
+            // Never past the claim's overall deadline: a slow model must not turn into a timed-out intake.
+            long wait = Math.min(OnPremiseVision.isPlaceholder(damage) ? ON_PREMISE_WAIT_MS : SECOND_OPINION_WAIT_MS,
+                    TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()) - BRANCH_A_FINISH_MS);
+            opinion = second.get(Math.max(0, wait), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             opinion = null;
         } catch (ExecutionException | TimeoutException e) {
-            log.warn("[Branch A] Second opinion not ready in {} ms — continuing without it", SECOND_OPINION_WAIT_MS);
+            log.warn("[Branch A] Second opinion not ready in time — continuing without it");
             opinion = null;
         }
         // Step A5: replace Gemini's self-reported confidence (nearly constant) with the calibrated trust score
         damage = trustScorer.apply(damage, opinion, lineOfBusiness);
-        return new BranchAResult(damage, coverage, res, opinion);
+        // Step A6: Gemini could not answer on usable photos → the on-premise model's reading replaces the placeholder
+        // (vehicle claims; the ON_PREMISE_VISION gate flag always sends the claim to an adjuster)
+        DamageAssessment onPremise = OnPremiseVision.substitute(damage, opinion, lineOfBusiness);
+        if (onPremise != damage) {
+            log.warn("[Branch A] Gemini unavailable — on-premise model read the photos: {} ({})",
+                    onPremise.damageType(), onPremise.confidence());
+            damage = onPremise;
+        }
+        // Step A7: what repairing this area usually costs at the visible extent the on-premise model saw (vehicle
+        // claims). An on-premise reading has no estimate of its own, so it is priced from the range and the reserve
+        // is recalculated; a Gemini estimate far outside the range is flagged at the gate.
+        RepairCostRange cost = "AUTO".equalsIgnoreCase(lineOfBusiness)
+                ? repairCosts.range(damage.damageType(), opinion == null || opinion.extent() == null ? null
+                        : opinion.extent().band())
+                : null;
+        if (cost != null && OnPremiseVision.isOnPremise(damage)) {
+            damage = damage.withEstimate(cost.estimate(), severityFor(cost.estimate()));
+            res = reserve.calculate(damage, coverage, payload.claimedAmount());
+        }
+        return new BranchAResult(damage, coverage, res, opinion, cost);
+    }
+
+    /** The severity band that goes with an estimate (the bands GateConsistencyChecker checks). */
+    static String severityFor(java.math.BigDecimal estimate) {
+        return estimate.compareTo(GateConsistencyChecker.MINOR_MAX) < 0 ? "MINOR"
+                : estimate.compareTo(GateConsistencyChecker.MODERATE_MAX) <= 0 ? "MODERATE" : "SEVERE";
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────
@@ -541,6 +617,8 @@ public class FNOLOrchestrator {
                 case GateConsistencyChecker.PHOTO_SUBJECT_MISMATCH -> photoSubjectNote(
                         branchA.damageAssessment().photoSubject(), policyRecord.policyType());
                 case GateConsistencyChecker.MODEL_DISAGREEMENT -> modelDisagreementNote(branchA);
+                case GateConsistencyChecker.ON_PREMISE_VISION -> onPremiseNote(branchA);
+                case GateConsistencyChecker.ESTIMATE_OUTSIDE_PUBLISHED_RANGE -> costRangeNote(branchA);
                 case GateConsistencyChecker.POSSIBLE_FLOOD_EXCLUSION ->
                         "the photos show flood (rising surface water), which standard homeowners policies exclude; "
                                 + "confirm the cause of loss and check for a separate flood policy before any payment.";
@@ -636,7 +714,8 @@ public class FNOLOrchestrator {
             top.append(c.label()).append(" ").append(c.value()).append(" (+").append(c.points()).append(")");
         }
         return "the claim's intake details are unusual together (anomaly score " + fraud.score() + ", threshold "
-                + fraud.threshold() + "): " + top + ". Consider a referral to the special investigations unit. "
+                + fraud.threshold() + (fraud.percentile() == null ? "" : "; more unusual than " + fraud.percentile()
+                + "% of reference claims") + "): " + top + ". Consider a referral to the special investigations unit. "
                 + "This is a statistical signal, not a finding of fraud, and it never denies the claim.";
     }
 

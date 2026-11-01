@@ -63,6 +63,12 @@ class InspectionController {
     private final AuditService auditService;
     private final AuditTrailAgent auditAgent;
     private final ClaimCenterClient claimCenter;
+    private AiGovernanceService governance;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setGovernance(AiGovernanceService governance) {
+        this.governance = governance;
+    }
 
     InspectionController(ClaimRepository claims, InspectionRepository inspections, AuditService auditService,
                          AuditTrailAgent auditAgent, ClaimCenterClient claimCenter) {
@@ -173,6 +179,16 @@ class InspectionController {
                         + ";recommendation=" + recommendation + ";recommendedPayment=" + i.recommendedPayment
                         + ";status=HUMAN_REVIEW",
                 recommendation, i.inspectorId);
+        // On a claim sent to investigation, the investigator's offline cost becomes the repair-cost label.
+        // Its own transaction; any failure is logged and never undoes the report.
+        if (governance != null) {
+            try {
+                governance.recordInvestigationFindings(claimId, i.accidentRelatedAmount, now);
+            } catch (RuntimeException e) {
+                log.warn("[FNOL] Investigation findings not recorded as a cost label for claimId={}: {}", claimId,
+                        e.getMessage());
+            }
+        }
         syncClaimCenter(claimId, "DRAFT_PENDING_REVIEW", "INSPECTION_COMPLETED", i.inspectorId,
                 "Inspection report: accident-related damage $" + i.accidentRelatedAmount
                         + (Boolean.TRUE.equals(i.priorDamageFound) ? " (earlier damage excluded)" : "")

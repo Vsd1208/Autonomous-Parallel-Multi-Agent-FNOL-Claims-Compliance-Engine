@@ -16,16 +16,16 @@ Wrong answers (lenient) and the checks that stop them:
 - Car damages 305.png: answered MULTIPLE, true WINDSHIELD, confidence 0.9, margin 0.00 -> AMBIGUOUS_DAMAGE_TYPE
 - Car damages 1153.png: answered FRONT_BUMPER, true SIDE_PANEL, confidence 0.9, margin 0.70 -> **not stopped by any vision check**
 
-## Run `v3-subject` (50 photos, 9 wrong answers, lenient)
+## Run `v3-subject` (66 photos, 12 wrong answers, lenient)
 
 | Checks applied | Auto-approvable | Wrong answers let through (lenient / strict) | Right answers sent to adjuster |
 |---|---|---|---|
-| Confidence factor only (>= 0.85) | 50/50 | 9 / 22 | 0 |
-| + AMBIGUOUS_DAMAGE_TYPE (margin >= 0.30) | 32/50 | 2 / 4 | 11 |
-| + SEVERITY_ESTIMATE_MISMATCH | 32/50 | 2 / 4 | 11 |
-| + PHOTO_SUBJECT_MISMATCH (subject = VEHICLE) | 32/50 | 2 / 4 | 11 |
+| Confidence factor only (>= 0.85) | 65/66 | 11 / 27 | 0 |
+| + AMBIGUOUS_DAMAGE_TYPE (margin >= 0.30) | 42/66 | 2 / 4 | 14 |
+| + SEVERITY_ESTIMATE_MISMATCH | 42/66 | 2 / 4 | 14 |
+| + PHOTO_SUBJECT_MISMATCH (subject = VEHICLE) | 42/66 | 2 / 4 | 14 |
 
-Photo subject reported: VEHICLE 50 (every photo is a car).
+Photo subject reported: VEHICLE 66 (every photo is a car).
 
 Wrong answers (lenient) and the checks that stop them:
 
@@ -38,3 +38,6 @@ Wrong answers (lenient) and the checks that stop them:
 - Car damages 1143.jpg: answered MULTIPLE, true SIDE_PANEL, confidence 0.9, margin 0.10 -> AMBIGUOUS_DAMAGE_TYPE
 - Car damages 1336.png: answered MULTIPLE, true SIDE_PANEL, confidence 0.9, margin 0.55 -> **not stopped by any vision check**
 - Car damages 900.png: answered MULTIPLE, true REAR_BUMPER, confidence 0.9, margin 0.10 -> AMBIGUOUS_DAMAGE_TYPE
+- Car damages 269.png: answered MULTIPLE, true FRONT_BUMPER, confidence 0.9, margin 0.10 -> AMBIGUOUS_DAMAGE_TYPE
+- Car damages 1091.jpg: answered MULTIPLE, true FRONT_BUMPER, confidence 0.9, margin 0.05 -> AMBIGUOUS_DAMAGE_TYPE
+- Car damages 109.png: answered UNKNOWN, true REAR_BUMPER, confidence 0.7, margin 1.00 -> **not stopped by any vision check**

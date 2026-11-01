@@ -1,7 +1,12 @@
 """fnol-vision-ml: the second-opinion vision model behind the MODEL_DISAGREEMENT gate check.
 
-A CLIP image encoder plus the heads trained by tools/second-opinion/build_model.py:
-  - auto:    damaged vehicle area (logistic regression on CLIP embeddings, trained on CC0 car-damage photos)
+Image encoders plus the heads trained by tools/second-opinion/build_model.py:
+  - auto:    damaged vehicle area (logistic regression on CLIP + DINOv2 embeddings, trained on CC0 car-damage photos;
+             a version-1 model file uses CLIP only)
+  - extent:  visible damage extent, SMALL / MEDIUM / LARGE (share of the photo covered by damage; not a cost)
+  - home:    cause of loss (FLOOD, FIRE_SMOKE, WIND_STORM, FALLEN_TREE), trained on reviewed FEMA photos; a model file
+             without the trained head falls back to zero-shot
+  - propertyType: RESIDENTIAL / COMMERCIAL / OTHER_PROPERTY (HOME line), trained on the same photos
   - home:    cause of loss (zero-shot from text descriptions)
   - subject: what the photos show (zero-shot)
 
@@ -12,7 +17,9 @@ POST /v1/redact
 POST /v1/second-opinion
   {"line": "AUTO" | "HOME", "images": ["data:image/jpeg;base64,..."], "angles": ["FRONT", "CLOSE_UP", ...]}
   -> {"model": ..., "line": ..., "photos": n,
-      "damageProbabilities": {class: p}, "subjectProbabilities": {class: p}}
+      "damageProbabilities": {class: p}, "subjectProbabilities": {class: p},
+      "extent": {"band": "SMALL" | "MEDIUM" | "LARGE", "share": s}}   (AUTO with a close-up, version-2 model only)
+  Vehicle claims with a close-up use CLIP + DINOv2 on it; without one, the CLIP-only head on all photos (speed).
 GET  /health
 
 Internal service: it is reachable only on the compose network (no published port), accepts only base64 JPEG, PNG,
@@ -40,6 +47,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 MODEL_FILE = os.environ.get("MODEL_FILE", os.path.join(os.path.dirname(__file__), "model", "second-opinion-model.json"))
 ENCODER_DIR = os.environ.get("ENCODER_DIR", "/models/clip")
+DINO_DIR = os.environ.get("DINO_DIR", "/models/dinov2")
 PORT = int(os.environ.get("PORT", "8090"))
 MAX_BODY = 40 * 1024 * 1024
 MAX_IMAGES = 8
@@ -53,10 +61,20 @@ CLIP = CLIPModel.from_pretrained(ENCODER_DIR, use_safetensors=True).eval()
 PROCESSOR = CLIPProcessor.from_pretrained(ENCODER_DIR)
 AUTO_W = np.array(HEADS["auto"]["coef"])
 AUTO_B = np.array(HEADS["auto"]["intercept"])
+CLIP_ONLY = HEADS.get("autoClipOnly")      # claims without a close-up (DINOv2 on every photo is too slow on CPU)
 SUBJECT_T = np.array(HEADS["subject"]["textEmbeddings"])
 HOME_T = np.array(HEADS["home"]["textEmbeddings"])
 SCALE = HEADS["logitScale"]
-MODEL_ID = f"second-opinion v{HEADS['version']} ({HEADS['encoder'].split('/')[-1]})"
+if HEADS.get("dinoEncoder"):
+    from transformers import AutoImageProcessor, AutoModel
+    DINO = AutoModel.from_pretrained(DINO_DIR, use_safetensors=True).eval()
+    DINO_PROCESSOR = AutoImageProcessor.from_pretrained(DINO_DIR)
+else:
+    DINO = None
+EXTENT = HEADS.get("extent")
+HOME_TRAINED = HEADS.get("homeTrained")        # cause of loss trained on reviewed FEMA photos (else zero-shot)
+PROPERTY_TYPE = HEADS.get("propertyType")      # RESIDENTIAL / COMMERCIAL / OTHER_PROPERTY
+MODEL_ID = f"second-opinion v{HEADS['version']} ({HEADS['encoder'].split('/')[-1]}" +            (f" + {HEADS['dinoEncoder'].split('/')[-1]})" if DINO is not None else ")")
 
 
 def softmax(x):
@@ -82,6 +100,13 @@ def embed(images):
     return torch.nn.functional.normalize(feats, dim=-1).numpy()
 
 
+def embed_dino(images):
+    """[CLS, mean of patch tokens], unit length: exactly as build_model.py trained it."""
+    with torch.no_grad():
+        h = DINO(**DINO_PROCESSOR(images=images, return_tensors="pt")).last_hidden_state
+    return torch.nn.functional.normalize(torch.cat([h[:, 0], h[:, 1:].mean(1)], dim=-1), dim=-1).numpy()
+
+
 def raw_bytes(uri):
     if not isinstance(uri, str) or not DATA_URI.match(uri):
         raise ValueError("only base64 image data URIs are accepted")
@@ -105,19 +130,42 @@ def assess(line, uris, angles):
     images = [decode(u) for u in uris]
     emb = embed(images)
     subject = softmax(SCALE * emb @ SUBJECT_T.T).mean(0)
+    extent = None
     if line == "AUTO":
-        per_photo = softmax(emb @ AUTO_W.T + AUTO_B)
         # The close-up shows the damage; the other views show mostly undamaged sides, so use it when there is one.
         close = [i for i, a in enumerate(angles) if a == "CLOSE_UP"]
-        damage = per_photo[close].mean(0) if close else per_photo.mean(0)
+        used = close or list(range(len(images)))
+        feats = emb[used]
+        if DINO is not None and (close or CLIP_ONLY is None):
+            # DINOv2 runs only on the close-up(s), the photos that decide the damage, to keep the claim fast
+            feats = np.concatenate([feats, embed_dino([images[i] for i in used])], axis=1) / np.sqrt(2)
+            damage = softmax(feats @ AUTO_W.T + AUTO_B).mean(0)
+        elif CLIP_ONLY is not None:
+            damage = softmax(feats @ np.array(CLIP_ONLY["coef"]).T + np.array(CLIP_ONLY["intercept"])).mean(0)
+        else:   # version-1 model file: its auto head is CLIP-only
+            damage = softmax(feats @ AUTO_W.T + AUTO_B).mean(0)
         classes = HEADS["auto"]["classes"]
+        if EXTENT is not None and feats.shape[1] == len(EXTENT["coef"]):
+            log_share = float((feats @ np.array(EXTENT["coef"]) + EXTENT["intercept"]).mean())
+            band = EXTENT["bands"][int(np.digitize(log_share, EXTENT["logShareCuts"]))]
+            extent = {"band": band, "share": round(float(np.exp(log_share)), 4)}
     else:
-        damage = softmax(SCALE * emb @ HOME_T.T).mean(0)
-        classes = HEADS["home"]["classes"]
+        if HOME_TRAINED is not None:
+            damage = softmax(emb @ np.array(HOME_TRAINED["coef"]).T + np.array(HOME_TRAINED["intercept"])).mean(0)
+            classes = HOME_TRAINED["classes"]
+        else:
+            damage = softmax(SCALE * emb @ HOME_T.T).mean(0)
+            classes = HEADS["home"]["classes"]
     rnd = lambda v: round(float(v), 4)
-    return {"model": MODEL_ID, "line": line, "photos": len(images),
-            "damageProbabilities": {c: rnd(p) for c, p in zip(classes, damage)},
-            "subjectProbabilities": {c: rnd(p) for c, p in zip(HEADS["subject"]["classes"], subject)}}
+    result = {"model": MODEL_ID, "line": line, "photos": len(images),
+              "damageProbabilities": {c: rnd(p) for c, p in zip(classes, damage)},
+              "subjectProbabilities": {c: rnd(p) for c, p in zip(HEADS["subject"]["classes"], subject)}}
+    if extent is not None:
+        result["extent"] = extent
+    if line == "HOME" and PROPERTY_TYPE is not None:
+        ptype = softmax(emb @ np.array(PROPERTY_TYPE["coef"]).T + np.array(PROPERTY_TYPE["intercept"])).mean(0)
+        result["propertyTypeProbabilities"] = {c: rnd(p) for c, p in zip(PROPERTY_TYPE["classes"], ptype)}
+    return result
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -169,6 +217,17 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def warm_up():
+    """One inference through every encoder before serving: the first call otherwise pays for lazy initialisation."""
+    started = time.time()
+    blank = Image.new("RGB", (224, 224), (128, 128, 128))
+    embed([blank])
+    if DINO is not None:
+        embed_dino([blank])
+    log.info("warm-up done in %.0f ms", (time.time() - started) * 1000)
+
+
 if __name__ == "__main__":
+    warm_up()
     log.info("serving %s on :%d", MODEL_ID, PORT)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

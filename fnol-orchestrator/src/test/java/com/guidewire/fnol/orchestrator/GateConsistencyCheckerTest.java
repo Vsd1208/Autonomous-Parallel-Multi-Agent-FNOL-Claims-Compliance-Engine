@@ -123,10 +123,10 @@ class GateConsistencyCheckerTest {
     }
 
     @Test
-    @DisplayName("MODEL_DISAGREEMENT when the second-opinion model gives Gemini's damage type less than 0.15")
+    @DisplayName("MODEL_DISAGREEMENT when the second-opinion model gives Gemini's damage type less than 0.10")
     void modelDisagreement() {
         assertThat(checker.check(policy("AUTO"), withSecondOpinion("FRONT_BUMPER", Map.of(
-                "FRONT_BUMPER", new BigDecimal("0.13"), "SIDE_PANEL", new BigDecimal("0.80")))))
+                "FRONT_BUMPER", new BigDecimal("0.08"), "SIDE_PANEL", new BigDecimal("0.80")))))
                 .containsExactly(MODEL_DISAGREEMENT);
         // Agreement, no second opinion, or a type the second opinion does not know: no flag.
         assertThat(checker.check(policy("AUTO"), withSecondOpinion("FRONT_BUMPER", Map.of(
@@ -134,6 +134,19 @@ class GateConsistencyCheckerTest {
         assertThat(checker.check(policy("AUTO"), withSecondOpinion("FRONT_BUMPER", null))).isEmpty();
         assertThat(checker.check(policy("AUTO"), withSecondOpinion("ROOF", Map.of(
                 "FRONT_BUMPER", new BigDecimal("0.90"))))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ON_PREMISE_VISION when the on-premise model read the photos; it is never compared with itself")
+    void onPremiseVision() {
+        DamageAssessment placeholder = new DamageAssessment("UNKNOWN", "MODERATE", new BigDecimal("3500"),
+                new BigDecimal("0.60"), "UNKNOWN", Map.of("UNKNOWN", BigDecimal.ONE));
+        SecondOpinion so = new SecondOpinion("second-opinion v2", Map.of("SIDE_PANEL", new BigDecimal("0.72"),
+                "FRONT_BUMPER", new BigDecimal("0.20"), "REAR_BUMPER", new BigDecimal("0.08")), Map.of());
+        DamageAssessment onPremise = com.guidewire.fnol.agents.OnPremiseVision.substitute(placeholder, so, "AUTO");
+        BranchAResult base = branchA("SIDE_PANEL", "MODERATE", "3500", "0.72", "UNKNOWN", "50000");
+        assertThat(checker.check(policy("AUTO"), new BranchAResult(onPremise, base.coverage(), base.reserve(), so)))
+                .containsExactly(ON_PREMISE_VISION);
     }
 
     @Test

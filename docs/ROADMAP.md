@@ -22,7 +22,7 @@ historical record in [SPRINT_PLAN.md](SPRINT_PLAN.md); this page replaces it. Me
 | Item | Why |
 |---|---|
 | Run the HOME prompt evaluation on the 53 prepared FEMA photos | The property prompt is not measured yet |
-| Grow the vehicle evaluation beyond 50 photos and add multi-photo claims | The trust score's calibration error is still high; real claims send five photos, the evaluation one |
+| Grow the vehicle evaluation to the 120 prepared photos (66 done; the free API tier allows about 16–20 a day) and add multi-photo claims | 12 wrong answers is a small sample for calibration; real claims send five photos, the evaluation one |
 | Real adjuster authentication (OAuth2 / OIDC) and roles (adjuster, inspector, SIU) | The shared token is a prototype control; `adjusterId` comes from the request body |
 | Rate limiting on the portal's claim tracking | Claim number + policy number lookups are not throttled |
 | Scheduled ClaimCenter retry job | Failed syncs are marked and can be retried by hand only |

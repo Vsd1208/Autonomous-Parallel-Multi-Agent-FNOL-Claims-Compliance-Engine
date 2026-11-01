@@ -2,6 +2,8 @@ package com.guidewire.fnol.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guidewire.fnol.api.persistence.AiFeedbackEntity;
+import com.guidewire.fnol.api.persistence.AiFeedbackRepository;
 import com.guidewire.fnol.api.persistence.ClaimEntity;
 import com.guidewire.fnol.api.persistence.ClaimRepository;
 import com.guidewire.fnol.common.Models.AdjusterReviewRequest;
@@ -42,6 +44,7 @@ class InspectionWorkflowTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ClaimRepository claims;
+    @Autowired private AiFeedbackRepository feedback;
     @MockBean private PolicyCenterClient policyCenterClient;
     @MockBean private ClaimCenterClient claimCenterClient;
 
@@ -159,6 +162,54 @@ class InspectionWorkflowTest {
                           int expected) throws Exception {
         String content = perform(request).andExpect(status().is(expected)).andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(content);
+    }
+
+    @Test
+    @DisplayName("Sent to investigation: figures entered meanwhile are held; the investigator's offline cost is the claim's label")
+    void investigationFindingsAreTheRepairCostLabel() throws Exception {
+        String claimId = saveClaim("9000");
+
+        // The adjuster sends the claim to investigation and enters an invoice figure: held, never learned from.
+        perform(post("/api/v1/fnol/" + claimId + "/review", Map.of("decision", "INVESTIGATION_REQUIRED",
+                "adjusterId", "ADJ-001", "finalRepairCost", 5000, "repairCostSource", "INVOICE")))
+                .andExpect(status().isOk());
+        assertThat(latestRow(claimId).costSource).isEqualTo("INVESTIGATION_HOLD");
+        assertThat(latestRow(claimId).finalRepairCost).isEqualByComparingTo("5000");
+
+        // The investigator goes out and reports the accident-related cost (earlier damage excluded).
+        String inspectionId = json(post("/api/v1/fnol/" + claimId + "/inspections", Map.of(
+                "inspectorId", "INS-101", "inspectionType", "FIELD",
+                "reason", "Investigation: damage may predate the accident", "assignedBy", "ADJ-001")), 200)
+                .path("inspectionId").asText();
+        json(post("/api/v1/fnol/" + claimId + "/inspections/" + inspectionId + "/report", report("INS-101", "3200")), 200);
+        assertThat(latestRow(claimId).costSource).isEqualTo("INVESTIGATION");
+        assertThat(latestRow(claimId).finalRepairCost).isEqualByComparingTo("3200");
+
+        // A later decision with a different invoice figure does not replace the investigator's cost.
+        perform(post("/api/v1/fnol/" + claimId + "/review", Map.of("decision", "APPROVED_BY_ADJUSTER",
+                "adjusterId", "ADJ-001", "finalRepairCost", 4000, "repairCostSource", "INVOICE")))
+                .andExpect(status().isOk());
+        AiFeedbackEntity last = latestRow(claimId);
+        assertThat(last.adjusterDecision).isEqualTo("APPROVED_BY_ADJUSTER");
+        assertThat(last.costSource).isEqualTo("INVESTIGATION");
+        assertThat(last.finalRepairCost).isEqualByComparingTo("3200");
+    }
+
+    @Test
+    @DisplayName("Without an investigation, an inspection's cost and an adjuster's evidence are used as before")
+    void noInvestigationKeepsTheAdjustersEvidence() throws Exception {
+        String claimId = saveClaim(null);
+        perform(post("/api/v1/fnol/" + claimId + "/review", Map.of("decision", "APPROVED_BY_ADJUSTER",
+                "adjusterId", "ADJ-001", "finalRepairCost", 2600, "repairCostSource", "BODY_SHOP_ESTIMATE")))
+                .andExpect(status().isOk());
+        assertThat(latestRow(claimId).costSource).isEqualTo("BODY_SHOP_ESTIMATE");
+        assertThat(latestRow(claimId).finalRepairCost).isEqualByComparingTo("2600");
+    }
+
+    private AiFeedbackEntity latestRow(String claimId) {
+        var rows = feedback.findByClaimIdOrderByDecidedAtAsc(claimId);
+        assertThat(rows).isNotEmpty();
+        return rows.get(rows.size() - 1);
     }
 
     private String saveClaim(String claimedAmount) {

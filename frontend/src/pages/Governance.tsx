@@ -95,6 +95,28 @@ export default function Governance() {
               <p className="hint">Each decision is stored next to what the AI said (GET /api/v1/ai/feedback): new labelled
                 data for retraining the trust score.</p>
             </Panel>
+
+            <Panel title="Repair-cost accuracy">
+              {m.repairCost && m.repairCost.claimsWithRepairCost > 0 ? (
+                <dl className="detail-view cols-1">
+                  <div className="detail-row"><dt>Claims with a repair cost</dt>
+                    <dd>{m.repairCost.claimsWithRepairCost}, of which {m.repairCost.evidenceBacked} backed by an invoice,
+                      body-shop estimate, inspection or investigation (only these train the model)</dd></div>
+                  {Object.entries(m.repairCost.bySource).map(([src, n]) => (
+                    <div className="detail-row" key={src}><dt>{humanize(src)}</dt><dd>{n}</dd></div>
+                  ))}
+                  <div className="detail-row"><dt>AI estimate: median error / within 25%</dt>
+                    <dd>{m.repairCost.ai.medianAbsPercentError ?? '—'}% / {m.repairCost.ai.within25Percent ?? 0} of {m.repairCost.ai.claims}</dd></div>
+                  <div className="detail-row"><dt>Repair-cost table: median error / within 25%</dt>
+                    <dd>{m.repairCost.costTable.medianAbsPercentError ?? '—'}% / {m.repairCost.costTable.within25Percent ?? 0} of {m.repairCost.costTable.claims}</dd></div>
+                </dl>
+              ) : (
+                <p className="muted">No decision has a real repair cost yet. Record the final repair cost when deciding a
+                  claim (an inspection fills it in): the cost model learns from these.</p>
+              )}
+              <p className="hint">Accuracy is measured on evidence-backed costs only. tools/cost-eval/fit_costs.py learns from
+                them and replaces the published table only when it is more accurate out of sample (50+ claims).</p>
+            </Panel>
           </div>
 
           <Panel title="Regulatory deadlines">

@@ -1,0 +1,14 @@
+# Build context for the images built from the repository root (fnol-api, mock-guidewire, frontend, portal).
+# Secrets never enter an image or the build context.
+.env
+.env.*
+# Rebuilt inside the image or not needed there.
+.git
+**/node_modules
+**/target
+**/dist
+**/__pycache__
+# Evaluation data and caches (hundreds of MB); the images do not use them.
+tools/vision-eval/data
+tools/vision-eval/results
+tools/second-opinion/results/*.npy

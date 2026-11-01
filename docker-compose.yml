@@ -50,7 +50,7 @@ services:
 
   vision-ml:
     # Second-opinion vision model (CLIP + trained head, tools/second-opinion). No published port: only the API calls
-    # it, over the compose network. The first build downloads PyTorch (CPU) and the CLIP weights (~1 GB in total).
+    # it, over the compose network. The first build downloads PyTorch (CPU) and the CLIP and DINOv2 weights.
     build:
       context: fnol-vision-ml
     environment:

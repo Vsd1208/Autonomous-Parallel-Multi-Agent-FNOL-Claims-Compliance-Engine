@@ -45,10 +45,12 @@ public class StpProperties {
     private BigDecimal minProbabilityMargin = new BigDecimal("0.30");
 
     /**
-     * MODEL_DISAGREEMENT when the second-opinion model gives Gemini's damage type less than this. 0.15 caught the one
-     * confident wrong answer in the car evaluation while flagging 2 of 35 right answers (out-of-fold, small sample).
+     * MODEL_DISAGREEMENT when the second-opinion model gives Gemini's damage type less than this. With the CLIP + DINOv2
+     * model (sharper probabilities than the CLIP-only one), 0.10 catches the same wrong answers as 0.15 did before
+     * (4 of 6 wrong main areas, 2 of 2 wrong areas) at about the same adjuster work (7 of 66 flagged vs 6), and stays
+     * well above the wrong answers' 0.01-0.02. Out-of-fold, small sample: tools/second-opinion/results/disagreement.md.
      */
-    private BigDecimal secondOpinionMinProbability = new BigDecimal("0.15");
+    private BigDecimal secondOpinionMinProbability = new BigDecimal("0.10");
 
     public BigDecimal getConfidence() { return confidence; }
     public void setConfidence(BigDecimal confidence) { this.confidence = confidence; }

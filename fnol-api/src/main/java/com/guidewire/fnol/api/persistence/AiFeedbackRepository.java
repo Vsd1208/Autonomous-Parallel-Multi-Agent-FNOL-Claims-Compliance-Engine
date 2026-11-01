@@ -7,4 +7,6 @@ import java.util.List;
 public interface AiFeedbackRepository extends JpaRepository<AiFeedbackEntity, Long> {
 
     List<AiFeedbackEntity> findAllByOrderByDecidedAtAsc();
+
+    List<AiFeedbackEntity> findByClaimIdOrderByDecidedAtAsc(String claimId);
 }

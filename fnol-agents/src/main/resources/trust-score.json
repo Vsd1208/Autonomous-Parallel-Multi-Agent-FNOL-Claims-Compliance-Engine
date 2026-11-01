@@ -1,39 +1,45 @@
 {
-  "version": 1,
+  "version": 3,
   "line": "AUTO",
   "model": "gemini-2.5-flash",
   "thinkingBudget": 0,
   "promptSha256": "501b3308884a64f8",
-  "images": 50,
+  "images": 66,
+  "adjusterFeedbackRows": 0,
+  "measuredOn": "2026-10-31",
   "target": "lenient",
   "withSecondOpinion": {
     "features": [
-      "margin",
+      "namedMargin",
       "agreement",
       "specific"
     ],
+    "C": 3.0,
     "coef": [
-      0.478309,
-      0.835006,
-      1.245624
+      1.238525,
+      1.460005,
+      1.357256
     ],
-    "intercept": 0.554707
+    "intercept": 0.313288
   },
   "marginOnly": {
     "features": [
-      "margin",
+      "namedMargin",
       "specific"
     ],
+    "C": 10.0,
     "coef": [
-      0.598227,
-      1.417536
+      2.00047,
+      1.70341
     ],
-    "intercept": 0.585071
+    "intercept": 0.268973
   },
   "metrics": {
-    "aucRaw": 0.5244,
-    "aucTrust": 0.6829,
-    "brierRaw": 0.1537,
-    "brierTrust": 0.1274
+    "aucRaw": 0.5671,
+    "aucTrust": 0.679,
+    "brierRaw": 0.1503,
+    "brierTrust": 0.1176,
+    "eceRaw": 0.0902,
+    "eceTrust": 0.0505
   }
 }

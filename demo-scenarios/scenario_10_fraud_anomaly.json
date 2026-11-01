@@ -1,8 +1,8 @@
 {
   "scenario": "fraud_anomaly",
-  "description": "A claim that passes every rule on its own: reported 45-75 days after the loss, about four months into the policy, asking 9.5% above the AI estimate (inside the 10% tolerance). Together these details are unusual, so the fraud anomaly score raises FRAUD_ANOMALY: HUMAN_REVIEW with an SIU-referral suggestion and the top contributing details. It never denies the claim.",
-  "daysAgoMin": 45,
-  "daysAgoMax": 75,
+  "description": "A claim that passes every rule on its own: reported 75-90 days after the loss, about four months into the policy, asking 9.5% above the AI estimate (inside the 10% tolerance). Together these details are unusual, so the fraud anomaly score raises FRAUD_ANOMALY: HUMAN_REVIEW with an SIU-referral suggestion and the top contributing details. It never denies the claim.",
+  "daysAgoMin": 75,
+  "daysAgoMax": 90,
   "payload": {
     "policyNumber": "POL-AUTO-112233",
     "incidentDate": "2026-09-01",

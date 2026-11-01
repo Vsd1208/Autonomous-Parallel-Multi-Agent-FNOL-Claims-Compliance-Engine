@@ -14,6 +14,7 @@ photos without visible damage and fixed tree-on-house photos captioned as tornad
 replacement photos that nobody has reviewed: check the new ones before relying on the numbers.
 """
 import argparse
+import http.client
 import json
 import os
 import re
@@ -74,7 +75,7 @@ def get(url):
             if e.code != 429:
                 raise
             time.sleep(15 * (attempt + 1))
-        except (TimeoutError, OSError):
+        except (TimeoutError, OSError, http.client.HTTPException):   # incl. a connection dropped mid-read
             time.sleep(10)
     raise SystemExit("Wikimedia Commons is rate limiting; try again later (it resumes).")
 

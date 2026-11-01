@@ -1,20 +1,20 @@
 # Second opinion vs Gemini
 
-Gemini answers that pass the existing vision checks (confidence >= 0.85, margin >= 0.30) in runs v2-multiphoto, v3-subject: 56 answers, 2 wrong (lenient), 6 with the wrong main area (strict). The second opinion's probabilities are out-of-fold (it never saw the photo).
+Gemini answers that pass the existing vision checks (confidence >= 0.85, margin >= 0.30) in runs v2-multiphoto, v3-subject: 66 answers, 2 wrong (lenient), 6 with the wrong main area (strict). The second opinion's probabilities are out-of-fold (it never saw the photo).
 
 | Disagreement threshold | Flagged | Wrong caught (lenient) | Wrong main area caught (strict) | Right answers flagged (extra adjuster work) |
 |---|---|---|---|---|
-| second opinion gives Gemini's area < 0.05 | 0/56 | 0/2 | 0/6 | 0 |
-| second opinion gives Gemini's area < 0.10 | 4/56 | 0/2 | 2/6 | 4 |
-| second opinion gives Gemini's area < 0.15 | 6/56 | 2/2 | 4/6 | 4 |
-| second opinion gives Gemini's area < 0.20 | 7/56 | 2/2 | 4/6 | 5 |
-| second opinion gives Gemini's area < 0.30 | 19/56 | 2/2 | 4/6 | 17 |
+| second opinion gives Gemini's area < 0.05 | 7/66 | 2/2 | 4/6 | 5 |
+| second opinion gives Gemini's area < 0.10 | 11/66 | 2/2 | 4/6 | 9 |
+| second opinion gives Gemini's area < 0.15 | 11/66 | 2/2 | 4/6 | 9 |
+| second opinion gives Gemini's area < 0.20 | 12/66 | 2/2 | 4/6 | 10 |
+| second opinion gives Gemini's area < 0.30 | 13/66 | 2/2 | 4/6 | 11 |
 
 Answers with the wrong main area:
 
-- Car damages 280.png (v2-multiphoto): Gemini SIDE_PANEL, true REAR_BUMPER, second opinion gives SIDE_PANEL 0.05
-- Car damages 280.png (v3-subject): Gemini SIDE_PANEL, true REAR_BUMPER, second opinion gives SIDE_PANEL 0.05
-- Car damages 1153.png (v2-multiphoto): Gemini FRONT_BUMPER, true SIDE_PANEL, second opinion gives FRONT_BUMPER 0.13  **(wrong under both measures)**
-- Car damages 1153.png (v3-subject): Gemini FRONT_BUMPER, true SIDE_PANEL, second opinion gives FRONT_BUMPER 0.13  **(wrong under both measures)**
-- Car damages 870.png (v2-multiphoto): Gemini SIDE_PANEL, true FRONT_BUMPER, second opinion gives SIDE_PANEL 0.47
-- Car damages 870.png (v3-subject): Gemini SIDE_PANEL, true FRONT_BUMPER, second opinion gives SIDE_PANEL 0.47
+- Car damages 1153.png (v2-multiphoto): Gemini FRONT_BUMPER, true SIDE_PANEL, second opinion gives FRONT_BUMPER 0.00  **(wrong under both measures)**
+- Car damages 1153.png (v3-subject): Gemini FRONT_BUMPER, true SIDE_PANEL, second opinion gives FRONT_BUMPER 0.00  **(wrong under both measures)**
+- Car damages 280.png (v2-multiphoto): Gemini SIDE_PANEL, true REAR_BUMPER, second opinion gives SIDE_PANEL 0.03
+- Car damages 280.png (v3-subject): Gemini SIDE_PANEL, true REAR_BUMPER, second opinion gives SIDE_PANEL 0.03
+- Car damages 870.png (v2-multiphoto): Gemini SIDE_PANEL, true FRONT_BUMPER, second opinion gives SIDE_PANEL 0.97
+- Car damages 870.png (v3-subject): Gemini SIDE_PANEL, true FRONT_BUMPER, second opinion gives SIDE_PANEL 0.97

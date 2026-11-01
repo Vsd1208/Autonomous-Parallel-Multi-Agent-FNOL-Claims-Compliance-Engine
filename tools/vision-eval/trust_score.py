@@ -46,8 +46,11 @@ from calibrate import REPO, RESULTS, STP_CONFIDENCE, correctness, load, margin  
 OOF = os.path.join(HERE, "..", "second-opinion", "results", "oof-auto.jsonl")
 APP_FILE = os.path.join(REPO, "fnol-agents", "src", "main", "resources", "trust-score.json")
 SPECIFIC = {"FRONT_BUMPER", "REAR_BUMPER", "SIDE_PANEL", "WINDSHIELD", "ROOF"}
-FEATURES_FULL = ["margin", "agreement", "specific"]
-FEATURES_MARGIN = ["margin", "specific"]
+# namedMargin = the probability margin when Gemini names an area, else 0. For a "multiple areas" or UNKNOWN answer the
+# margin says nothing about whether an area is right (UNKNOWN puts 1.0 on "unknown", a margin of 1.0, and is always
+# wrong), so using it there made the fitted margin weight negative on 2 of 66 answers.
+FEATURES_FULL = ["namedMargin", "agreement", "specific"]
+FEATURES_MARGIN = ["namedMargin", "specific"]
 SMOOTHING = [0.3, 1.0, 3.0, 10.0, 100.0]     # C: smaller = stronger pull towards the average accuracy
 THRESHOLDS = [0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.95]
 BOOTSTRAP = 2000
@@ -70,6 +73,7 @@ def rows_for(runs):
             specific = zone in SPECIFIC
             rows.append({"source": "evaluation", "image": r["image"], "y": int(lenient),
                          "raw": float(p.get("confidence") or 0), "margin": margin(p), "specific": int(specific),
+                         "namedMargin": margin(p) if specific else 0.0,
                          "agreement": float(second.get(r["image"], {}).get(zone, 0.0)) if specific else 0.0,
                          "model": r.get("model"), "thinkingBudget": r.get("thinkingBudget"),
                          "promptSha256": r.get("promptSha256")})
@@ -104,7 +108,8 @@ def feedback_rows(path, source):
             raw = r.get("raw_confidence") or r.get("ai_confidence") or "0"
             rows.append({"source": "adjuster", "image": "claim:" + r["claim_id"], "y": int(ai == adjuster),
                          "raw": float(raw), "margin": float(r.get("probability_margin") or 0),
-                         "specific": int(specific), "agreement": float(agreement) if specific else 0.0})
+                         "specific": int(specific), "agreement": float(agreement) if specific else 0.0,
+                         "namedMargin": float(r.get("probability_margin") or 0) if specific else 0.0})
     return rows, skipped
 
 
@@ -177,9 +182,15 @@ def brier(y, s):
     return float(np.mean((s - y) ** 2))
 
 
-def ece(y, s, bins=5):
-    """Calibration error over equal-count bins (robust with few images)."""
-    order = np.argsort(s, kind="stable")
+def ece(y, s, bins=5, key=None):
+    """Calibration error over equal-count bins (robust with few images).
+
+    The bins are formed by ordering on `key`, the same model's score fitted on all data (a function of the features
+    only), while the error uses the out-of-sample scores `s`. Ordering on `s` itself is biased under leave-one-out:
+    holding out a right answer lowers its own prediction slightly, so answers with identical features get split into
+    bins by their labels (on 66 answers this reported 0.22 for a model whose group means were within 0.01).
+    """
+    order = np.argsort(s if key is None else key, kind="stable")
     total = 0.0
     for chunk in np.array_split(order, bins):
         if len(chunk):
@@ -187,7 +198,7 @@ def ece(y, s, bins=5):
     return float(total)
 
 
-def bootstrap(rows, y, s, metric):
+def bootstrap(rows, y, s, metric, key=None):
     """95% range of a metric over resamples of whole images."""
     by_image = {}
     for i, r in enumerate(rows):
@@ -197,7 +208,7 @@ def bootstrap(rows, y, s, metric):
     values = []
     for _ in range(BOOTSTRAP):
         idx = np.concatenate([by_image[images[j]] for j in rng.integers(0, len(images), len(images))])
-        v = metric(y[idx], s[idx])
+        v = metric(y[idx], s[idx]) if key is None else metric(y[idx], s[idx], key=key[idx])
         if not np.isnan(v):
             values.append(v)
     return float(np.percentile(values, 2.5)), float(np.percentile(values, 97.5))
@@ -243,11 +254,18 @@ def main():
     C_full = choose_smoothing(rows, FEATURES_FULL)
     C_margin = choose_smoothing(rows, FEATURES_MARGIN)
 
-    def line(name, s):
+    def all_data(features, C):
+        """The model fitted on every answer, scored on every answer: only orders the calibration bins."""
+        return predict(fit(rows, features, C), rows, features, float(y.mean()))
+
+    key_full, key_margin = all_data(FEATURES_FULL, C_full), all_data(FEATURES_MARGIN, C_margin)
+    key_current = all_data(current["features"], current["C"]) if current else None
+
+    def line(name, s, key):
         lo_b, hi_b = bootstrap(rows, y, s, brier)
-        lo_e, hi_e = bootstrap(rows, y, s, ece)
+        lo_e, hi_e = bootstrap(rows, y, s, ece, key)
         return (f"| {name} | {auc(y, s):.2f} | {brier(y, s):.3f} ({lo_b:.3f}-{hi_b:.3f}) | "
-                f"{ece(y, s):.3f} ({lo_e:.3f}-{hi_e:.3f}) |")
+                f"{ece(y, s, key=key):.3f} ({lo_e:.3f}-{hi_e:.3f}) |")
 
     counts = {c: chosen_full.count(c) for c in SMOOTHING if chosen_full.count(c)}
     out = [f"# Trust score (calibrated AI confidence) - runs {', '.join(args.run)}", "",
@@ -258,11 +276,15 @@ def main():
            f"Ranges are 95% bootstrap intervals over {BOOTSTRAP} resamples of the images.", ""] + feedback_note + [
            "", "| Confidence used | Separation (AUC) | Brier (95% range) | Calibration error (95% range) |",
            "|---|---|---|---|",
-           line("Gemini's self-reported confidence", raw)]
+           line("Gemini's self-reported confidence", raw, raw)]
     if current:
-        out.append(line(f"Current app trust score (fixed smoothing C={current['C']:g})", s_current))
-    out += [line("Trust score: margin only (smoothing chosen by cross-validation)", s_margin),
-            line("Trust score: margin + second opinion (smoothing chosen by cross-validation)", s_full), "",
+        out.append(line(f"Current app trust score ({', '.join(current['features'])}; C={current['C']:g})",
+                        s_current, key_current))
+    out += [line("Trust score: named-area margin only (smoothing chosen by cross-validation)", s_margin, key_margin),
+            line("Trust score: named-area margin + second opinion (smoothing chosen by cross-validation)", s_full,
+                 key_full), "",
+            "Calibration error: equal-count bins ordered by each model's all-data score, measured on the "
+            "out-of-sample scores (see `ece`).", "",
             "Smoothing chosen inside the training sets (C, how often): "
             + ", ".join(f"{c:g} x{n}" for c, n in counts.items())
             + f". On all data: C={C_full:g} with the second opinion, C={C_margin:g} margin only.", "",
@@ -298,7 +320,7 @@ def main():
         # A clearer answer, or a second opinion that agrees, must never lower the trust score: a model that fits the
         # sample the other way round cannot be explained to an adjuster or a regulator.
         weights = dict(zip(FEATURES_FULL, full.coef_[0])) | {"margin only": marg.coef_[0][0]}
-        backwards = [k for k in ("margin", "agreement", "margin only") if weights[k] < 0]
+        backwards = [k for k in ("namedMargin", "agreement", "margin only") if weights[k] < 0]
         if backwards:
             reasons.append("negative weight on " + ", ".join(backwards)
                            + " (a clearer or better-supported answer would get a lower trust score)")
@@ -320,7 +342,7 @@ def main():
         if not shippable:
             raise SystemExit("Not written: " + "; ".join(reasons))
         first = rows[0]
-        payload = {"version": 2, "line": "AUTO", "model": first["model"], "thinkingBudget": first["thinkingBudget"],
+        payload = {"version": 3, "line": "AUTO", "model": first["model"], "thinkingBudget": first["thinkingBudget"],
                    "promptSha256": first["promptSha256"], "images": eval_images,
                    "adjusterFeedbackRows": sum(1 for r in rows if r["source"] == "adjuster"),
                    "measuredOn": datetime.date.today().isoformat(), "target": "lenient",
@@ -332,7 +354,7 @@ def main():
                                   "intercept": round(float(marg.intercept_[0]), 6)},
                    "metrics": {"aucRaw": round(auc(y, raw), 4), "aucTrust": round(auc(y, s_full), 4),
                                "brierRaw": round(brier(y, raw), 4), "brierTrust": round(brier(y, s_full), 4),
-                               "eceRaw": round(ece(y, raw), 4), "eceTrust": round(ece(y, s_full), 4)}}
+                               "eceRaw": round(ece(y, raw), 4), "eceTrust": round(ece(y, s_full, key=key_full), 4)}}
         with open(APP_FILE, "w", encoding="utf-8", newline="\n") as f:
             json.dump(payload, f, indent=2)
         print("app trust score written:", APP_FILE)

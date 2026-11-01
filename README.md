@@ -34,8 +34,11 @@ flowchart LR
 | Component | Real or simulated | Why | Where in code |
 |---|---|---|---|
 | Damage assessment | **Real** Gemini 2.5 Flash API calls when a key is set; a deterministic mock for demos and tests | Demos and CI must run without a key | `GeminiVisionProvider.java`, `MockVisionProvider.java` (`fnol-agents`) |
-| Second-opinion vision model | **Real**, trained in this project on 441 public-domain photos | An independent check on a third-party model | `fnol-vision-ml/`, `tools/second-opinion/` |
-| Trust score (calibrated confidence) | **Real**, fitted and measured on 50 labelled Gemini answers | Gemini's own confidence does not separate right from wrong | `TrustScorer.java`, `tools/vision-eval/trust_score.py` |
+| Second-opinion vision model | **Real**, trained in this project on 441 public-domain photos (CLIP + DINOv2 encoders, chosen by benchmark); runs on-premise, so photos never leave | An independent check on a third-party model, and the reader of last resort when Gemini is down | `fnol-vision-ml/`, `tools/second-opinion/` |
+| On-premise vision when Gemini is unavailable | **Real**: the second-opinion model reads vehicle photos in place of Gemini's placeholder and the claim is priced from the repair-cost range; flag `ON_PREMISE_VISION`, always an adjuster | Quotas and outages happen; the claim still gets a measured reading | `OnPremiseVision.java` |
+| Repair-cost ranges | **Real published figures** (AAA, Consumer Reports, CCC, each linked); the band mapping is an assumption; accuracy on real claims unknown | Repair cost drives the reserve; no photo dataset has repair costs | `repair-cost-ranges.json`, `RepairCostEstimator.java`, `tools/cost-eval/` |
+| Learning repair costs from real claims | **Real pipeline**: each decision stores the repair cost and its evidence (invoice, body-shop estimate, inspection; an adjuster's judgement is kept but never learned from; on a claim sent to investigation only the investigator's offline cost is learned); a learned table replaces the published one only when it is more accurate out of sample (50+ claims) | The way to a validated dollar estimate | `AiGovernanceService.java`, `tools/cost-eval/fit_costs.py` |
+| Trust score (calibrated confidence) | **Real**, fitted and measured on 66 labelled Gemini answers | Gemini's own confidence does not separate right from wrong | `TrustScorer.java`, `tools/vision-eval/trust_score.py` |
 | Face and licence-plate blurring | **Real** (OpenCV, YuNet) | Photos leave for an external model | `fnol-vision-ml/redaction/` |
 | PII redaction in text | **Real**, rule-based | Personal data must not reach models or logs | `PiiRedactionAgent.java`, `PIIGuardrail.java` |
 | State claim clock (CA, NY, TX, FL, IL) | **Real citations**; a prototype not reviewed by a lawyer; 3 recovery limits unverified | Deadlines are what regulators examine | `claim-regulations.json`, `CitedDeadlineRuleProvider.java`, [docs/legal-compliance.md](docs/legal-compliance.md) |
@@ -55,15 +58,16 @@ All from small public datasets, not real claims. Every number, with its run, dat
 
 | Result | Value | Source |
 |---|---|---|
-| Wrong Gemini answers that could go straight through: confidence check only → all vision checks | **9 → 1** of 50 | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
-| Separation of right from wrong answers (AUC): trust score vs Gemini's own confidence | **0.68** vs 0.52 (50 photos) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
-| Gemini damaged area right, lenient / strict | 82% / 56% (50 photos); dollar estimates not validated | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
-| Wrong answers passing every other check that the second opinion caught | 2 of 2 (56 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests, build warnings | 272 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
+| Wrong Gemini answers that could go straight through: confidence check only → all vision checks | **11 → 1** of 66 | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
+| Trust score calibration: how far its confidence is from how often Gemini is actually right (calibration error) | **0.05** (Gemini's own confidence 0.09; 66 photos) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
+| Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated (median 2.7x the published range midpoint, see [metrics §8](docs/metrics.md#8-repair-cost-estimates)) | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
+| Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
+| Our own on-premise vision model: damaged area right, strict / lenient | **78% / 87%** out-of-fold on 734 car photos, each reviewed (CLIP alone 65% / 81%); property cause of loss **93%** and property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
+| Backend tests, build warnings | 294 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
 
 ### Quick start (no API key needed)
 
-Needs Docker and bash. The first build downloads the second-opinion model's image encoder (about 1 GB).
+Needs Docker and bash. The first build downloads PyTorch and the second-opinion model's two image encoders (CLIP and DINOv2 weights, about 0.9 GB); the built `vision-ml` image is 5.4 GB.
 
 ```bash
 git clone https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine.git && cd Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine
@@ -248,7 +252,7 @@ Run with mock vision (`.env.demo`). `run-all.sh` substitutes a fresh incident da
 | 7 | `scenario_7_home_policy.json` | 200, `PENDING_ADVISORY_REVIEW` (home policy covered by DWELLING) |
 | 8 | `scenario_8_claim_above_estimate.json` | 200, `HUMAN_REVIEW` ($9,000 claimed, above the AI estimate: `CLAIMED_EXCEEDS_AI_ESTIMATE`) |
 | 9 | `scenario_9_home_flood.json` | 200, `HUMAN_REVIEW`, flag `POSSIBLE_FLOOD_EXCLUSION` (flood is excluded from homeowners policies) |
-| 10 | `scenario_10_fraud_anomaly.json` | 200, `HUMAN_REVIEW`, flag `FRAUD_ANOMALY` (reported 45–75 days late, early in the policy, 9.5% above the estimate: no single rule fires, the combination does) |
+| 10 | `scenario_10_fraud_anomaly.json` | 200, `HUMAN_REVIEW`, flag `FRAUD_ANOMALY` (reported 75–90 days late, early in the policy, 9.5% above the estimate: no single rule fires, the combination does) |
 
 Real photo sets for the claim form (**Load real photo set**): six crashed vehicles (NHTSA) and five damaged homes, one per
 cause of loss (burst pipe, trees on the roof, hurricane roof, wildfire, river flood; FEMA and CC0 photos). Credits and
@@ -265,7 +269,7 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_ORCHESTRATOR_POOL_SIZE` / `_QUEUE_SIZE` | `8` / `32` | Branch executor bounds (2 tasks per intake) |
 | `FNOL_STP_REQUIRE_ADVISORY_REVIEW` | `true` | STP-eligible claims wait for an adjuster |
 | `FNOL_STP_FRAUD_ANOMALY_ENABLED` | `true` | Fraud anomaly score on or off |
-| `FNOL_STP_FRAUD_ANOMALY_THRESHOLD` | empty (the fitted 5.91) | Score at which `FRAUD_ANOMALY` is raised |
+| `FNOL_STP_FRAUD_ANOMALY_THRESHOLD` | empty (the fitted 5.86) | Score at which `FRAUD_ANOMALY` is raised |
 | `FNOL_ADJUSTER_TOKEN` | empty (all adjuster requests rejected) | Shared secret for adjuster endpoints; also baked into the console build |
 | `FNOL_CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5174` | Allowed browser origins (workspace and portal) |
 | `FNOL_PORTAL_BASE_URL` | `http://localhost:5174` | Portal address used in one-time upload links |
@@ -298,7 +302,7 @@ no waiting (in one observed claim with Gemini: operational 3.9 s, legal about 1 
 
 **AI governance.** Model cards for every AI component, with measured results and limits: [docs/model-cards.md](docs/model-cards.md). The console's **AI Governance** page (`GET /api/v1/ai/metrics`) shows routing, flags, leakage kept from over-payment, adjuster agreement (each decision is recorded next to the AI's view, `GET /api/v1/ai/feedback`), what left the system for the external model, and weekly drift. Before any photo goes to Gemini, faces and licence plates are blurred by `fnol-vision-ml` and the odometer / VIN photo is withheld; if blurring is unavailable no photo is sent (`fnol.redaction.required`).
 
-`tools/second-opinion/` trains the second-opinion vision model (CLIP embeddings + logistic regression on CC0 car-damage photos; zero-shot heads for photo subject and home cause of loss) served by `fnol-vision-ml`; when it disagrees with Gemini the claim goes to an adjuster (`MODEL_DISAGREEMENT`). See [tools/second-opinion/README.md](tools/second-opinion/README.md).
+`tools/second-opinion/` trains the second-opinion vision model (CLIP + DINOv2 embeddings, chosen by `benchmark_encoders.py` over four encoders, + logistic regression on CC0 car-damage photos; a visible-extent head; zero-shot heads for photo subject and home cause of loss) served by `fnol-vision-ml`; when it disagrees with Gemini the claim goes to an adjuster (`MODEL_DISAGREEMENT`), and when Gemini is unavailable it reads vehicle photos itself (`ON_PREMISE_VISION`). See [tools/second-opinion/README.md](tools/second-opinion/README.md).
 
 `tools/vision-eval/` measures Gemini's damage-zone accuracy on a public-domain (CC0) labelled car-damage dataset and trains a calibration map for its confidence score. See [tools/vision-eval/README.md](tools/vision-eval/README.md).
 

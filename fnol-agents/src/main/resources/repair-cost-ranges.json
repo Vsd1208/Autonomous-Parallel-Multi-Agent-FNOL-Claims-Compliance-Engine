@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "currency": "USD",
+  "basis": "PUBLISHED",
+  "retrieved": "2026-11-01",
+  "note": "Published US repair-cost figures (each quoted from its source below). Which figure applies to each visible-extent band (SMALL / MEDIUM / LARGE, the share of the photo the on-premise model sees damaged) is this project's mapping, an assumption, not a measurement. The point estimate is the geometric mean of the range. Replace it with costs learned from inspections and adjusters' final figures: tools/cost-eval/fit_costs.py.",
+  "sources": {
+    "AAA_WINDSHIELD": {
+      "title": "AAA, How Much Does Windshield Repair or Replacement Cost? (undated)",
+      "url": "https://www.aaa.com/autorepair/articles/how-much-does-windshield-repair-or-replacement-cost",
+      "quote": "Small chip repair: $60-$100. Crack repair: $100-$150. Full replacement: $250-$1,500+. The typical cost of recalibration is $360."
+    },
+    "AAA_ADAS_2023": {
+      "title": "AAA Newsroom, Fixing Advanced Vehicle Systems Makes Up Over One-Third of Repair Costs Following a Crash (14 Dec 2023); 2023 Ford F-150, Nissan Rogue, Toyota Camry, OEM parts priced with CCC Estimating",
+      "url": "https://newsroom.aaa.com/2023/12/fixing-advanced-vehicle-systems-makes-up-over-one-third-of-repair-costs-following-a-crash/",
+      "quote": "Rear collision: ADAS components cost $684, or 40.9% of the average total repair estimate of $1,698."
+    },
+    "RDN_AAA_2023": {
+      "title": "Repairer Driven News, AAA finds ADAS increase repair costs by up to 37% (19 Dec 2023), reporting the same AAA study",
+      "url": "https://www.repairerdrivennews.com/2023/12/19/aaa-finds-adas-increase-repair-costs-by-up-to-37/",
+      "quote": "$1,540 or 13.2% of the total repair estimate of $11,708 for minor front collision repair; $360.00 or 25.4% of the total repair estimate of $1,439.78 for windshield replacement and calibration."
+    },
+    "AAA_ADAS_2018": {
+      "title": "AAA Newsroom, New Vehicle Technologies Double Repair Bills for Minor Collisions (25 Oct 2018)",
+      "url": "https://newsroom.aaa.com/2018/10/new-vehicle-technologies-double-repair-bills-minor-collisions/",
+      "quote": "The repair bill for a minor front or rear collision on a vehicle with advanced driver assistance systems can run as high as $5,300."
+    },
+    "CR_DENT_2017": {
+      "title": "Consumer Reports, How to Maximize Your Used Car's Curb Appeal (13 Jul 2017)",
+      "url": "https://www.consumerreports.org/used-cars/how-to-maximize-your-used-cars-curb-appeal/",
+      "quote": "Paintless dent repair: typical costs range from about $50 to $150 per dent. Professional buffing of fine surface scratches will cost $100 to $200."
+    },
+    "CR_BUMPER_2021": {
+      "title": "Consumer Reports, DIY Fix for a Dented Bumper (11 Jul 2021)",
+      "url": "https://www.consumerreports.org/car-repair-maintenance/how-to-fix-dented-car-bumper-diy/",
+      "quote": "Replacement bumper covers can cost more than $1,000."
+    },
+    "CCC_2025": {
+      "title": "CCC Intelligent Solutions, Crash Course 2026 (preliminary 2025 figures), reported by Repairer Driven News (10 Apr 2026)",
+      "url": "https://www.repairerdrivennews.com/2026/04/10/ccc-report-shows-shift-to-drp-and-ai-appraisals/",
+      "quote": "Preliminary average total cost of repairs (TCOR) was $4,818, an increase of 1.7% over 2024. Average TCOR for vehicles six years old or newer was $5,721 in 2025."
+    }
+  },
+  "ranges": {
+    "FRONT_BUMPER": {
+      "SMALL": {"low": 50, "high": 1000, "sources": ["CR_DENT_2017", "CR_BUMPER_2021"],
+                "mapping": "a dent or scuff repaired, up to a new bumper cover"},
+      "MEDIUM": {"low": 1000, "high": 4818, "sources": ["CR_BUMPER_2021", "CCC_2025"],
+                 "mapping": "a new bumper cover, up to the average repairable claim"},
+      "LARGE": {"low": 4818, "high": 11708, "sources": ["CCC_2025", "RDN_AAA_2023"],
+                "mapping": "above the average claim, up to AAA's minor front collision on 2023 vehicles with full ADAS"}
+    },
+    "REAR_BUMPER": {
+      "SMALL": {"low": 50, "high": 1000, "sources": ["CR_DENT_2017", "CR_BUMPER_2021"],
+                "mapping": "a dent or scuff repaired, up to a new bumper cover"},
+      "MEDIUM": {"low": 1000, "high": 1698, "sources": ["CR_BUMPER_2021", "AAA_ADAS_2023"],
+                 "mapping": "a new bumper cover, up to AAA's average minor rear collision (2023 vehicles)"},
+      "LARGE": {"low": 1698, "high": 5300, "sources": ["AAA_ADAS_2023", "AAA_ADAS_2018"],
+                "mapping": "above AAA's average minor rear collision, up to AAA's highest minor rear collision with ADAS"}
+    },
+    "SIDE_PANEL": {
+      "SMALL": {"low": 50, "high": 200, "sources": ["CR_DENT_2017"],
+                "mapping": "paintless dent repair or scratch buffing"},
+      "MEDIUM": {"low": 200, "high": 4818, "sources": ["CR_DENT_2017", "CCC_2025"],
+                 "mapping": "beyond a single paintless repair, up to the average repairable claim"},
+      "LARGE": {"low": 4818, "high": 11708, "sources": ["CCC_2025", "RDN_AAA_2023"],
+                "mapping": "above the average claim, up to the highest published minor-collision figure found (AAA, front)"}
+    },
+    "WINDSHIELD": {
+      "SMALL": {"low": 60, "high": 150, "sources": ["AAA_WINDSHIELD"],
+                "mapping": "chip or crack repair"},
+      "MEDIUM": {"low": 250, "high": 1500, "sources": ["AAA_WINDSHIELD"],
+                 "mapping": "windshield replacement"},
+      "LARGE": {"low": 1440, "high": 1860, "sources": ["RDN_AAA_2023", "AAA_WINDSHIELD"],
+                "mapping": "replacement with camera recalibration: AAA's $1,439.78 up to AAA's $1,500 replacement plus its typical $360 recalibration"}
+    }
+  }
+}

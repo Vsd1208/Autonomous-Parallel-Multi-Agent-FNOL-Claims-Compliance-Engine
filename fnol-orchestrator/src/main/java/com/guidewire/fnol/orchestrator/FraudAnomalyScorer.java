@@ -2,6 +2,7 @@ package com.guidewire.fnol.orchestrator;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guidewire.fnol.agents.OnPremiseVision;
 import com.guidewire.fnol.common.Models.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +53,7 @@ public class FraudAnomalyScorer {
     private final List<Feature> features;
     private final double cap;
     private final BigDecimal fileThreshold;
+    private final double[] quantiles;
     private final String basis;
     private final StpProperties stp;
 
@@ -67,6 +69,7 @@ public class FraudAnomalyScorer {
             cap = 0;
             fileThreshold = null;
             basis = null;
+            quantiles = new double[0];
             return;
         }
         List<Feature> fs = new ArrayList<>();
@@ -79,6 +82,11 @@ public class FraudAnomalyScorer {
         cap = json.path("cap").asDouble(4);
         fileThreshold = json.hasNonNull("threshold") ? BigDecimal.valueOf(json.path("threshold").asDouble()) : null;
         basis = json.path("dataset").asText(null);
+        JsonNode q = json.path("referenceQuantiles");
+        quantiles = new double[q.size()];
+        for (int i = 0; i < q.size(); i++) {
+            quantiles[i] = q.get(i).asDouble();
+        }
         log.info("[Fraud] Anomaly score active: {} features, threshold {} ({})", features.size(), threshold(), basis);
     }
 
@@ -107,7 +115,8 @@ public class FraudAnomalyScorer {
                 : (double) ChronoUnit.DAYS.between(policy.effectiveDate(), payload.incidentDate()));
         x.put("reportLagDays", (double) ChronoUnit.DAYS.between(payload.incidentDate(), today));
         x.put("priorClaims12m", history == null ? null : (double) history.claimsLast12Months());
-        SecondOpinion so = branchA.secondOpinion();
+        // On-premise answers come from the second opinion itself, so there is no disagreement to measure.
+        SecondOpinion so = OnPremiseVision.isOnPremise(branchA.damageAssessment()) ? null : branchA.secondOpinion();
         BigDecimal agreement = so == null ? null : so.probabilityOf(branchA.damageAssessment().damageType());
         x.put("secondOpinionDisagreement", agreement == null ? null : 1 - agreement.doubleValue());
         x.put("photoReused", photoReused);
@@ -146,8 +155,34 @@ public class FraudAnomalyScorer {
         parts.sort(Comparator.comparing(FraudContribution::points).reversed());
         BigDecimal score = round(total);
         BigDecimal threshold = threshold();
-        return new FraudAnomaly(score, threshold, score.compareTo(threshold) >= 0,
+        return new FraudAnomaly(score, threshold, percentile(total), score.compareTo(threshold) >= 0,
                 List.copyOf(parts.subList(0, Math.min(TOP, parts.size()))), basis);
+    }
+
+    /**
+     * The claim's percentile among the reference claims (0-100), interpolated between the stored 0th..100th
+     * percentiles of the reference scores. Held-out claims match it (tools/fraud-eval/results/report.md).
+     */
+    BigDecimal percentile(double s) {
+        int n = quantiles.length;
+        if (n < 2) {
+            return null;
+        }
+        if (s <= quantiles[0]) {
+            return BigDecimal.ZERO.setScale(1);
+        }
+        if (s >= quantiles[n - 1]) {
+            return BigDecimal.valueOf(100).setScale(1);
+        }
+        int i = 1;
+        while (quantiles[i] < s) {
+            i++;
+        }
+        // s lies in (quantiles[i-1], quantiles[i]]: spread evenly over that 1-percentile step (ties take the top)
+        double lo = quantiles[i - 1], hi = quantiles[i];
+        double within = hi > lo ? (s - lo) / (hi - lo) : 1.0;
+        double pct = (i - 1 + within) * 100.0 / (n - 1);
+        return BigDecimal.valueOf(pct).setScale(1, RoundingMode.HALF_UP);
     }
 
     static double transform(double x, String how) {

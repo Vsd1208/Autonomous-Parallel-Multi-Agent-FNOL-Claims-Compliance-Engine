@@ -39,6 +39,16 @@ class AiGovernanceTest {
     @Value("${fnol.security.adjuster-token}") private String token;
 
     @Test
+    @DisplayName("An unknown repair-cost source is refused before anything is saved")
+    void unknownRepairCostSourceIsRefused() throws Exception {
+        mockMvc.perform(post("/api/v1/fnol/CLM-2026-000815/review").header("X-Adjuster-Token", token)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
+                        "decision", "APPROVED_BY_ADJUSTER", "adjusterId", "ADJ-007", "finalRepairCost", 2000,
+                        "repairCostSource", "GUESS"))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     @DisplayName("A decision with a confirmed damage area is recorded next to the AI's view and counted in the metrics")
     void decisionsFeedTheMetrics() throws Exception {
         LocalDate start = LocalDate.now().minusMonths(6);
@@ -56,7 +66,8 @@ class AiGovernanceTest {
         mockMvc.perform(post("/api/v1/fnol/CLM-2026-000814/review").header("X-Adjuster-Token", token)
                 .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
                         "decision", "APPROVED_BY_ADJUSTER", "adjusterId", "ADJ-007", "adjustedReserve", 2500,
-                        "overrideReason", "Repair quote", "confirmedDamageType", "front_bumper"))))
+                        "overrideReason", "Repair quote", "confirmedDamageType", "front_bumper",
+                        "finalRepairCost", 3100, "repairCostSource", "body_shop_estimate"))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/v1/ai/metrics")).andExpect(status().isUnauthorized());
@@ -72,10 +83,17 @@ class AiGovernanceTest {
         assertThat(row.path("probabilityMargin").decimalValue()).isEqualByComparingTo("0.85");
         // mock vision answers carry no vision source, so a trust-score refit never learns from them
         assertThat(row.path("visionSource").isNull()).isTrue();
+        // the real repair cost is kept next to the AI's estimate: what the cost model learns from
+        assertThat(row.path("finalRepairCost").decimalValue()).isEqualByComparingTo("3100");
+        assertThat(row.path("costSource").asText()).isEqualTo("BODY_SHOP_ESTIMATE");
+        assertThat(row.path("aiEstimate").decimalValue()).isPositive();
 
         JsonNode metrics = objectMapper.readTree(mockMvc.perform(get("/api/v1/ai/metrics").header("X-Adjuster-Token", token))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
         assertThat(metrics.path("agreement").path("damageTypeAgreed").asLong()).isGreaterThanOrEqualTo(1);
+        assertThat(metrics.path("repairCost").path("claimsWithRepairCost").asLong()).isGreaterThanOrEqualTo(1);
+        assertThat(metrics.path("repairCost").path("evidenceBacked").asLong()).isGreaterThanOrEqualTo(1);
+        assertThat(metrics.path("repairCost").path("ai").path("claims").asLong()).isGreaterThanOrEqualTo(1);
         assertThat(metrics.path("agreement").path("reserveChanged").asLong()).isGreaterThanOrEqualTo(1);
         assertThat(metrics.path("leakage").path("amountNotReserved").decimalValue()).isGreaterThanOrEqualTo(new BigDecimal("4800"));
         assertThat(metrics.path("flags").path("CLAIMED_EXCEEDS_AI_ESTIMATE").asLong()).isGreaterThanOrEqualTo(1);
