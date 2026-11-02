@@ -24,6 +24,8 @@ final class OrchestratorFixture {
     final StpProperties stp = new StpProperties();
     VisionProvider vision = new MockVisionProvider();
     AuditTrailAgent audit = new AuditTrailAgent();
+    /** The old formula by default, so tests about other things keep simple figures; reserve tests set the table. */
+    ReserveCalculatorAgent reserve = new ReserveCalculatorAgent();
 
     OrchestratorFixture() {
         policyCenter.add(autoPolicy("POL-AUTO-112233", "Avery Johnson"), List.of());
@@ -38,7 +40,7 @@ final class OrchestratorFixture {
                 new InputGuardrail(), new OutputGuardrail(), new PIIGuardrail(), new ValidationGuardrail(),
                 new VisionDamageAgent(vision),
                 new PolicyValidatorAgent(pc, new SyntheticCoverageRuleProvider()),
-                new ReserveCalculatorAgent(),
+                reserve,
                 new PiiRedactionAgent(),
                 new StatutoryDeadlineAgent(new CitedDeadlineRuleProvider()),
                 new SubrogationScorerAgent(new DeterministicSubrogationScorer()),

@@ -63,6 +63,8 @@ public class GateConsistencyChecker {
      * does not say which figure is right.
      */
     public static final String ESTIMATE_OUTSIDE_PUBLISHED_RANGE = "ESTIMATE_OUTSIDE_PUBLISHED_RANGE";
+    /** The initial-reserve table has no row for this line, coverage and severity: a person sets the reserve. */
+    public static final String RESERVE_TABLE_ENTRY_MISSING = "RESERVE_TABLE_ENTRY_MISSING";
     /** High vision confidence reported for a photo it rated blurry or unusable. */
     public static final String CONFIDENCE_PHOTO_QUALITY_MISMATCH = "CONFIDENCE_PHOTO_QUALITY_MISMATCH";
 
@@ -82,6 +84,15 @@ public class GateConsistencyChecker {
     }
 
     public List<String> check(Policy policy, BranchAResult branchA) {
+        return check(policy.policyType(), branchA);
+    }
+
+    /** Flags that say the vision reading itself is in doubt. With any of these, the AI may not move the base reserve. */
+    static final Set<String> VISION_FLAGS = Set.of(SEVERITY_ESTIMATE_MISMATCH, DAMAGE_TYPE_LINE_MISMATCH, PHOTO_SUBJECT_MISMATCH,
+            MODEL_DISAGREEMENT, ON_PREMISE_VISION, ESTIMATE_OUTSIDE_PUBLISHED_RANGE, AMBIGUOUS_DAMAGE_TYPE,
+            CONFIDENCE_PHOTO_QUALITY_MISMATCH);
+
+    public List<String> check(String line, BranchAResult branchA) {
         List<String> flags = new ArrayList<>();
         DamageAssessment damage = branchA.damageAssessment();
 
@@ -100,13 +111,17 @@ public class GateConsistencyChecker {
             flags.add(RESERVE_EXCEEDS_COVERAGE_LIMIT);
         }
 
-        // More than the AI estimate plus the tolerance: the claimant must support it (photos, investigation).
-        BigDecimal allowed = damage.estimatedDamage().multiply(BigDecimal.ONE.add(stp.getClaimedAmountTolerance()));
+        if (reserve.breakdown() != null && reserve.breakdown().tableEntryMissing()) {
+            flags.add(RESERVE_TABLE_ENTRY_MISSING);
+        }
+
+        // More than the reserve can support plus the tolerance: the claimant must support it (photos, investigation).
+        BigDecimal supported = reserve.breakdown() != null ? reserve.breakdown().supportedAmount() : damage.estimatedDamage();
+        BigDecimal allowed = supported.multiply(BigDecimal.ONE.add(stp.getClaimedAmountTolerance()));
         if (reserve.claimedAmount() != null && reserve.claimedAmount().compareTo(allowed) > 0) {
             flags.add(CLAIMED_EXCEEDS_AI_ESTIMATE);
         }
 
-        String line = policy.policyType();
         if (("HOME".equals(line) && VEHICLE_DAMAGE.contains(damage.damageType()))
                 || ("AUTO".equals(line) && PROPERTY_DAMAGE.contains(damage.damageType()))) {
             flags.add(DAMAGE_TYPE_LINE_MISMATCH);

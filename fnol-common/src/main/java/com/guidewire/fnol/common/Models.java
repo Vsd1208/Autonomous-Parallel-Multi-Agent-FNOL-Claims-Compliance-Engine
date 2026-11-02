@@ -301,6 +301,21 @@ public final class Models {
         }
     }
 
+    /** How a reserve was reached, for the WHY panel and the console: base row, AI adjustment, then the caps. */
+    public record ReserveBreakdown(
+            String method,              // AVERAGE_TABLE or AI_ESTIMATE
+            boolean tableEntryMissing,  // no row for this claim: a person must set the reserve
+            String baseRow,             // e.g. AUTO / COLLISION / MODERATE
+            BigDecimal baseReserve,
+            String baseProvenance,      // PUBLISHED or SYNTHETIC
+            String baseSource,
+            boolean adjustmentAllowed,
+            String adjustmentReason,    // why the AI could, or could not, move the base
+            BigDecimal adjustmentMax,   // e.g. 0.40 for +/-40%
+            BigDecimal supportedAmount, // the base after any adjustment, before the caps
+            List<String> capsApplied
+    ) {}
+
     public record ReserveResult(
             BigDecimal estimatedDamage,
             BigDecimal factor,
@@ -310,8 +325,16 @@ public final class Models {
             BigDecimal claimedAmount,   // what the claimant asked for (null when not stated)
             BigDecimal settlementBasis, // the lower of the claimed amount and the AI estimate
             BigDecimal deductible,      // subtracted from the basis; the reserve is what the insurer owes
-            BigDecimal coverageLimit    // the reserve is capped here
+            BigDecimal coverageLimit,   // the reserve is capped here
+            ReserveBreakdown breakdown  // how the figure was reached; null on results built by hand
     ) {
+        public ReserveResult(BigDecimal estimatedDamage, BigDecimal factor, BigDecimal recommendedReserve, BigDecimal confidence,
+                             String confidenceBasis, BigDecimal claimedAmount, BigDecimal settlementBasis,
+                             BigDecimal deductible, BigDecimal coverageLimit) {
+            this(estimatedDamage, factor, recommendedReserve, confidence, confidenceBasis, claimedAmount, settlementBasis,
+                    deductible, coverageLimit, null);
+        }
+
         public ReserveResult(BigDecimal estimatedDamage, BigDecimal factor, BigDecimal recommendedReserve) {
             this(estimatedDamage, factor, recommendedReserve, null, null);
         }

@@ -76,6 +76,8 @@ services:
       GEMINI_VISION_MODEL: "${GEMINI_VISION_MODEL:-gemini-2.5-flash}"
       FNOL_ORCHESTRATOR_TIMEOUT_SECONDS: "${FNOL_ORCHESTRATOR_TIMEOUT_SECONDS:-10}"
       FNOL_STP_REQUIRE_ADVISORY_REVIEW: "${FNOL_STP_REQUIRE_ADVISORY_REVIEW:-true}"
+      FNOL_RESERVE_METHOD: "${FNOL_RESERVE_METHOD:-AVERAGE_TABLE}"
+      FNOL_RESERVE_AI_ADJUSTMENT_MAX: "${FNOL_RESERVE_AI_ADJUSTMENT_MAX:-0.40}"
       # Empty token = adjuster endpoints (review, audit, explanation, queue) reject every request.
       FNOL_ADJUSTER_TOKEN: "${FNOL_ADJUSTER_TOKEN:-}"
       # People's sign-ins: id|ROLE|password|Display Name;... The default is for local runs only: anything beyond a laptop

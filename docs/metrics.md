@@ -230,6 +230,27 @@ from quoted AAA (2018, 2023, windshield), Consumer Reports (2017, 2021) and CCC 
 
 Caveat: without true costs this shows disagreement, not who is right.
 
+**The reserve method (ADR-015).** Since 2 Nov 2026 the reserve comes from a table by line, coverage and severity, not from
+Gemini's figure. Replay of the same 66 answers through both methods, before any claimed amount, deductible or limit
+(`tools/cost-eval/compare_reserve_methods.py --run v3-subject`,
+[results](../tools/cost-eval/results/reserve-methods-v3-subject.md)):
+
+| Measure (41 answers with a range and a table row) | `AI_ESTIMATE` (old) | `AVERAGE_TABLE` (new) |
+|---|---|---|
+| Median figure / range midpoint | 2.69x | **3.57x** |
+| 90th percentile distance from the midpoint | 15.65x | 21.55x |
+| Inside the published range | 17/41 | 20/41 |
+| AI's figure could move the base | n/a | 25 of 41 (moved 21; blocked 16: outside the range 12, models disagree 4) |
+
+**The new method is not closer to the ranges on the median; it is further away.** Gemini's figures mostly restate its
+severity band, and they sit near the table's values for those bands ($1,500 / $3,500 / $12,000 most often, against $1,698 /
+$4,818 / $11,708), so both are in effect lookups by severity. What the table adds is not accuracy on this measure: each
+figure now has a source or a "synthetic" label, can be replaced by an insurer's own averages without touching a model, and
+the AI's influence is bounded and explained. Two caveats on the measure itself: the ranges are estimates, chosen by a
+visible-extent band that also depends on how close the photo was taken (a large part of the distance is a "severe" label
+against a "small" band), and nothing here measures the true cost. Tuning the table to this measure would be circular, since
+both come from the same sources, so it was not done.
+
 **Learning from real costs.** Each decision now stores the repair cost next to the AI's estimate (`V18`), with what it
 rests on: invoice, body-shop estimate or inspection (evidence, learned from) or the adjuster's judgement (recorded, never
 learned from, so the model cannot learn its own guesses). On a claim sent to investigation every figure is held until

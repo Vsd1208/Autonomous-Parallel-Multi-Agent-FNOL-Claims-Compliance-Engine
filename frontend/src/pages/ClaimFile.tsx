@@ -213,7 +213,8 @@ const FLAG_TEXT: Record<string, string> = {
   HIGH_CLAIM_FREQUENCY: 'The policy has a high recent claim frequency.',
   SEVERITY_ESTIMATE_MISMATCH: 'The damage severity does not match the estimated amount.',
   RESERVE_EXCEEDS_COVERAGE_LIMIT: 'The loss after the deductible is above the coverage limit; the reserve is capped.',
-  CLAIMED_EXCEEDS_AI_ESTIMATE: 'The claimant asks for more than the photos support. Not approved automatically.',
+  RESERVE_TABLE_ENTRY_MISSING: 'The initial-reserve table has no row for this claim: set the reserve yourself.',
+  CLAIMED_EXCEEDS_AI_ESTIMATE: 'The claimant asks for more than the reserve supports. Not approved automatically.',
   DAMAGE_TYPE_LINE_MISMATCH: "The damage does not fit the policy's line of business.",
   ATTORNEY_REPRESENTED: 'The claimant mentions legal counsel: communicate through the attorney; litigation queue.',
   MODEL_DISAGREEMENT: 'The independently trained second-opinion model disagrees with Gemini about the damage.',
@@ -730,7 +731,35 @@ function SettlementPanel({ claim }: { claim: DashboardClaim }) {
   const estimate = claim.branchA?.damageAssessment.estimatedDamage ?? r?.estimatedDamage;
   const deductible = res?.deductible ?? r?.deductible ?? null;
   const basis = res?.settlementBasis ?? (claimed != null && estimate != null ? Math.min(claimed, estimate) : estimate);
-  const over = claimed != null && estimate != null && claimed > estimate;
+  const b = res?.breakdown;
+  const table = b?.method === 'AVERAGE_TABLE' && !b.tableEntryMissing;
+  const over = claimed != null && (table ? b!.supportedAmount! : estimate) != null && claimed > (table ? b!.supportedAmount! : estimate!);
+  if (b?.tableEntryMissing) {
+    return (
+      <Panel title="Reserve Calculation">
+        <MessageBar tone="warning" title="No initial-reserve row for this claim">
+          The table has no entry for {b.baseRow}. An adjuster must set the reserve; the AI's figure ({money(estimate)}) is for reference only.
+        </MessageBar>
+      </Panel>
+    );
+  }
+  if (table) {
+    return (
+      <Panel title="Reserve Calculation">
+        <DetailView columns={2} rows={[
+          ['Initial reserve (base)', <span key="b">{money(b!.baseReserve)} <span className="muted">({b!.baseRow})</span></span>],
+          ['Where the base comes from', <span key="s">{b!.baseProvenance === 'SYNTHETIC' ? 'Synthetic prototype value. ' : ''}{b!.baseSource}</span>],
+          ['AI adjustment', <span key="a">{b!.adjustmentAllowed ? `Allowed, up to ±${Math.round(Number(b!.adjustmentMax) * 100)}%. ` : 'Blocked. '}{b!.adjustmentReason}</span>],
+          ['Amount supported', money(b!.supportedAmount)],
+          ['Amount claimed', claimed != null ? money(claimed) : 'Not stated'],
+          ['Caps applied', b!.capsApplied.length ? b!.capsApplied.join('. ') : 'None'],
+          ['Recommended reserve (amount owed)', <strong key="pay">{money(res?.recommendedReserve ?? r?.reserve)}</strong>],
+          ['AI estimate (shown, not relied on)', money(estimate)],
+          ['Rule', over ? 'Claimed more than the reserve supports: adjuster decides' : 'Within what the reserve supports: claimed amount used'],
+        ]} />
+      </Panel>
+    );
+  }
   return (
     <Panel title="Reserve Calculation">
       <DetailView columns={2} rows={[

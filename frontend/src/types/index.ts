@@ -31,10 +31,26 @@ export interface Reserve {
   confidenceBasis?: string | null;
   /** What the claimant asked for. */
   claimedAmount?: number | null;
-  /** min(claimed, AI estimate): the most the AI will reserve before the deductible. */
+  /** min(claimed, the supported amount): the most that is reserved before the deductible. */
   settlementBasis?: number | null;
   deductible?: number | null;
   coverageLimit?: number | null;
+  breakdown?: ReserveBreakdown | null;
+}
+
+/** How the reserve was reached: the table's base and source, the AI adjustment, then the caps. */
+export interface ReserveBreakdown {
+  method: 'AVERAGE_TABLE' | 'AI_ESTIMATE';
+  tableEntryMissing: boolean;
+  baseRow?: string | null;
+  baseReserve?: number | null;
+  baseProvenance?: 'PUBLISHED' | 'SYNTHETIC' | null;
+  baseSource?: string | null;
+  adjustmentAllowed: boolean;
+  adjustmentReason?: string | null;
+  adjustmentMax?: number | null;
+  supportedAmount?: number | null;
+  capsApplied: string[];
 }
 
 export interface BranchAResult {

@@ -1,6 +1,7 @@
 package com.guidewire.fnol.orchestrator;
 
 import com.guidewire.fnol.agents.OnPremiseVision;
+import com.guidewire.fnol.agents.ReserveCalculatorAgent;
 import com.guidewire.fnol.agents.SecondOpinionAgent;
 import com.guidewire.fnol.agents.VisionProvider;
 import com.guidewire.fnol.common.Models.*;
@@ -552,6 +553,70 @@ class FNOLOrchestratorTest {
 
         assertThat(response.gateFlags()).isEmpty();
         assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("3200");
+    }
+
+    private FNOLOrchestrator withReserveTable() {
+        fixture.reserve = new ReserveCalculatorAgent(new com.guidewire.fnol.agents.TableInitialReserveProvider(),
+                ReserveCalculatorAgent.AVERAGE_TABLE, new BigDecimal("0.40"));
+        return fixture.build();
+    }
+
+    @Test
+    @DisplayName("Reserve table: with no objection, the AI's figure moves the base within the band, and the WHY panel shows the calculation")
+    void process_reserveTableAdjustmentAllowed() {
+        FNOLResponse r = withReserveTable().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."));
+        ReserveBreakdown b = r.branchA().reserve().breakdown();
+        assertThat(b.method()).isEqualTo("AVERAGE_TABLE");
+        assertThat(b.baseRow()).isEqualTo("AUTO / COLLISION / MODERATE");
+        assertThat(b.baseReserve()).isEqualByComparingTo("4818");
+        assertThat(b.adjustmentAllowed()).isTrue();
+        assertThat(b.supportedAmount()).isEqualByComparingTo("4200");
+        assertThat(r.branchA().reserve().recommendedReserve()).isEqualByComparingTo("3200");
+        assertThat(r.explanation().factors()).filteredOn(f -> f.factor().equals("Reserve Amount")).singleElement()
+                .satisfies(f -> assertThat(f.detail()).contains("Base $4818").contains("AUTO / COLLISION / MODERATE"));
+    }
+
+    @Test
+    @DisplayName("Reserve table: a reading below the trust threshold cannot move the base; the base stands")
+    void process_reserveTableBlockedByTrust() {
+        fixture.vision = p -> new DamageAssessment("FRONT_BUMPER", "MODERATE", new BigDecimal("9500"), new BigDecimal("0.60"), "CLEAR", Map.of());
+        ReserveResult r = withReserveTable().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."))
+                .branchA().reserve();
+        assertThat(r.breakdown().adjustmentAllowed()).isFalse();
+        assertThat(r.breakdown().adjustmentReason()).contains("below");
+        assertThat(r.recommendedReserve()).isEqualByComparingTo("3818");   // 4,818 - 1,000, not 9,500 - 1,000
+    }
+
+    @Test
+    @DisplayName("Reserve table: a vision flag blocks the adjustment, whatever the AI's confidence")
+    void process_reserveTableBlockedByFlag() {
+        fixture.vision = p -> new DamageAssessment("FRONT_BUMPER", "SEVERE", new BigDecimal("4000"), new BigDecimal("0.95"), "CLEAR", Map.of());
+        FNOLResponse response = withReserveTable().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."));
+        assertThat(response.gateFlags()).contains(GateConsistencyChecker.SEVERITY_ESTIMATE_MISMATCH);
+        ReserveResult r = response.branchA().reserve();
+        assertThat(r.breakdown().adjustmentAllowed()).isFalse();
+        assertThat(r.breakdown().adjustmentReason()).contains(GateConsistencyChecker.SEVERITY_ESTIMATE_MISMATCH);
+        assertThat(r.recommendedReserve()).isEqualByComparingTo("10708");  // 11,708 - 1,000
+    }
+
+    @Test
+    @DisplayName("Reserve table: no row for the claim goes to a person with a note, never a silent zero")
+    void process_reserveTableMissingRowGoesToAPerson() {
+        fixture.vision = p -> new DamageAssessment("FRONT_BUMPER", "CATASTROPHIC", new BigDecimal("4200"), new BigDecimal("0.95"), "CLEAR", Map.of());
+        FNOLResponse response = withReserveTable().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."));
+        assertThat(response.gateFlags()).contains(GateConsistencyChecker.RESERVE_TABLE_ENTRY_MISSING);
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(response.notes()).anyMatch(n -> n.contains("no row for") && n.contains("Set the reserve yourself"));
+        assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("3200");
+    }
+
+    @Test
+    @DisplayName("Reserve table: asking for more than the reserve supports is flagged, even below the AI's own figure")
+    void process_reserveTableClaimAboveSupported() {
+        fixture.vision = p -> new DamageAssessment("FRONT_BUMPER", "SEVERE", new BigDecimal("15000"), new BigDecimal("0.60"), "CLEAR", Map.of());
+        FNOLResponse response = withReserveTable().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole.", "14000"));
+        assertThat(response.gateFlags()).contains(GateConsistencyChecker.CLAIMED_EXCEEDS_AI_ESTIMATE);
+        assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("10708");
     }
 
     @Test
