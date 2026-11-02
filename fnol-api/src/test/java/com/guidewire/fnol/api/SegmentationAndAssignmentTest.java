@@ -5,8 +5,6 @@ import com.guidewire.fnol.api.persistence.ClaimEntity;
 import com.guidewire.fnol.api.persistence.ClaimRepository;
 import com.guidewire.fnol.common.Models.CcActivity;
 import com.guidewire.fnol.common.Models.ClaimPatch;
-import com.guidewire.fnol.common.Models.ClaimQueueEntry;
-import com.guidewire.fnol.common.Models.ClaimQueuePage;
 import com.guidewire.fnol.enrichment.ClaimCenterClient;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +29,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -150,21 +147,16 @@ class SegmentationAndAssignmentTest {
     }
 
     @Test
-    @DisplayName("A reserve above everyone in the group is assigned and also routed to a supervisor")
+    @DisplayName("A reserve above everyone in the group is assigned and also routed to a supervisor; within someone's limit it is not")
     void aboveTheGroup() {
-        // A complex claim's group has a supervisor, so test the fast-track rule's group through a large reserve kept in it by a direct input.
-        ClaimSegmenter narrow = new ClaimSegmenter();
-        assertThat(narrow.segment(new ClaimSegmenter.Input("AUTO", "LOW", Set.of(), new BigDecimal("3000"))).roles()).containsOnly("ADJUSTER");
         String id = claim("HUMAN_REVIEW");
-        // AUTO_STANDARD: adjusters and seniors, limits 10,000 and 50,000. $60,000 is under neither, but a low severity
-        // with a flag keeps it standard only under the reserve threshold, so use the supervisorless SIU group's opposite: a home claim.
         assignment.assign(id, new ClaimSegmenter.Input("AUTO", "LOW", Set.of("SUBROGATION"), new BigDecimal("15000")));
-        ClaimEntity c = claims.findById(id).orElseThrow();
-        assertThat(c.segment).isEqualTo("AUTO_STANDARD");
-        verify(claimCenter, never()).addActivity(eq(id), any());   // a senior in the group has enough
+        assertThat(claims.findById(id).orElseThrow().segment).isEqualTo("AUTO_STANDARD");
+        verify(claimCenter, never()).addActivity(eq(id), any());   // a senior adjuster in the group has enough authority
 
         String huge = claim("HUMAN_REVIEW");
         assignmentAboveEveryone(huge);
+        assertThat(claims.findById(huge).orElseThrow().assignedTo).isIn("ADJ-A", "ADJ-B");
         ArgumentCaptor<CcActivity> activity = ArgumentCaptor.forClass(CcActivity.class);
         verify(claimCenter).addActivity(eq(huge), activity.capture());
         assertThat(activity.getValue().subject()).contains("above the assigned group's authority");
@@ -208,6 +200,5 @@ class SegmentationAndAssignmentTest {
         org.mockito.Mockito.doThrow(new IllegalStateException("claims system down")).when(claimCenter).patchClaim(any(), any());
         String id = assign("3000");
         assertThat(claims.findById(id).orElseThrow().assignedTo).isNotNull();
-        when(claimCenter.listWorkQueues(any(), any(Integer.class), any(Integer.class))).thenReturn(new ClaimQueuePage(List.<ClaimQueueEntry>of(), 0));
     }
 }

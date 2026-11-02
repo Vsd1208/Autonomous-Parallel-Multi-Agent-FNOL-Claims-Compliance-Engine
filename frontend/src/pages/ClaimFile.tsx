@@ -158,6 +158,8 @@ export default function ClaimFile() {
           ['State', r?.state ?? claim.branchB?.deadline.state ?? '—'],
           ['Status', <StatusChip key="s" value={claim.status} />],
           ['Severity', <StatusChip key="v" value={claim.explanation?.severityGate ?? r?.severityGate} />],
+          ['Segment', r?.segment ? humanize(r.segment) : '—'],
+          ['Assigned to', r?.assignedTo ?? 'Unassigned'],
           ['ClaimCenter', <StatusChip key="cc" value={claim.ccSyncStatus} />],
         ]}
       />

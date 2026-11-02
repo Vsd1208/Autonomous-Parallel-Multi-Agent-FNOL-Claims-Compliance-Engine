@@ -101,8 +101,19 @@ public final class Models {
             List<CcActivity> activities,
             List<CcNote> claimNotes,
             String workQueue,         // the adjuster work queue the claim sits in (see ClaimPatch.workQueue)
-            String claimNumber        // what people quote: a draft number, then the open claim number
+            String claimNumber,       // what people quote: a draft number, then the open claim number
+            String segment,           // from the segmentation rules, e.g. AUTO_COMPLEX
+            String assignedTo,        // the person handling it
+            String assignmentGroup    // the group's queue
     ) {
+        public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
+                     BigDecimal estimatedDamage, BigDecimal reserve, String notes, List<ClaimAttachment> attachments,
+                     List<ClaimReviewAction> reviewActions, List<CcExposure> exposures, List<CcActivity> activities,
+                     List<CcNote> claimNotes, String workQueue, String claimNumber) {
+            this(claimId, status, policyNumber, incidentDate, state, estimatedDamage, reserve, notes, attachments,
+                    reviewActions, exposures, activities, claimNotes, workQueue, claimNumber, null, null, null);
+        }
+
         public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
                      BigDecimal estimatedDamage, BigDecimal reserve, String notes, List<ClaimAttachment> attachments,
                      List<ClaimReviewAction> reviewActions, List<CcExposure> exposures, List<CcActivity> activities,
@@ -664,16 +675,28 @@ public final class Models {
             BigDecimal reserve,
             // Extension field on the claim: the adjuster work queue the AI routed it to, e.g. HUMAN_REVIEW. The claim's
             // status says where it is in its lifecycle; this says whose desk it is on, so queues read from the claim.
-            String workQueue
+            String workQueue,
+            String segment,
+            String assignedTo,
+            String assignmentGroup
     ) {
         public ClaimPatch(String status, BigDecimal estimatedDamage, BigDecimal reserve) {
             this(status, estimatedDamage, reserve, null);
+        }
+
+        public ClaimPatch(String status, BigDecimal estimatedDamage, BigDecimal reserve, String workQueue) {
+            this(status, estimatedDamage, reserve, workQueue, null, null, null);
         }
     }
 
     /** One claim in a claims-system work-queue listing. */
     public record ClaimQueueEntry(String claimId, String status, String workQueue, String policyNumber,
-                                  BigDecimal reserve, Instant createdAt) {}
+                                  BigDecimal reserve, Instant createdAt, String segment, String assignedTo) {
+        public ClaimQueueEntry(String claimId, String status, String workQueue, String policyNumber,
+                               BigDecimal reserve, Instant createdAt) {
+            this(claimId, status, workQueue, policyNumber, reserve, createdAt, null, null);
+        }
+    }
 
     /** A page of a claims-system work-queue listing, oldest first. */
     public record ClaimQueuePage(List<ClaimQueueEntry> items, long total) {}

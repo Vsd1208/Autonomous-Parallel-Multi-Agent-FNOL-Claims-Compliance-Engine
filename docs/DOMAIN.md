@@ -12,7 +12,7 @@ A claim moves through these stages. The engine covers the first four and support
 |---|---|---|
 | 1. First notice of loss (FNOL) | The policyholder (or an agent or call-centre colleague on their behalf) reports the loss: what, when, where, photos | Policyholder portal (`PortalController`, `frontend/portal`) or internal intake (`FNOLController.intake`, `frontend/src/pages/NewClaimWizard.tsx`); payload `Models.FNOLPayload` |
 | 2. Coverage verification | Is there a policy in force on the date of loss, and does a coverage on it apply to this kind of damage? | `PolicyValidatorAgent` with `CoverageRuleProvider` (`SyntheticCoverageRuleProvider`), policy data from `PolicyCenterClient` |
-| 3. Triage and assignment | How serious, how complex, any red flags? Simple claims can go "straight through"; others go to an adjuster's queue | `FNOLOrchestrator`, `IntakeReviewService`, `GateConsistencyChecker`, `ExplanationBuilder`; queue `GET /api/v1/fnol/queue` |
+| 3. Triage and assignment | How serious, how complex, any red flags? Simple claims can go "straight through"; others go to an adjuster's queue | `ClaimSegmenter`, `ClaimAssignmentService`, `FNOLOrchestrator`, `IntakeReviewService`, `GateConsistencyChecker`, `ExplanationBuilder`; queue `GET /api/v1/fnol/queue` |
 | 4. Reserving | The insurer sets aside its best estimate of what the claim will cost, at first notice commonly from average reserves by coverage and severity | `ReserveCalculatorAgent` recommends it from `initial-reserves.json` (ADR-015); a person's decision posts it on a ClaimCenter exposure (ADR-013) |
 | 5. Investigation and evaluation | The adjuster checks the facts: more photos, an inspection or appraisal, a recorded statement, fraud referral | Photo requests (`UploadRequestController`), inspections (`InspectionController`), the WHY panel and AI notes |
 | 6. Decision and settlement | Accept (pay) or deny in writing, within the state's deadline | Adjuster decision `POST /fnol/{id}/review`; payment is out of scope |
@@ -39,6 +39,8 @@ A claim moves through these stages. The engine covers the first four and support
 | **Attorney representation** | A represented claimant must be contacted through their lawyer | `ATTORNEY_REPRESENTED` in `IntakeReviewService` |
 | **SIU (special investigations unit)** | The insurer's fraud team; adjusters refer suspicious claims to it | Fraud red flags route to an adjuster (`PHOTO_REUSED`, `HIGH_CLAIM_FREQUENCY`, `INCIDENT_NEAR_POLICY_START`, duplicates), and `FraudAnomalyScorer` raises `FRAUD_ANOMALY` when several details are unusual together, with an SIU-referral suggestion; the decision to refer is the adjuster's |
 | **Inspection / appraisal** | A field, desk or body-shop inspection that sets the accident-related cost | `InspectionController`; earlier damage is excluded from the reserve |
+| **Segmentation, assignment** | Sorting a claim by line, severity and complexity, then giving it to a group's queue and a person in it | `ClaimSegmenter` with `segmentation-rules.json`, `ClaimAssignmentService`: the least busy person in the group |
+| **Authority limit** | The most a person may set or approve as a reserve | `ReserveAuthority`; a reserve above it waits for someone with enough (`ReserveApprovalService`). Amounts are synthetic |
 | **Adjuster** | The licensed person who investigates and decides the claim | Every decision path ends at `POST /fnol/{id}/review`; the AI never pays, denies or closes |
 
 ## 3. How a claim decision is made here

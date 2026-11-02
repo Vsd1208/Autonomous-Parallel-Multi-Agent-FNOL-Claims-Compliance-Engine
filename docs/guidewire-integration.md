@@ -49,6 +49,7 @@ behaviour can differ between releases; a real adapter must be built from the ten
 | Draft, open and closed; a draft number, then an open number | Documented: a submitted draft becomes open with an open claim number, and can then only be closed [1][2] | **Modelled to match**. The id stays the same throughout; in the mock it equals the open number |
 | Reserve set by a person's decision, on the exposure, within their authority | Reserves live on exposures. ClaimCenter's own authority rules for reserves were not on the pages read | Design choice; **authority limits modelled on the concept, not verified**, [below](#reserve-authority-limits) |
 | An exposure needs a coverage, incident and claimant | Documented [7] | **Modelled to match**. The names (`VehicleIncident`, `FixedPropertyIncident`) are simple labels here, not linked incident records; **not verified** |
+| Segment and assignee on the claim | ClaimCenter has its own segmentation and assignment, which the pages read do not describe | **Modelled on the idea, not verified**, [below](#segmentation-and-assignment) |
 | `workQueue` field on the claim | Not a ClaimCenter field. The natural equivalents are assignment and activities in a group's queue, or a data-model extension | **This project's design**; to be decided with an implementer |
 | Duplicate check when a loss is reported | ClaimCenter's own duplicate search is not described on the pages read | **Modelled on the idea; not verified** |
 | Adjuster workspace (React) | A Jutro-based experience, or only an AI panel inside ClaimCenter, where adjusters already work | Nothing built |
@@ -98,6 +99,17 @@ configuration inside the tenant; it is not built.
 A decision whose final reserve is above the person's limit is **not rejected**. It waits as `PENDING_APPROVAL`, with nothing posted and no decision recorded, is audited, shown in the **Awaiting Approval** queue with a banner on the claim, and creates a high-priority activity for an approver with enough authority (the one with the fewest waiting). Their approval applies the decision as made, under the person who made it, and the claims system records it as a review action; the audit chain names the approver. A decline hands the claim back. **Nobody can approve their own reserve**, so the limit cannot be stepped around. Only posting money needs authority: asking for information or denying a claim does not.
 
 Known gaps: a decision made directly in the claims system is followed as it stands, since authority there would belong to ClaimCenter itself. A held approval has no expiry or escalation yet.
+
+## Segmentation and assignment
+
+**Modelled on ClaimCenter's idea of segmenting a claim and assigning it to a group and then a person, not verified against a tenant.** No public Guidewire page on this was opened and read for this work, so none is cited; the rule language here is this project's own, and ClaimCenter's would differ.
+
+- **Segment:** rules kept as data in `segmentation-rules.json`, first match wins, from line of business, severity, flags (fraud anomaly, attorney, frequent claims, a likely recovery) and reserve size: `SIU_REVIEW`, `AUTO_COMPLEX`, `PROPERTY_COMPLEX`, `AUTO_FAST_TRACK`, `AUTO_STANDARD`, `PROPERTY_STANDARD`. These are synthetic prototype rules.
+- **Assignment:** each segment has a group's queue and the roles in it. Within the group, the active person with the fewest open claims gets it; whoever was assigned least recently breaks a tie, so it goes round. There is no separate SIU role yet, so `SIU_REVIEW` goes to senior adjusters and supervisors.
+- **Authority:** if the recommended reserve is above everyone in the group, the claim is still assigned and a high-priority activity also goes to a supervisor. The decision itself still follows [the limits above](#reserve-authority-limits).
+- **Written back and audited:** segment, group and assignee go onto the claim, the console shows them and filters queues by segment, and each assignment is an audit event. It never posts money or moves a claim, and a failure leaves the claim in its queue, unassigned.
+
+Known gaps: failed direct intakes (`REJ-…`) have no segment, and severity here still reads the AI's dollar figure ([ADR-015](architecture-decisions.md)). Reassigning by hand is not built.
 
 ## What is real in this repository
 

@@ -104,8 +104,11 @@ class ClaimEventOutbox {
     boolean patch(String claimId, ClaimPatch p) {
         return jdbc.update("""
                 UPDATE claimcenter.claims SET status = COALESCE(?, status), estimated_damage = COALESCE(?, estimated_damage),
-                    reserve = COALESCE(?, reserve), work_queue = COALESCE(?, work_queue), updated_at = ? WHERE claim_id = ?""",
-                p.status(), p.estimatedDamage(), p.reserve(), p.workQueue(), Timestamp.from(Instant.now()), claimId) > 0;
+                    reserve = COALESCE(?, reserve), work_queue = COALESCE(?, work_queue), segment = COALESCE(?, segment),
+                    assigned_to = COALESCE(?, assigned_to), assignment_group = COALESCE(?, assignment_group), updated_at = ?
+                WHERE claim_id = ?""",
+                p.status(), p.estimatedDamage(), p.reserve(), p.workQueue(), p.segment(), p.assignedTo(), p.assignmentGroup(),
+                Timestamp.from(Instant.now()), claimId) > 0;
     }
 
     /**

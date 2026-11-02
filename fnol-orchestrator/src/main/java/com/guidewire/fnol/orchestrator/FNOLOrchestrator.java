@@ -815,7 +815,7 @@ public class FNOLOrchestrator {
     }
 
     /** Another party may be liable: the subrogation score says so, or the description names them. */
-    static boolean recoveryLikely(SubrogationResult s) {
+    public static boolean recoveryLikely(SubrogationResult s) {
         return "INVESTIGATE".equals(s.recommendedAction())
                 || s.factors().getOrDefault("thirdPartyMention", 0) >= 35
                 || (s.thirdParty() != null && !s.thirdParty().isEmpty());

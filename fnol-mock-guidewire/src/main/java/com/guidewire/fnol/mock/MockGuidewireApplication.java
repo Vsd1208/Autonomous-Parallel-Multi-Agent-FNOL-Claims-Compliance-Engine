@@ -180,13 +180,14 @@ class ClaimCenterController {
     /** A work queue: the claims in these queues (comma-separated), oldest first. */
     @GetMapping("/cc/rest/claim/v1/claims")
     ClaimQueuePage queue(@RequestParam("workQueue") String workQueue,
+                         @RequestParam(name = "segment", required = false) String segment,
                          @RequestParam(name = "page", defaultValue = "0") int page,
                          @RequestParam(name = "size", defaultValue = "20") int size) {
         List<String> queues = Arrays.stream(workQueue.split(",")).map(String::trim).filter(q -> !q.isEmpty()).toList();
         if (queues.isEmpty() || page < 0 || size < 1 || size > 100) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workQueue, page >= 0 and size 1-100 are required");
         }
-        return store.queue(queues, page, size);
+        return store.queue(queues, segment, page, size);
     }
 
     @PostMapping("/cc/rest/claim/v1/claims/{claimId}/submit")

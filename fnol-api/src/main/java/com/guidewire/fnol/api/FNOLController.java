@@ -73,6 +73,14 @@ public class FNOLController {
         this.decisions = decisions;
     }
 
+    /** Sets the segment and who handles the claim; optional for the same reason. */
+    private ClaimAssignmentService assignment;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAssignment(ClaimAssignmentService assignment) {
+        this.assignment = assignment;
+    }
+
     /** Holds a reserve above someone's authority for approval; optional for the same reason. */
     private ReserveApprovalService approvals;
     private ReserveAuthority authority;
@@ -221,6 +229,9 @@ public class FNOLController {
         }
         // Keep the photos the AI assessed so the adjuster can see them (best effort, audited).
         evidence.store(claimId, payload);
+        if (assignment != null) {
+            assignment.assign(response);
+        }
         return response;
     }
 
@@ -379,7 +390,8 @@ public class FNOLController {
     @GetMapping("/fnol/queue")
     QueuePage queue(@RequestParam(name = "status", defaultValue = "HUMAN_REVIEW") String status,
                     @RequestParam(name = "page", defaultValue = "0") int page,
-                    @RequestParam(name = "size", defaultValue = "20") int size) {
+                    @RequestParam(name = "size", defaultValue = "20") int size,
+                    @RequestParam(name = "segment", required = false) String segment) {
         Set<String> statuses = new TreeSet<>();
         for (String s : status.split(",")) {
             if (!s.isBlank()) statuses.add(s.trim().toUpperCase(Locale.ROOT));
@@ -390,13 +402,15 @@ public class FNOLController {
         String source = QueuePage.ENGINE;
         if (reportsToClaimsSystem()) {
             try {
-                return queueFromClaimsSystem(statuses, page, size);
+                return queueFromClaimsSystem(statuses, segment, page, size);
             } catch (RuntimeException e) {
                 log.warn("[FNOL] Claims system unavailable; showing the queue from the analysis records: {}", e.getMessage());
                 source = QueuePage.CLAIMS_SYSTEM_UNAVAILABLE;
             }
         }
-        Page<ClaimEntity> result = claims.findByStatusInOrderByCreatedAtAsc(statuses, PageRequest.of(page, size));
+        Page<ClaimEntity> result = segment == null || segment.isBlank()
+                ? claims.findByStatusInOrderByCreatedAtAsc(statuses, PageRequest.of(page, size))
+                : claims.findByStatusInAndSegmentOrderByCreatedAtAsc(statuses, segment, PageRequest.of(page, size));
         return new QueuePage(result.getContent().stream().map(QueueItem::of).toList(),
                 page, size, result.getTotalElements(), result.getTotalPages(), source);
     }
@@ -406,8 +420,9 @@ public class FNOLController {
      * record. Includes claims with no analysis yet. Failed direct intakes (REJ-...), which the claims system never
      * held, follow its claims, so no claim disappears from a queue.
      */
-    private QueuePage queueFromClaimsSystem(Set<String> statuses, int page, int size) {
-        ClaimQueuePage filed = claimCenter.listWorkQueues(statuses, page, size);
+    private QueuePage queueFromClaimsSystem(Set<String> statuses, String segment, int page, int size) {
+        ClaimQueuePage filed = segment == null || segment.isBlank() ? claimCenter.listWorkQueues(statuses, page, size)
+                : claimCenter.listWorkQueues(statuses, segment, page, size);
         Map<String, ClaimEntity> analysed = new HashMap<>();
         claims.findAllById(filed.items().stream().map(ClaimQueueEntry::claimId).toList())
                 .forEach(c -> analysed.put(c.claimId, c));
@@ -420,9 +435,13 @@ public class FNOLController {
             items.add(new QueueItem(e.claimId(), status, e.policyNumber(),
                     e.reserve() != null || c == null ? e.reserve() : c.reserve,
                     c == null ? null : c.severityGate, c == null ? null : c.inputFlags,
-                    c == null ? null : c.gateFlags, c == null ? null : c.failureReason, e.createdAt()));
+                    c == null ? null : c.gateFlags, c == null ? null : c.failureReason, e.createdAt(),
+                    c != null && c.segment != null ? c.segment : e.segment(),
+                    c != null && c.assignedTo != null ? c.assignedTo : e.assignedTo()));
         }
-        List<ClaimEntity> unfiled = claims.findByStatusInAndClaimIdStartingWithOrderByCreatedAtAsc(statuses, "REJ-");
+        // Failed direct intakes have no segment, so a segment filter leaves them out; the unfiltered queue always has them.
+        List<ClaimEntity> unfiled = segment == null || segment.isBlank()
+                ? claims.findByStatusInAndClaimIdStartingWithOrderByCreatedAtAsc(statuses, "REJ-") : List.of();
         long skip = Math.max(0, (long) page * size - filed.total());
         unfiled.stream().skip(skip).limit(size - items.size()).map(QueueItem::of).forEach(items::add);
         long total = filed.total() + unfiled.size();
@@ -634,10 +653,11 @@ public class FNOLController {
 
 /** Adjuster queue entry (GET /api/v1/fnol/queue). */
 record QueueItem(String claimId, String status, String policyNumber, java.math.BigDecimal reserve,
-                 String severityGate, String inputFlags, String gateFlags, String failureReason, Instant createdAt) {
+                 String severityGate, String inputFlags, String gateFlags, String failureReason, Instant createdAt,
+                 String segment, String assignedTo) {
     static QueueItem of(ClaimEntity c) {
         return new QueueItem(c.claimId, c.status, c.policyNumber, c.reserve, c.severityGate,
-                c.inputFlags, c.gateFlags, c.failureReason, c.createdAt);
+                c.inputFlags, c.gateFlags, c.failureReason, c.createdAt, c.segment, c.assignedTo);
     }
 }
 

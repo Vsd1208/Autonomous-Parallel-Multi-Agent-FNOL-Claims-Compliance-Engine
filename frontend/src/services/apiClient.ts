@@ -131,9 +131,9 @@ export const apiClient = {
     return URL.createObjectURL(await response.blob());
   },
 
-  getQueue: (statuses: string[], page = 0, size = 20) =>
+  getQueue: (statuses: string[], page = 0, size = 20, segment = '') =>
     request<QueuePage>(
-      `/api/v1/fnol/queue?status=${encodeURIComponent(statuses.join(','))}&page=${page}&size=${size}`,
+      `/api/v1/fnol/queue?status=${encodeURIComponent(statuses.join(','))}&page=${page}&size=${size}${segment ? `&segment=${encodeURIComponent(segment)}` : ''}`,
       {},
       true
     ),

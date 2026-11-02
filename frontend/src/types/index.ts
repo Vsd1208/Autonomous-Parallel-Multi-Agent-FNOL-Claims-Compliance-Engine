@@ -201,6 +201,9 @@ export interface FraudAnomaly {
 /** Saved claim row (GET /fnol/status/{claimId}). */
 export interface ClaimRecord {
   claimId: string;
+  segment?: string | null;
+  assignedTo?: string | null;
+  assignmentGroup?: string | null;
   policyNumber: string;
   status: string;
   incidentDate: string;
@@ -312,6 +315,8 @@ export interface QueueItem {
   gateFlags: string | null;
   failureReason: string | null;
   createdAt: string;
+  segment?: string | null;
+  assignedTo?: string | null;
 }
 
 /** A decision held because its reserve is above the person's authority. */

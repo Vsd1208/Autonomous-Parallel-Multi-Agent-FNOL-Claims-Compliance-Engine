@@ -52,6 +52,12 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, String> {
                                   @Param("overrideReason") String overrideReason,
                                   @Param("decidedAt") Instant decidedAt);
 
+    long countByAssignedToAndStatusIn(String assignedTo, Collection<String> statuses);
+
+    java.util.Optional<ClaimEntity> findFirstByAssignedToOrderByAssignedAtDesc(String assignedTo);
+
+    Page<ClaimEntity> findByStatusInAndSegmentOrderByCreatedAtAsc(Collection<String> statuses, String segment, Pageable pageable);
+
     /** Failed direct intakes (REJ-...): the claims system never held them, so its queues cannot list them. */
     java.util.List<ClaimEntity> findByStatusInAndClaimIdStartingWithOrderByCreatedAtAsc(Collection<String> statuses,
                                                                                          String prefix);

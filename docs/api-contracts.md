@@ -341,6 +341,8 @@ rejection closes the claim and zeroes the exposure. Other decisions post nothing
 Claims in the given statuses (comma-separated, default `HUMAN_REVIEW`), oldest first. `size` 1–100. `ANALYSIS_PENDING`
 lists claims filed but not analysed yet.
 
+Optional `segment` filters by segment (`AUTO_FAST_TRACK`, `AUTO_STANDARD`, `AUTO_COMPLEX`, `PROPERTY_STANDARD`, `PROPERTY_COMPLEX`, `SIU_REVIEW`). Each item carries `segment` and `assignedTo`.
+
 `source` says where it came from: `CLAIMS_SYSTEM`; `CLAIMS_SYSTEM_UNAVAILABLE` (the engine's records, possibly behind, and
 without claims awaiting analysis); `ENGINE` (direct mode).
 

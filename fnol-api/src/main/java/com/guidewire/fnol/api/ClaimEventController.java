@@ -65,6 +65,7 @@ class ClaimEventController {
     private final IdempotencyStore idempotency;
     private final ClaimsSystemIntake claimsSystem;
     private final ClaimDecisionRecorder decisions;
+    private final ClaimAssignmentService assignment;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(2, 4, 60, TimeUnit.SECONDS,
@@ -78,7 +79,7 @@ class ClaimEventController {
                          FNOLOrchestrator orchestrator, ClaimRepository claims, AuditService auditService,
                          FailedIntakeRecorder failedIntakes, DuplicateSubmissionRecorder duplicates,
                          EvidenceStore evidence, IdempotencyStore idempotency, ClaimsSystemIntake claimsSystem,
-                         ClaimDecisionRecorder decisions) {
+                         ClaimDecisionRecorder decisions, ClaimAssignmentService assignment) {
         this.secret = secret == null ? new byte[0] : secret.getBytes(StandardCharsets.UTF_8);
         this.claimCenter = claimCenter;
         this.orchestrator = orchestrator;
@@ -90,6 +91,7 @@ class ClaimEventController {
         this.idempotency = idempotency;
         this.claimsSystem = claimsSystem;
         this.decisions = decisions;
+        this.assignment = assignment;
     }
 
     @PreDestroy
@@ -255,6 +257,7 @@ class ClaimEventController {
                     + "claim manually.");
             return;
         }
+        assignment.assign(response);
         // Only now does the claim leave Awaiting AI Analysis: its record is complete. If this fails the claim stays
         // listed there, showing its real status, and can be opened and decided.
         try {
