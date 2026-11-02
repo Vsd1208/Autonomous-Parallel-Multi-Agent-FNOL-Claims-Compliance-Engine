@@ -119,7 +119,7 @@
 - **Consequences**:
   - The engine keeps the recommendation in its analysis record; queues show it until a person posts a reserve.
   - A decision made directly in the claims system without a figure leaves the exposure's reserve empty: the engine does not fill it in.
-  - ClaimCenter's reserve authority limits are not modelled.
+  - ClaimCenter's reserve authority limits are modelled on the concept, not verified (guidewire-integration.md).
 
 ---
 

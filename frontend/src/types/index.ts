@@ -314,6 +314,17 @@ export interface QueueItem {
   createdAt: string;
 }
 
+/** A decision held because its reserve is above the person's authority. */
+export interface ReserveApprovalView {
+  approval: {
+    approvalId: string; claimId: string; decision: string; amount: number; requestedBy: string; requestedRole?: string | null;
+    requestedAt: string; assignedTo?: string | null; status: 'PENDING' | 'APPROVED' | 'DECLINED'; decidedBy?: string | null;
+    decidedAt?: string | null; decisionNote?: string | null;
+  };
+  youCanDecide: boolean;
+  whyNot?: string | null;
+}
+
 export interface QueuePage {
   items: QueueItem[];
   page: number;

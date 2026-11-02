@@ -84,6 +84,7 @@ const STATUS_TONE: Record<string, Tone | 'neutral'> = {
   INVESTIGATION_REQUIRED: 'warning',
   INSPECTION_ASSIGNED: 'info',
   ANALYSIS_PENDING: 'info',
+  PENDING_APPROVAL: 'warning',
   ASSIGNED: 'info',
   COMPLETED: 'success',
   CANCELLED: 'neutral',

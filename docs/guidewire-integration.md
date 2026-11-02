@@ -47,7 +47,7 @@ behaviour can differ between releases; a real adapter must be built from the ten
 | `POST .../claims/{id}/notes` | The guide has a "Creating claim notes" topic; the path was not confirmed [8] | **Not verified** |
 | `PATCH .../claims/{id}` for the AI's estimate and work queue | `PATCH /claims/{claimId}` is documented for drafts [1]. On a real open claim these would need another home | **Differs**; the AI writes no reserve and no lifecycle status here |
 | Draft, open and closed; a draft number, then an open number | Documented: a submitted draft becomes open with an open claim number, and can then only be closed [1][2] | **Modelled to match**. The id stays the same throughout; in the mock it equals the open number |
-| Reserve set by a person's decision, on the exposure | Reserves live on exposures. ClaimCenter's own authority rules for reserves were not on the pages read | Design choice; **authority limits not modelled** |
+| Reserve set by a person's decision, on the exposure, within their authority | Reserves live on exposures. ClaimCenter's own authority rules for reserves were not on the pages read | Design choice; **authority limits modelled on the concept, not verified**, [below](#reserve-authority-limits) |
 | An exposure needs a coverage, incident and claimant | Documented [7] | **Modelled to match**. The names (`VehicleIncident`, `FixedPropertyIncident`) are simple labels here, not linked incident records; **not verified** |
 | `workQueue` field on the claim | Not a ClaimCenter field. The natural equivalents are assignment and activities in a group's queue, or a data-model extension | **This project's design**; to be decided with an implementer |
 | Duplicate check when a loss is reported | ClaimCenter's own duplicate search is not described on the pages read | **Modelled on the idea; not verified** |
@@ -61,8 +61,8 @@ These are the differences an implementer should weigh first. None is hidden by t
 
 1. **Authority over reserves.** A submitted claim is open and can only be closed afterwards [2], and the mock now works
    this way, so the AI cannot hold a claim back from opening. The human gate is that it posts no reserve and only a person's
-   decision does. On a real tenant, adjuster authority limits and approvals would govern that posting; those are not modelled
-   here, and how they apply must be confirmed with an implementer.
+   decision does. On a real tenant ClaimCenter's own authority limits and approvals would govern that posting. They are
+   [modelled on the concept here](#reserve-authority-limits), but how they really apply must be confirmed with an implementer.
 2. **Review stage.** Here `workQueue` says where a claim stands in review (human review, awaiting inspection and so on). It
    is a design choice to keep the workspace's queues, not a ClaimCenter field; real work would be assignment and activities.
 3. **Submission can fail validation** and leave the claim a draft [2]; in the base configuration it also needs a
@@ -82,6 +82,22 @@ the way to move that logic out of InsuranceSuite [3][5], and the engine already 
 the core for this flow. Gosu written here could not have been compiled or checked, so none is included rather than
 shipping code that looks finished. A data-model extension for a field like `workQueue`, if one is kept, would be
 configuration inside the tenant; it is not built.
+
+## Reserve authority limits
+
+**Modelled on ClaimCenter's authority-limit concept, not verified against a tenant:** a user can set or approve reserves only up to their limit. No public Guidewire page on authority limits was opened and read for this, so none is cited; how the real configuration, approval rules and activities work must be confirmed with an implementer.
+
+| Role | May post (synthetic prototype values, `fnol.authority.*`) |
+|---|---|
+| `ADJUSTER` | up to $10,000 |
+| `SENIOR_ADJUSTER` | up to $50,000 |
+| `SUPERVISOR` | no limit, unless one is set |
+| `INSPECTOR` | none; cannot decide claims |
+| Service credential | as `ADJUSTER`; can never approve |
+
+A decision whose final reserve is above the person's limit is **not rejected**. It waits as `PENDING_APPROVAL`, with nothing posted and no decision recorded, is audited, shown in the **Awaiting Approval** queue with a banner on the claim, and creates a high-priority activity for an approver with enough authority (the one with the fewest waiting). Their approval applies the decision as made, under the person who made it, and the claims system records it as a review action; the audit chain names the approver. A decline hands the claim back. **Nobody can approve their own reserve**, so the limit cannot be stepped around. Only posting money needs authority: asking for information or denying a claim does not.
+
+Known gaps: a decision made directly in the claims system is followed as it stands, since authority there would belong to ClaimCenter itself. A held approval has no expiry or escalation yet.
 
 ## What is real in this repository
 

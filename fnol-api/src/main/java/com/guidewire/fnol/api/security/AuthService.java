@@ -43,7 +43,7 @@ public class AuthService implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     public static final String ADJUSTER = "ADJUSTER";
     public static final String INSPECTOR = "INSPECTOR";
-    private static final Set<String> ROLES = Set.of(ADJUSTER, INSPECTOR);
+    private static final Set<String> ROLES = Set.of(ADJUSTER, INSPECTOR, ReserveAuthority.SENIOR_ADJUSTER, ReserveAuthority.SUPERVISOR);
     static final Duration SESSION_LENGTH = Duration.ofHours(8);
     static final int MAX_FAILURES = 5;
     static final Duration LOCKOUT = Duration.ofMinutes(15);

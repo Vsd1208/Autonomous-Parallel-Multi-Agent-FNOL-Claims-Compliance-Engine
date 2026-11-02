@@ -22,7 +22,9 @@ import org.springframework.http.*;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import com.guidewire.fnol.api.persistence.ReserveApprovalEntity;
 import com.guidewire.fnol.api.security.Actor;
+import com.guidewire.fnol.api.security.ReserveAuthority;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
@@ -69,6 +71,21 @@ public class FNOLController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setDecisions(ClaimDecisionRecorder decisions) {
         this.decisions = decisions;
+    }
+
+    /** Holds a reserve above someone's authority for approval; optional for the same reason. */
+    private ReserveApprovalService approvals;
+    private ReserveAuthority authority;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setApprovals(ReserveApprovalService approvals, ReserveAuthority authority) {
+        this.approvals = approvals;
+        this.authority = authority;
+    }
+
+    /** No person, no role: a service credential gets the limit a role with no entry gets, the adjuster's. */
+    private static final class ReserveAuthorityRoles {
+        static final String SERVICE = "SERVICE";
     }
 
     /** True when new losses go to the claims system first and the analysis follows its event. */
@@ -480,6 +497,14 @@ public class FNOLController {
         AdjusterReviewRequest request = new AdjusterReviewRequest(submitted.decision(), Actor.idOr(submitted.adjusterId()),
                 submitted.notes(), submitted.adjustedReserve(), submitted.overrideReason(), submitted.confirmedDamageType(),
                 submitted.finalRepairCost(), submitted.repairCostSource(), submitted.handlingSeconds(), submitted.advisoryRating());
+        return apply(claimId, request, true);
+    }
+
+    /**
+     * Records a decision. With {@code checkAuthority}, a reserve above the person's authority is held for approval instead;
+     * an approver's approval comes back here without the check.
+     */
+    ResponseEntity<?> apply(String claimId, AdjusterReviewRequest request, boolean checkAuthority) {
         String decision = request.decision().trim().toUpperCase(Locale.ROOT);
         if (!ADJUSTER_DECISIONS.contains(decision)) {
             throw new IllegalArgumentException("Unsupported adjuster decision: " + request.decision());
@@ -494,6 +519,22 @@ public class FNOLController {
         if (request.adjustedReserve() != null
                 && (request.overrideReason() == null || request.overrideReason().isBlank())) {
             throw new IllegalArgumentException("overrideReason is required when adjustedReserve is set");
+        }
+        if (checkAuthority && approvals != null) {
+            ClaimEntity current = claims.findById(claimId).orElse(null);
+            String role = Actor.current().map(Actor::role).orElse(ReserveAuthorityRoles.SERVICE);
+            BigDecimal posted = current == null ? null : reserveToPost(decision, request.adjustedReserve(), current);
+            if (current != null && REVIEWABLE_STATUSES.contains(current.status) && !authority.allows(role, posted)) {
+                ReserveApprovalEntity held = approvals.request(claimId, decision, posted, current.status, request, role, costSource);
+                Map<String, Object> answer = new LinkedHashMap<>();
+                answer.put("claimId", claimId);
+                answer.put("status", ReserveApprovalService.PENDING_APPROVAL);
+                answer.put("approvalId", held.approvalId);
+                answer.put("assignedTo", held.assignedTo);
+                answer.put("amount", posted);
+                answer.put("yourLimit", authority.limitOf(role));
+                return ResponseEntity.accepted().body(answer);
+            }
         }
         if (reportsToClaimsSystem() && !claimId.startsWith("REJ-")) {
             return reviewInClaimsSystem(claimId, decision, costSource, request);

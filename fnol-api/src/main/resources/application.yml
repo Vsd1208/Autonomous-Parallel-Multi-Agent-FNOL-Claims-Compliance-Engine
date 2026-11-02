@@ -26,11 +26,15 @@ fnol:
     # Shared secret for adjuster-only endpoints (review, audit, audit/pdf, explanation, queue).
     # Empty means those endpoints reject every request.
     adjuster-token: ${FNOL_ADJUSTER_TOKEN:}
-    # People's accounts: id|ROLE|password|Display Name;... ROLE is ADJUSTER or INSPECTOR; an inspector's id is their roster id.
+    # People's accounts: id|ROLE|password|Display Name;... ROLE is ADJUSTER, SENIOR_ADJUSTER, SUPERVISOR or INSPECTOR; an inspector's id is their roster id.
     users: ${FNOL_USERS:}
   claims-events:
     # Shared secret the claims system signs its events with (HMAC-SHA256). Empty: events are refused (503).
     secret: ${CLAIMS_EVENT_SECRET:}
+  authority:
+    # How much reserve each role may post: synthetic prototype values. A supervisor has no limit unless one is set here.
+    adjuster: ${FNOL_AUTHORITY_ADJUSTER:10000}
+    senior-adjuster: ${FNOL_AUTHORITY_SENIOR_ADJUSTER:50000}
   cors:
     # Adjuster workspace (5173) and policyholder portal (5174)
     allowed-origins: ${FNOL_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}

@@ -2,7 +2,7 @@
  * Who is signed in to this browser tab. Kept in sessionStorage, so closing the tab signs out; the server also ends a session
  * after 8 hours. The workspace bundle carries no credentials of its own.
  */
-export type Session = { token: string; username: string; displayName: string; role: 'ADJUSTER' | 'INSPECTOR'; expiresAt: string };
+export type Session = { token: string; username: string; displayName: string; role: 'ADJUSTER' | 'SENIOR_ADJUSTER' | 'SUPERVISOR' | 'INSPECTOR'; expiresAt: string };
 
 const KEY = 'fnol:session';
 

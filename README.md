@@ -88,7 +88,7 @@ docker compose --env-file .env.demo up -d --build
 bash demo-scenarios/run-all.sh
 ```
 
-Then open the adjuster workspace at http://localhost:5173 and the policyholder portal at http://localhost:5174. With `.env.demo`, sign in to the workspace as `ADJ-001` (adjuster) or `INS-101` (inspector), password `demo-password`. Without it, Compose's local-only password is `local-dev-password`.
+Then open the adjuster workspace at http://localhost:5173 and the policyholder portal at http://localhost:5174. With `.env.demo`, sign in to the workspace as `ADJ-001` (adjuster), `SEN-001` (senior adjuster), `SUP-001` (supervisor) or `INS-101` (inspector), password `demo-password`. Without it, Compose's local-only password is `local-dev-password`.
 More: [running locally](#running-locally), [the insurance terms explained](docs/DOMAIN.md), [roadmap and known
 limits](docs/ROADMAP.md).
 
@@ -239,6 +239,7 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 | POST 🔒 | `/api/v1/fnol/{claimId}/inspections/{id}/cancel` | Withdraw an open assignment |
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit` | Audit events in chain order + `chainValid` |
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit/pdf` | PDF audit report |
+| GET, POST 🔒 | `/api/v1/fnol/{claimId}/reserve-approvals`, `/{id}/decide` | A reserve above someone's authority waits here; another person with enough authority approves or declines it |
 | POST 🔒 | `/api/v1/fnol/{claimId}/review` | Record an adjuster decision (approve, reject, more info, investigation, close), optionally adjusting the reserve and recording the final repair cost and its evidence (`finalRepairCost`, `repairCostSource`) |
 | GET 🔒 | `/api/v1/fnol/queue?status=HUMAN_REVIEW&page=0&size=20` | Adjuster queue from the claims system, oldest first; `source` says if it fell back to the engine's records |
 | GET 🔒 | `/api/v1/ai/metrics` | AI governance: routing, flags, leakage, adjuster agreement, repair-cost accuracy, privacy, drift, fairness |
@@ -363,7 +364,7 @@ no waiting (in one observed claim with Gemini: operational 3.9 s, legal about 1 
 
 What comes next and why: [docs/ROADMAP.md](docs/ROADMAP.md).
 
-- Guidewire is mocked, and the extension design is modelled from public documentation, not verified against a tenant. ClaimCenter's reserve authority limits are not modelled. All of it: [docs/guidewire-integration.md](docs/guidewire-integration.md).
+- Guidewire is mocked, and the extension design is modelled from public documentation, not verified against a tenant. Reserve authority limits are modelled on ClaimCenter's concept, with synthetic amounts. All of it: [docs/guidewire-integration.md](docs/guidewire-integration.md).
 - If the claims system is down during a photo request or inspection step, its work queue for that claim stays out of date (the claim file shows the right status). Decisions are not affected: they stop, with a clear error.
 - Sign-in uses local accounts, not an insurer's identity provider, and there is no SIU or supervisor role ([ADR-014](docs/architecture-decisions.md)).
 - **No real adjuster has used this, and nothing here has run on a real Guidewire tenant.** The product measures handling time and usefulness, but the [results are empty](docs/adjuster-study.md), so no time saving is claimed. The [sandbox request and first-day steps](docs/guidewire-sandbox-request.md) are ready.

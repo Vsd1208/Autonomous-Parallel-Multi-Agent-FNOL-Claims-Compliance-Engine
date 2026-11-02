@@ -31,7 +31,7 @@ historical record in [SPRINT_PLAN.md](SPRINT_PLAN.md); this page replaces it. Me
 | Scheduled ClaimCenter retry job | Decisions no longer need one in claims-system mode, but photo-request and inspection steps, and direct intake, can still be left out of step by an outage, and are retried by hand only |
 | Database-backed idempotency | The in-memory layer is per JVM |
 | Contract tests against a real Guidewire Cloud API sandbox | The mock is modelled on, not verified against, the Cloud API ([guidewire-integration.md](guidewire-integration.md)) |
-| Check the human gate against ClaimCenter's reserve authority rules | ADR-013 makes a person's decision what posts a reserve, but authority limits are not modelled |
+| Check the human gate against ClaimCenter's reserve authority rules | ADR-013 makes a person's decision what posts a reserve, and limits by role are modelled on the concept, but neither is verified on a tenant |
 | Legal review of the claim clock rules | Three recovery limits are from background knowledge; no lawyer has reviewed the rule set |
 | A study with real adjusters ([kit](adjuster-study.md), [interview template](STAKEHOLDER_INTERVIEW_TEMPLATE.md)) | Nobody has tried this with real adjusters. The product now measures it, but the results are empty |
 | Sandbox access ([request and first-day steps](guidewire-sandbox-request.md)) | Nothing has run on a real tenant. Only Guidewire can grant this |

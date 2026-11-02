@@ -11,7 +11,7 @@ import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionRe
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
 import { session } from '../services/session';
-import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion } from '../types';
+import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion, ReserveApprovalView } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 /** Inspectors report on inspections; only adjusters decide claims. */
@@ -165,6 +165,9 @@ export default function ClaimFile() {
 
   return (
     <Workspace sidebar={sidebar} bar={bar}>
+      {claim.status === 'PENDING_APPROVAL' && (
+        <ApprovalBanner claimId={claim.claimId} onChanged={() => setReload((n) => n + 1)} reload={reload} />
+      )}
       {waiting && (
         <MessageBar tone="info" title="AI analysis is running">
           This claim is filed in the claims system. Its analysis usually arrives within seconds, and this page updates
@@ -174,6 +177,46 @@ export default function ClaimFile() {
       <SectionView section={section as Section} claim={claim} docs={docs} inspections={inspections}
         reload={reload} onChanged={() => setReload((n) => n + 1)} openedAt={openedAt} />
     </Workspace>
+  );
+}
+
+/** A reserve above someone's authority: who it waits for, and approve or decline for those who can. */
+function ApprovalBanner({ claimId, onChanged, reload }: { claimId: string; onChanged: () => void; reload: number }) {
+  const [view, setView] = useState<ReserveApprovalView | null>(null);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    apiClient.getReserveApprovals(claimId).then((list) => setView(list.find((v) => v.approval.status === 'PENDING') ?? null))
+      .catch((err) => setError(err.message || 'Could not load the approval'));
+  }, [claimId, reload]);
+  const decide = async (approve: boolean) => {
+    if (!view) return;
+    setBusy(true);
+    setError('');
+    try {
+      await apiClient.decideReserveApproval(claimId, view.approval.approvalId, approve, note.trim());
+      onChanged();
+    } catch (err: any) {
+      setError(err.message || 'The approval could not be recorded');
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!view) return error ? <MessageBar tone="error" title={error} /> : null;
+  const a = view.approval;
+  return (
+    <MessageBar tone="warning" title={`Reserve of ${money(a.amount)} awaits approval: nothing is posted yet`}>
+      {humanize(a.decision)} by {a.requestedBy} is above their authority. Waiting for {a.assignedTo ?? 'a supervisor'}.
+      {error && <div className="muted">{error}</div>}
+      {view.youCanDecide ? (
+        <div style={{ marginTop: 8 }}>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" aria-label="Approval note" disabled={busy} />{' '}
+          <Button variant="primary" disabled={busy} onClick={() => decide(true)}>Approve reserve</Button>{' '}
+          <Button disabled={busy} onClick={() => decide(false)}>Decline</Button>
+        </div>
+      ) : <div className="muted">{view.whyNot}</div>}
+    </MessageBar>
   );
 }
 
@@ -942,12 +985,14 @@ function Decision({ claim, inspections, docs, reload, onChanged, openedAt }: {
           || `Inspection by ${latest?.inspectorName}: accident-related damage ${money(latest?.accidentRelatedAmount)}`,
       } : {};
       const text = notes.trim() || quickNote || '';
-      const res = await apiClient.submitAdjusterReview(claim.claimId,
+      const res: any = await apiClient.submitAdjusterReview(claim.claimId,
         { decision, adjusterId, notes: text, ...override, confirmedDamageType: confirmedType || undefined,
           finalRepairCost: finalCost ?? undefined, repairCostSource: finalCost != null ? costSource || undefined : undefined,
           handlingSeconds: Math.round((Date.now() - openedAt) / 1000), advisoryRating: rating ? Number(rating) : undefined });
       claimStore.updateStatus(claim.claimId, res.status);
-      setSaved(`${humanize(res.adjusterDecision)} saved at ${new Date(res.reviewedAt).toLocaleString()}`);
+      setSaved(res.status === 'PENDING_APPROVAL'
+        ? `This reserve of ${money(res.amount)} is above your authority (${money(res.yourLimit)}). It now waits for ${res.assignedTo ?? 'a supervisor'} to approve; nothing is posted until then.`
+        : `${humanize(res.adjusterDecision)} saved at ${new Date(res.reviewedAt).toLocaleString()}`);
       onChanged();
     } catch (err: any) {
       setError(err.message || 'The decision could not be saved');

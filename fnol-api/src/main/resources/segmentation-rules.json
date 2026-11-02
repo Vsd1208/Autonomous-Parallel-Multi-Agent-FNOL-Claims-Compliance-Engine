@@ -1,0 +1,29 @@
+{
+  "version": "2026-11-02",
+  "note": "Synthetic prototype rules, modelled on ClaimCenter's idea of segmenting a claim and assigning it to a group and then a person; not verified against a tenant. An insurer would set its own. First matching rule wins. SUBROGATION stands for a likely recovery from another party.",
+  "rules": [
+    {"segment": "SIU_REVIEW", "why": "The fraud anomaly score flagged it", "anyFlag": ["FRAUD_ANOMALY"]},
+
+    {"segment": "AUTO_COMPLEX", "why": "An attorney is involved, or the policy has frequent recent claims", "line": "AUTO", "anyFlag": ["ATTORNEY_REPRESENTED", "HIGH_CLAIM_FREQUENCY"]},
+    {"segment": "AUTO_COMPLEX", "why": "High severity", "line": "AUTO", "severity": ["HIGH"]},
+    {"segment": "AUTO_COMPLEX", "why": "A large recommended reserve", "line": "AUTO", "reserveOver": 20000},
+
+    {"segment": "PROPERTY_COMPLEX", "why": "An attorney is involved, frequent recent claims, or a possible flood exclusion", "line": "HOME", "anyFlag": ["ATTORNEY_REPRESENTED", "HIGH_CLAIM_FREQUENCY", "POSSIBLE_FLOOD_EXCLUSION"]},
+    {"segment": "PROPERTY_COMPLEX", "why": "High severity", "line": "HOME", "severity": ["HIGH"]},
+    {"segment": "PROPERTY_COMPLEX", "why": "A large recommended reserve", "line": "HOME", "reserveOver": 20000},
+
+    {"segment": "AUTO_FAST_TRACK", "why": "Low severity, a small reserve and nothing flagged", "line": "AUTO", "severity": ["LOW"], "reserveAtMost": 5000, "noFlags": true},
+
+    {"segment": "AUTO_STANDARD", "why": "A vehicle claim with no special handling", "line": "AUTO"},
+    {"segment": "PROPERTY_STANDARD", "why": "A property claim with no special handling", "line": "HOME"}
+  ],
+  "fallback": {"segment": "AUTO_STANDARD", "why": "No rule matched"},
+  "groups": {
+    "SIU_REVIEW": {"group": "Special investigations queue", "roles": ["SENIOR_ADJUSTER", "SUPERVISOR"]},
+    "AUTO_FAST_TRACK": {"group": "Auto fast-track queue", "roles": ["ADJUSTER"]},
+    "AUTO_STANDARD": {"group": "Auto claims queue", "roles": ["ADJUSTER", "SENIOR_ADJUSTER"]},
+    "AUTO_COMPLEX": {"group": "Auto complex claims queue", "roles": ["SENIOR_ADJUSTER", "SUPERVISOR"]},
+    "PROPERTY_STANDARD": {"group": "Property claims queue", "roles": ["ADJUSTER", "SENIOR_ADJUSTER"]},
+    "PROPERTY_COMPLEX": {"group": "Property complex claims queue", "roles": ["SENIOR_ADJUSTER", "SUPERVISOR"]}
+  }
+}

@@ -21,6 +21,11 @@ const VIEWS: Record<string, { label: string; statuses: string[]; hint: string }>
     statuses: ['PENDING_ADVISORY_REVIEW'],
     hint: 'STP-eligible claims waiting for an adjuster to confirm the AI advisory.',
   },
+  approval: {
+    label: 'Awaiting Approval',
+    statuses: ['PENDING_APPROVAL'],
+    hint: 'Decisions whose reserve is above the person\'s authority. Nothing is posted until someone with enough authority approves.',
+  },
   analysing: {
     label: 'Awaiting AI Analysis',
     statuses: ['ANALYSIS_PENDING'],

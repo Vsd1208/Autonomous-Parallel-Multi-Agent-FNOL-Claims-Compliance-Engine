@@ -62,7 +62,7 @@ People sign in; integrations and scripts send the service credential `X-Adjuster
 - `POST /api/v1/auth/login` `{ "username", "password" }` → `200 { "token", "username", "displayName", "role", "expiresAt" }`, then
   `Authorization: Bearer <token>` for 8 hours. `401 BAD_CREDENTIALS`; `429 LOCKED_OUT` for 15 minutes after 5 failures.
 - `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`.
-- Roles: `ADJUSTER` does everything except file an inspection report. `INSPECTOR` can read claims and file their own assigned
+- Roles: `ADJUSTER`, `SENIOR_ADJUSTER` and `SUPERVISOR` do everything except file an inspection report, up to their reserve authority. `INSPECTOR` can read claims and file their own assigned
   report, and gets `403 FORBIDDEN` for anything else. A signed-in person's id replaces any `adjusterId`, `assignedBy`,
   `requestedBy` or `inspectorId` in a request. An ended session answers `401`.
 
@@ -331,6 +331,8 @@ be reached, with nothing recorded anywhere, and `409 INVALID_STATE` if it refuse
 
 Optional `handlingSeconds` and `advisoryRating` (1-5) are stored for signed-in people only, as evidence for a study; a service
 credential's are ignored.
+
+A reserve above the person's authority answers `202` `{ "status": "PENDING_APPROVAL", "approvalId", "assignedTo", "amount", "yourLimit" }`, with nothing posted. `GET /fnol/{claimId}/reserve-approvals` lists them; `POST /fnol/{claimId}/reserve-approvals/{id}/decide` `{ "approve", "note" }` approves or declines, `403` for your own, without enough authority, or with a service credential.
 
 An approval is what posts the reserve on the exposure: `adjustedReserve`, or the AI's recommendation if none is given. A
 rejection closes the claim and zeroes the exposure. Other decisions post nothing.

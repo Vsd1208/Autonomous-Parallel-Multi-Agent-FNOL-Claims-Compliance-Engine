@@ -13,6 +13,7 @@ import {
   ExplanationObject,
   FormData,
   QueuePage,
+  ReserveApprovalView,
 } from '../types';
 
 import { Session, session } from './session';
@@ -61,6 +62,13 @@ async function request<T>(path: string, init: RequestInit = {}, adjuster = false
 export const apiClient = {
   login: (username: string, password: string) =>
     request<Session>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+
+  getReserveApprovals: (claimId: string) =>
+    request<ReserveApprovalView[]>(`/api/v1/fnol/${encodeURIComponent(claimId)}/reserve-approvals`, {}, true),
+
+  decideReserveApproval: (claimId: string, approvalId: string, approve: boolean, note: string) =>
+    request<{ status: string }>(`/api/v1/fnol/${encodeURIComponent(claimId)}/reserve-approvals/${encodeURIComponent(approvalId)}/decide`,
+      { method: 'POST', body: JSON.stringify({ approve, note }) }, true),
 
   logout: () => request<{ status: string }>('/api/v1/auth/logout', { method: 'POST' }, true),
 
