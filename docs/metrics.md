@@ -172,7 +172,7 @@ unknown.
 
 | Metric | Value | Date | Command |
 |---|---|---|---|
-| Backend tests | **325 passed**, 0 failed (fnol-agents 93, fnol-orchestrator 87, fnol-api 93, fnol-mock-guidewire 27, fnol-guardrails 13, fnol-enrichment 12; fnol-common has none) | 2 Nov 2026 | `mvn -B test` |
+| Backend tests | **327 passed**, 0 failed (fnol-agents 95, fnol-orchestrator 87, fnol-api 93, fnol-mock-guidewire 27, fnol-guardrails 13, fnol-enrichment 12; fnol-common has none) | 2 Nov 2026 | `mvn -B test` |
 | Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-orchestrator 93%, fnol-mock-guidewire 93%, fnol-agents 85%, fnol-api 79%, fnol-enrichment 66% | 31 Oct 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
 | Build warnings | 0 | 31 Oct 2026 | `mvn -B verify` |
 

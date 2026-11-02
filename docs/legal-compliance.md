@@ -60,6 +60,10 @@ Prototype: the letter is not posted or e-mailed.
 ## 4. Subrogation
 
 - Wider third-party detection (e.g. "a truck hit my car", "ran the red", "t-boned", a neighbour's tree, a contractor).
+- Read clause by clause: the insured's own act ("I backed into a pole", "Backed into a pole"), a statement of their own
+  fault, or "no other vehicle" does not count, while "a truck backed into my car" and "Rear-ended at a light" do. A mixed
+  or unclear description stays a possible recovery for a person to check. These are keyword rules, not a liability
+  finding: words like "the truck" can still match the insured's own vehicle.
 - The other party's details are picked out when the description gives them: vehicle plate, insurer, police report
   number. These are third-party data kept on the claim file for the recovery; they are not sent to any external model.
 - When recovery is likely, a ClaimCenter activity for the subrogation unit is due on the **recovery limitation

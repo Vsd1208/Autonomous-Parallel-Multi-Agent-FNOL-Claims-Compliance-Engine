@@ -18,6 +18,9 @@ import java.util.regex.Pattern;
  * Branch B; the damage-severity points are added at the reconciliation gate. Weights and
  * compliance notes are prototype values, not legal guidance.
  *
+ * <p>Read clause by clause, so that the same words count only when someone else did it: "a truck backed into my car" is
+ * a third party, "I backed into a pole" is not, nor is "no other vehicle involved". Keyword rules, not a liability finding.
+ *
  * <p>Besides scoring, it picks out what a recovery team needs first: the other vehicle's plate, the other party's
  * insurer and a police report number, when the description gives them. These are third-party details kept on the
  * claim file for the recovery; they are not sent to any external model.
@@ -35,6 +38,33 @@ public class DeterministicSubrogationScorer implements SubrogationScorer {
             "another vehicle", "other vehicle", "other car", "at fault", "at-fault", "did not stop", "didn't stop",
             "backed into", "drove into my", "neighbour's tree", "neighbor's tree", "contractor", "the truck", "a truck hit",
             "a van hit", "lorry");
+
+    private static final String ACTS = "backed into|backed up into|reversed into|crashed into|drove into|ran a red|ran the red"
+            + "|ran a stop|ran the stop|rear-ended|rear ended|t-boned|sideswiped|struck|clipped|hit";
+    private static final String ADVERBS = "(?:(?:accidentally|accidently|mistakenly|inadvertently|just|then|also|had)\\s+)*";
+
+    /** A clause in which our side did it: "I accidentally backed into", "my son hit". "I was hit" and "we got rear-ended" do not match. */
+    private static final Pattern OWN_ACT = Pattern.compile(
+            "\\b(?:i|we|(?:the )?insured|(?:the )?policyholder|our driver"
+                    + "|my (?:wife|husband|spouse|partner|son|daughter|brother|sister|mother|father|mom|dad|driver))\\s+"
+                    + ADVERBS + "(?:" + ACTS + ")\\b(?!\\s+(?:the\\s+|my\\s+)?(?:brakes|horn|gas|accelerator))");
+
+    /**
+     * A clause opening with an act and no subject means the reporter did it: "Backed into a pole". Only for active
+     * acts: "Rear-ended at a light" and "Hit by a truck" mean the opposite, and so does "Backed into by a van".
+     */
+    private static final Pattern IMPLIED_OWN_ACT = Pattern.compile(
+            "^" + ADVERBS + "(?:backed into|backed up into|reversed into|crashed into|drove into|ran a red|ran the red|ran a stop|ran the stop)"
+                    + "\\b(?!\\s+(?:by|my|our|me|us)\\b)");
+
+    private static final Pattern OWN_FAULT = Pattern.compile(
+            "(?<!not )(?<!isn't )(?<!wasn't )\\b(?:my|our) fault\\b"
+                    + "|\\b(?:i|we|(?:the )?insured|(?:the )?policyholder)\\s+(?:was|were|am|are|is)\\s+(?:at[- ]fault|to blame)\\b");
+
+    private static final Pattern NO_OTHER_PARTY = Pattern.compile(
+            "\\b(?:no|without|not involving)\\s+(?:any\\s+)?(?:other|another|third)\\b|\\bsingle[- ](?:vehicle|car)\\b");
+
+    private static final Pattern CLAUSE_BREAK = Pattern.compile("[.;:!?,]|\\b(?:but|and|when|while|because|after|then|as)\\b");
 
     /** Common US auto and property insurers, to spot the other party's insurer by name. */
     static final List<String> INSURERS = List.of(
@@ -56,9 +86,21 @@ public class DeterministicSubrogationScorer implements SubrogationScorer {
     @Override
     public SubrogationResult assessLiability(FNOLPayload payload) {
         String text = payload.description().toLowerCase(Locale.ROOT);
-        boolean thirdParty = THIRD_PARTY_PHRASES.stream().anyMatch(text::contains);
+        boolean thirdParty = false;
+        boolean ownFault = false;
+        for (String clause : CLAUSE_BREAK.split(text)) {
+            String c = clause.trim();
+            if (OWN_ACT.matcher(c).find() || IMPLIED_OWN_ACT.matcher(c).find() || OWN_FAULT.matcher(c).find()) {
+                ownFault = true;
+            } else if (!NO_OTHER_PARTY.matcher(c).find() && THIRD_PARTY_PHRASES.stream().anyMatch(c::contains)) {
+                thirdParty = true;
+            }
+        }
         boolean policeReport = text.contains("police");
-        Map<String, String> details = thirdPartyDetails(payload.description());
+        // "Police report 123" or an insurer's name on an own-fault loss says nothing about another party. A description
+        // that also mentions another party stays a possible recovery: a person checks it, and a missed recovery costs money.
+        boolean ownFaultOnly = ownFault && !thirdParty;
+        Map<String, String> details = ownFaultOnly ? Map.of() : thirdPartyDetails(payload.description());
 
         Map<String, Integer> factors = new LinkedHashMap<>();
         factors.put("thirdPartyMention", thirdParty ? 35 : 10);
@@ -74,6 +116,8 @@ public class DeterministicSubrogationScorer implements SubrogationScorer {
             if (!details.containsKey("otherInsurer")) {
                 notes.add("The other party's insurer is not named: ask the claimant for it, or trace it from the plate.");
             }
+        } else if (ownFaultOnly) {
+            notes.add("The description indicates the insured caused the loss: subrogation recovery is unlikely.");
         } else {
             notes.add("No third party identified in the description: subrogation recovery is unlikely.");
         }

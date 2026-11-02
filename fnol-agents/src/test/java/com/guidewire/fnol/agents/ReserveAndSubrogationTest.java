@@ -100,6 +100,66 @@ class ReserveAndSubrogationTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("Another party counts only when someone else did it: our own act, our own fault or 'no other vehicle' is no recovery")
+    void thirdPartyOnlyWhenSomeoneElseDidIt() {
+        SubrogationScorerAgent agent = new SubrogationScorerAgent(new DeterministicSubrogationScorer());
+        java.util.List<String> ours = java.util.List.of(
+                "Backed into a pole in a parking lot, rear bumper cracked and tail light broken.",
+                "I backed into a pole.",
+                "I accidentally reversed into the garage door.",
+                "We hit a deer on the highway.",
+                "My son rear-ended the car in front.",
+                "The insured ran a red light and hit a parked car.",
+                "I hit the other car.",
+                "It was my fault.",
+                "I was at fault.",
+                "Lost control on ice. No other vehicle involved.",
+                "Single vehicle accident, slid into a ditch.",
+                "Crashed into a wall. No other car was involved.");
+        for (String description : ours) {
+            SubrogationResult r = agent.assessLiability(payload(description));
+            assertThat(r.factors().get("thirdPartyMention")).as(description).isEqualTo(10);
+            assertThat(r.complianceNotes()).as(description).anyMatch(n -> n.contains("subrogation recovery is unlikely"));
+        }
+        java.util.List<String> theirs = java.util.List.of(
+                "A truck backed into my parked car.",
+                "Another car backed into me in the car park.",
+                "Backed into by a van while parked.",
+                "My car was backed into at the store.",
+                "Rear-ended at a light.",
+                "I was hit by another car.",
+                "We got rear-ended on the freeway.",
+                "Sideswiped by another vehicle.",
+                "It was not my fault, the other driver ran the red.",
+                "I hit the brakes but the other driver hit me anyway.",
+                "I stopped at the light when the other driver backed into me.",
+                "The other driver was at fault.",
+                "I was not at fault.",
+                "Our contractor left the water running.");
+        for (String description : theirs) {
+            assertThat(agent.assessLiability(payload(description)).factors().get("thirdPartyMention"))
+                    .as(description).isEqualTo(35);
+        }
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("Details found on an own-fault loss are not another party's; a mixed description stays a possible recovery for a person to check")
+    void detailsFollowTheThirdParty() {
+        SubrogationScorerAgent agent = new SubrogationScorerAgent(new DeterministicSubrogationScorer());
+        SubrogationResult own = agent.assessLiability(payload("I backed into a pole. Police report number AB-1234. My insurer is State Farm."));
+        assertThat(own.thirdParty()).isEmpty();
+        assertThat(own.factors().get("thirdPartyMention")).isEqualTo(10);
+
+        SubrogationResult mixed = agent.assessLiability(payload("I hit the car in front because the other driver cut in. Their insurer is GEICO."));
+        assertThat(mixed.factors().get("thirdPartyMention")).isEqualTo(35);
+        assertThat(mixed.thirdParty()).containsEntry("otherInsurer", "GEICO");
+
+        // No statement about fault: details alone still point at another party, as before.
+        assertThat(agent.assessLiability(payload("Damage in the car park. Their plate is AB12 CDE.")).thirdParty())
+                .containsKey("otherVehiclePlate");
+    }
+
+    @Test
     @DisplayName("The gate adds the severity points, decides the action and adds the referral note")
     void finalizeAddsSeverityAndReferral() {
         SubrogationScorerAgent agent = new SubrogationScorerAgent(new DeterministicSubrogationScorer());
