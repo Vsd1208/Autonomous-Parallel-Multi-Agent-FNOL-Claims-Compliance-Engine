@@ -34,28 +34,44 @@ smaller sample, so it is not evidence that the newer prompt is worse.
 ## 2. Trust score (calibrated AI confidence, vehicle claims)
 
 Logistic regression on the probability margin **when Gemini names an area** (`namedMargin`), the second-opinion model's
-agreement and whether a specific area was named (`tools/vision-eval/trust_score.py`, app class `TrustScorer`).
-Leave-one-image-out on the 66 `v3-subject` answers, smoothing chosen inside each training set; 95% ranges from 2000
-bootstrap resamples. Measured and shipped 31 Oct 2026. Command: `python -P trust_score.py --run v3-subject`. Report:
-[tools/vision-eval/results/report-trust-score.md](../tools/vision-eval/results/report-trust-score.md).
+agreement and whether a specific area was named (`tools/vision-eval/trust_score.py`, app class `TrustScorer`). Shipped
+31 Oct 2026. The weights in the app were fitted on the same 66 `v3-subject` answers these figures use, so the labels below
+matter. Measured 2 Nov 2026 with the current second-opinion model. Command:
+`cd tools/vision-eval && python -P trust_score_strict.py --run v3-subject`
+([report](../tools/vision-eval/results/report-trust-score-strict.md)): 20 repeats of stratified 5-fold, each figure one
+fitted model's result averaged over the repeats, ranges 95% bootstrap over the images and pooled across repeats.
 
-| Metric | Gemini's own confidence | Previous trust score (re-measured on 66) | **Trust score in the app** |
-|---|---|---|---|
-| Separation of right from wrong (AUC) | 0.57 | 0.72 | 0.68 |
-| Brier score, lower is better (95% range) | 0.150 (0.082–0.228) | 0.121 (0.078–0.170) | **0.118** (0.077–0.164) |
-| Calibration error, lower is better (95% range) | 0.090 (0.044–0.188) | 0.055 (0.045–0.171) | **0.051** (0.025–0.132) |
-| Answers passing the 0.85 confidence factor / wrong among them | 65 / 11 | — | **41 / 1** |
+| Confidence | How it was evaluated | AUC (95% range) | Brier, lower is better (95% range) | Calibration error, lower is better (95% range) | Pass the 0.85 factor / wrong among them |
+|---|---|---|---|---|---|
+| Gemini's own | Nothing fitted | 0.57 (0.51–0.66) | 0.150 (0.082–0.223) | 0.090 (0.044–0.177) | 65 / 11 |
+| **Trust score with the app's features** | **Out of sample** for weights and smoothing; the feature list was chosen by people who had seen these answers | **0.79** (0.64–0.90) | **0.113** (0.074–0.158) | **0.063** (0.030–0.153) | 41.0 / 1.0 |
+| Trust score, procedure with the features also chosen in each fold | **Strictly out of sample**: nothing about the held-out answer is used | 0.84 (0.71–0.94) | 0.108 (0.068–0.155) | 0.041 (0.020–0.137) | 38.5 / 1.0 |
+| The exact weights in the app | **In sample**, for contrast only | 0.86 (0.78–0.92) | 0.107 (0.068–0.148) | 0.063 (0.019–0.117) | 41 / 1 |
 
-What the calibration error means: on these answers a trust score is within about 5 percentage points of how often
-Gemini is actually right; the trust score predicts 0.97 on average for answers that name an area (97.6% are right) and 0.58 for
-"multiple areas" answers (56% are right). 66 answers with 12 wrong is still a small sample: the ranges are wide.
+**Read the second row as the app's score.** The third row measures a procedure that, in 84 of 100 folds, picks the earlier
+features with the plain margin, the set whose weight went negative and which the shipping rules refuse (see below), so it
+is not what the app runs. All the ranges overlap heavily, and on 66 answers no difference between the trust score rows can be
+called real. What the table does support: the trust score separates right from wrong better than Gemini's own confidence, and
+choosing the features by hand did not visibly flatter it. The in-sample AUC of 0.86 against 0.79 shows how much reusing the same
+answers can overstate this score. Calibration is the weaker claim: the range runs from 0.03 to 0.15, which overlaps Gemini's own.
+
+**Correction (2 Nov 2026).** This page used to give AUC 0.68, Brier 0.118 and calibration error 0.051 from leave-one-out, and
+the README gave 0.067. The calibration figures ordered their bins using a model fitted on all the labels, so they were not strictly
+out of sample; the 0.067 was partly in sample as well. The AUC of 0.68 was too low rather than too high: leave-one-out
+has the artefact described below, which penalises ranking (the same score: 0.79 with stratified folds). So the AUC went up and the
+calibration error went up, and neither is a change in the model. Sample size: with 12 wrong answers the AUC range is about ±0.13;
+±0.05 needs about 474 answers at the same wrong rate (rough scaling, not a power calculation).
+
+What the calibration error means: on these answers a trust score is within about 6 percentage points of how often
+Gemini is actually right, and possibly up to 15. 66 answers with 12 wrong is a small sample.
 
 **Correction (31 Oct 2026).** Earlier versions of this page reported a calibration error of 0.212 for the trust score.
 That figure was mostly a measurement artefact: under leave-one-out, holding out a right answer slightly lowers its own
 prediction, and the metric sorted answers by those scores before binning, so answers with identical features were
 split into bins by their labels. The metric now orders the bins by the model's all-data score (a function of the
-features only) and measures the out-of-sample scores (`ece` in `trust_score.py`). All calibration errors on this page
-use the corrected metric.
+features only) and measures the out-of-sample scores (`ece` in `trust_score.py`). That fix leaned on all the labels, which is why
+the table above now avoids leave-one-out altogether: stratified folds keep the share of right answers the same in every
+training set, so a held-out answer's score no longer depends on its own label, and scores can be binned by themselves.
 
 **Why the margin now counts only for a named area.** For a "multiple areas" or UNKNOWN answer the margin says nothing
 about whether an area is right: an UNKNOWN answer puts 1.0 on "unknown" (margin 1.0) and is always wrong. Using it
@@ -79,11 +95,34 @@ The 66 `v3-subject` answers replayed through the app's checks, adding one at a t
 | Gemini's confidence only (≥ 0.85) | 65/66 | 11 / 27 | 0 |
 | + probability-margin check (`AMBIGUOUS_DAMAGE_TYPE`) | 42/66 | 2 / 4 | 14 |
 | + severity and photo-subject checks | 42/66 | 2 / 4 | 14 |
-| + second-opinion model (`MODEL_DISAGREEMENT`) | 39/66 | **1** / — | 16 |
+| + second-opinion model (`MODEL_DISAGREEMENT`) | 36/66 | **1** / — | 19 |
 
 Caveat: vision checks only. Coverage, the claimed-amount check, intake flags and the severity gate also apply to real
 claims. The one wrong answer left (photo 1336) is a confident "multiple areas" answer, which the second-opinion model
-has no class for.
+has no class for. **Correction (2 Nov 2026):** the last row used to read 39/66 and 16, measured before the 734-photo model.
+The wrong count did not change; the checks now send 3 more right answers to an adjuster.
+
+**What was fitted on these 66 answers, and what 11 → 1 is worth out of sample.** The 11 and the 1 are counts on the same
+answers the checks were tuned against, so 1 is an in-sample figure:
+
+- **Trust score weights:** not used in this replay, which uses Gemini's raw confidence. The 0.85 factor predates these answers.
+- **Margin threshold 0.30:** set on 27 Oct 2026 from an earlier run (commit `c0e98aa`), before this run existed. It takes 11 to 2.
+- **Second-opinion threshold 0.10:** chosen on 1 Nov 2026 by looking at recorded answers including these 66 (`tools/second-opinion/results/disagreement.md`).
+  It takes 2 to 1, so that last step is the part fitted on these answers.
+- **Second-opinion model:** its probabilities are out-of-fold, so it never saw the photo it judges.
+
+With both thresholds chosen inside each training fold, from the training answers only
+([report](../tools/vision-eval/results/report-trust-score-strict.md)):
+
+| One wrong answer through is as bad as | Could go straight through | Wrong let through | Right answers sent to an adjuster |
+|---|---|---|---|
+| 5, 10 or 20 right answers held back (an assumption; same result) | 40.6/66 | **3.0** | 16.4 |
+| 2 right answers held back | 44.5/66 | 4.6 | 14.1 |
+
+**The honest out-of-sample headline is about 11 → 3, not 11 → 1.** A threshold chosen without seeing a wrong answer does not
+reliably catch that answer, and with so few wrong answers each one matters. Even the in-sample "1 of 36" allows a true
+wrong-through rate up to 15% (exact 95%). Showing it is below 5% takes 72 passing answers with none wrong, or 110 with one
+wrong (exact two-sided 95%): about 132 and 202 answers at today's 55% pass rate.
 
 ## 4. Second-opinion model (trained in this project)
 
@@ -146,9 +185,8 @@ Civic rear impact is still called side panel, now with rear at 11%). Six photos 
 
 **Trust score after the change.** The trust score's second-opinion input now comes from the new model. Re-fitting it
 (`trust_score.py --run v3-subject --write-app`) did not pass the shipping rules (Brier 0.1173 vs 0.1162 for the current
-coefficients; with the 734-photo model 0.1174 vs 0.1163), so the app keeps its current trust score; with the new model's outputs it measures AUC 0.73, Brier
-0.116, calibration error 0.067 on the 66 answers (the current coefficients were fitted on these same answers, so this
-is partly in-sample).
+coefficients; with the 734-photo model 0.1174 vs 0.1163), so the app keeps its current trust score. The figures for it are in
+§2.
 
 **On-premise vision.** When Gemini cannot answer on usable vehicle photos (quota, outage, no key), the car head's
 reading replaces the "UNKNOWN" placeholder (`OnPremiseVision`), with the flag `ON_PREMISE_VISION` that always sends the

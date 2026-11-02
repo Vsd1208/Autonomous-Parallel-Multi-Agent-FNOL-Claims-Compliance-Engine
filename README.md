@@ -71,8 +71,8 @@ All from small public datasets, not real claims. Every number, with its run, dat
 
 | Result | Value | Source |
 |---|---|---|
-| Wrong Gemini answers that could go straight through: confidence check only → all vision checks | **11 → 1** of 66 | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
-| Trust score calibration: how far its confidence is from how often Gemini is actually right (calibration error) | **0.067** with the current second-opinion model (Gemini's own confidence 0.090; 66 photos, partly in-sample) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
+| Wrong Gemini answers that could go straight through: confidence check only → all vision checks | **11 → 1** of 66 in sample, about **11 → 3** with the thresholds chosen out of sample | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
+| Trust score calibration: how far its confidence is from how often Gemini is actually right (calibration error) | **0.063** out of sample, range 0.030–0.153 (Gemini's own confidence 0.090; 66 photos; AUC 0.79 against 0.57) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
 | Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated (median 2.7x the published range midpoint, see [metrics §8](docs/metrics.md#8-repair-cost-estimates)) | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
 | Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
 | Our own on-premise vision model: damaged area right, strict / lenient | **78% / 87%** out-of-fold on 734 car photos, each reviewed (CLIP alone 65% / 81%); property cause of loss **93%** and property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |

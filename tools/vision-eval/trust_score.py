@@ -15,7 +15,9 @@ unavailable). The amount of smoothing (regularisation strength C) is chosen from
 
 Honest measurement: every reported score is out-of-sample (leave-one-image-out), and the smoothing is chosen again
 inside each training set, without the held-out image (nested cross-validation), so choosing C cannot flatter the
-result. Uncertainty: 95% ranges from 2000 bootstrap resamples of the images.
+result. Uncertainty: 95% ranges from 2000 bootstrap resamples of the images. The calibration bins here still use all the
+labels, and the feature list was chosen with these answers in view: trust_score_strict.py removes both, and docs/metrics.md
+reports its figures.
 
 Target: Gemini's area is one of the damaged areas (lenient correctness). Adjuster feedback rows (--feedback) count as
 right when the adjuster confirmed the same damage type; they are used only when they were produced by the same model,
