@@ -547,6 +547,7 @@ function DecisionTrail({ claim }: { claim: DashboardClaim }) {
               <li>{so ? (agreement != null
                 ? `Second-opinion model gives that ${(agreement * 100).toFixed(1)}%${agreement < 0.10 ? ': it disagrees' : ''}`
                 : 'Second-opinion model has no view on this damage type')
+                : claim.notes?.some((n) => n.includes('lite mode')) ? 'Second opinion not available in lite mode'
                 : 'Second-opinion model not available for this claim'}</li>
               <li>{d.privacy
                 ? `${d.privacy.photosSent} photo${d.privacy.photosSent === 1 ? '' : 's'} sent to Gemini`

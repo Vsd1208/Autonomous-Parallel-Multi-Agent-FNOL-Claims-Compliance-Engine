@@ -11,6 +11,8 @@ fnol:
     timeout-seconds: ${FNOL_ORCHESTRATOR_TIMEOUT_SECONDS:10}
     pool-size: ${FNOL_ORCHESTRATOR_POOL_SIZE:8}
     queue-size: ${FNOL_ORCHESTRATOR_QUEUE_SIZE:32}
+  # Quick review with no vision service: mock vision only, and each claim says the second opinion did not run.
+  lite-mode: ${FNOL_LITE_MODE:false}
   reserve:
     # AVERAGE_TABLE: from initial-reserves.json by line, coverage and severity. AI_ESTIMATE: the old formula, for comparison.
     method: ${FNOL_RESERVE_METHOD:AVERAGE_TABLE}

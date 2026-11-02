@@ -73,6 +73,13 @@ public class FNOLController {
         this.decisions = decisions;
     }
 
+    private LiteMode liteMode;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setLiteMode(LiteMode liteMode) {
+        this.liteMode = liteMode;
+    }
+
     /** Sets the segment and who handles the claim; optional for the same reason. */
     private ClaimAssignmentService assignment;
 
@@ -156,7 +163,7 @@ public class FNOLController {
     Map<String, String> health() {
         // intake: CLAIMS_SYSTEM (losses are filed in the claims system, analysis follows its event) or DIRECT
         return Map.of("status", "UP", "intake", reportsToClaimsSystem() ? ClaimsSystemIntake.CLAIMS_SYSTEM
-                : ClaimsSystemIntake.DIRECT);
+                : ClaimsSystemIntake.DIRECT, "secondOpinion", liteMode == null ? "CONFIGURED" : liteMode.secondOpinion());
     }
 
     // ── Report a loss (agent taking a phone call, partner channel) ────────────

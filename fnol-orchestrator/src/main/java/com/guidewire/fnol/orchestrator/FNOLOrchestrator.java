@@ -375,6 +375,14 @@ public class FNOLOrchestrator {
         this.photoHistory = photoHistory;
     }
 
+    /** Quick-review mode with no vision service: each claim says the second opinion did not run. */
+    private boolean liteMode;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setLiteMode(@org.springframework.beans.factory.annotation.Value("${fnol.lite-mode:false}") boolean liteMode) {
+        this.liteMode = liteMode;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setTrustScorer(TrustScorer trustScorer) {
         this.trustScorer = trustScorer;
@@ -747,6 +755,9 @@ public class FNOLOrchestrator {
         notes.add("Pre-population recommended for LOW-severity eligible claim types only.");
         notes.add("Coverage verified against synthetic line-of-business coverage rules.");
         notes.add("Subrogation score is deterministic and explained by contributing factors.");
+        if (liteMode) {
+            notes.add("Second opinion: not available in lite mode, so the model-disagreement check did not run.");
+        }
         notes.add("Processing time: " + elapsedMs + "ms in total. Operational branch (photos, coverage, reserve) "
                 + operationalMs + "ms and legal branch (PII, deadlines, subrogation) " + legalMs
                 + "ms ran in parallel, so the legal checks added no waiting.");
