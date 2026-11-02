@@ -101,6 +101,14 @@ export default function ClaimFile() {
     };
   }, [claimId, reload]);
 
+  // Filed in the claims system, analysis running: refresh until the results are there.
+  const waiting = claim?.status === 'ANALYSIS_PENDING';
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = window.setInterval(() => setReload((n) => n + 1), 3000);
+    return () => window.clearInterval(timer);
+  }, [waiting]);
+
   if (!SECTIONS.some(([key]) => key === section)) {
     return <Navigate to={`/claim/${claimId}`} replace />;
   }
@@ -152,6 +160,12 @@ export default function ClaimFile() {
 
   return (
     <Workspace sidebar={sidebar} bar={bar}>
+      {waiting && (
+        <MessageBar tone="info" title="AI analysis is running">
+          This claim is filed in the claims system. Its analysis usually arrives within seconds, and this page updates
+          when it does. A decision can be recorded after that.
+        </MessageBar>
+      )}
       <SectionView section={section as Section} claim={claim} docs={docs} inspections={inspections}
         reload={reload} onChanged={() => setReload((n) => n + 1)} />
     </Workspace>

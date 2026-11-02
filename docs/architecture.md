@@ -3,7 +3,34 @@
 ## Overview
 The **Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine** is a decision-support platform for P&C First Notice of Loss. It runs operational analysis (damage, coverage, reserve) and legal analysis (PII, deadlines) in parallel, reconciles them through a safety gate that explains its reasoning, pre-files the claim in ClaimCenter, and gives an adjuster a console and a queue for the final decision. Failed intakes are saved and escalated rather than dropped.
 
-## Request flow
+## How a claim flows
+
+The claims system (mock ClaimCenter) owns the claim, the work queue and the decision; the engine is an extension of it
+(ADR-012, [guidewire-integration.md](guidewire-integration.md)). The analysis below is the same on either path.
+
+```
+  Portal / phone intake  POST /portal/claims, POST /fnol/report
+        |  InputGuardrail ............................................ 400, nothing filed
+        v
+  Claims system: draft -> duplicate check (409) -> submit (claim number issued)
+        |  outbox: claim.submitted, signed, delivered at least once
+        v
+  ClaimEventController (401 bad signature; repeats ignored) -> FNOLOrchestrator (below), on the existing claim
+        |  written back: estimate, reserve, exposure, activities, note, documents
+        |  failure: claim stays in review with a high-priority activity; recorded and audited
+        v
+  Analysis record + audit saved -> only then the claim's work queue is set
+
+  Adjuster: GET /fnol/queue (read from the claims system, with the AI's flags)
+     POST /fnol/{id}/review -> claims system first (503 if down, nothing recorded; 409 if finished)
+        |  outbox: claim.decided (also for a decision made directly in the claims system)
+        v
+  ClaimDecisionRecorder: analysis record, audit chain, feedback loop; counted once by the decision's time
+```
+
+## Analysis flow (direct intake shown)
+
+`POST /fnol/intake` runs this inline and then creates the claim. Without `CLAIMS_EVENT_SECRET` it is the only path.
 
 ```
   React console (Vite)                        X-Adjuster-Token on review / audit / explanation / queue

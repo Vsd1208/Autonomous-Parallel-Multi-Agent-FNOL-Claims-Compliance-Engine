@@ -3,10 +3,13 @@ package com.guidewire.fnol.enrichment;
 import com.guidewire.fnol.common.Models.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.Collection;
 import java.util.Map;
 
 @Component
@@ -68,6 +71,18 @@ public class MockClaimCenterClient implements ClaimCenterClient {
     @Override
     public void patchClaim(String claimId, ClaimPatch patch) {
         rest.patchForObject(baseUrl + CLAIM_API, patch, Claim.class, claimId);
+    }
+
+    @Override
+    public Claim recordDecision(String claimId, ClaimUpdateRequest decision) {
+        return rest.exchange(baseUrl + "/cc/claims/{claimId}", HttpMethod.PUT, new HttpEntity<>(decision), Claim.class,
+                claimId).getBody();
+    }
+
+    @Override
+    public ClaimQueuePage listWorkQueues(Collection<String> workQueues, int page, int size) {
+        return rest.getForObject(baseUrl + "/cc/rest/claim/v1/claims?workQueue={q}&page={p}&size={s}",
+                ClaimQueuePage.class, String.join(",", workQueues), page, size);
     }
 
     @Override

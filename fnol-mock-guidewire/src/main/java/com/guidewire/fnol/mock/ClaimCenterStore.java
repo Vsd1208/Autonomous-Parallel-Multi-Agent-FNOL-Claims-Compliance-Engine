@@ -9,6 +9,8 @@ import org.springframework.stereotype.Repository;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -47,9 +49,10 @@ class ClaimCenterStore {
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.update("""
                 INSERT INTO claimcenter.claims (claim_id, status, policy_number, incident_date, state,
-                    estimated_damage, reserve, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    estimated_damage, reserve, work_queue, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 claimId, status, r.policyNumber(), r.incidentDate() == null ? null : Date.valueOf(r.incidentDate()),
-                r.state(), r.estimatedDamage(), r.reserve(), now, now);
+                r.state(), r.estimatedDamage(), r.reserve(), r.workQueue() != null ? r.workQueue() : queueFor(status),
+                now, now);
     }
 
     Optional<Claim> find(String claimId) {
@@ -58,20 +61,66 @@ class ClaimCenterStore {
             return new Claim(rs.getString("claim_id"), rs.getString("status"), rs.getString("policy_number"),
                     incident == null ? null : incident.toLocalDate(), rs.getString("state"),
                     rs.getBigDecimal("estimated_damage"), rs.getBigDecimal("reserve"), rs.getString("notes"),
-                    List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(), List.of(), rs.getString("work_queue"));
         }, claimId);
         return rows.stream().findFirst().map(c -> new Claim(c.claimId(), c.status(), c.policyNumber(),
                 c.incidentDate(), c.state(), c.estimatedDamage(), c.reserve(), c.notes(),
-                attachments(claimId), reviewActions(claimId), exposures(claimId), activities(claimId), notes(claimId)));
+                attachments(claimId), reviewActions(claimId), exposures(claimId), activities(claimId), notes(claimId),
+                c.workQueue()));
+    }
+
+    /** A page of the claims in these work queues, oldest first. */
+    ClaimQueuePage queue(Collection<String> queues, int page, int size) {
+        String in = String.join(",", Collections.nCopies(queues.size(), "?"));
+        Object[] args = queues.toArray();
+        long total = jdbc.queryForObject("SELECT COUNT(*) FROM claimcenter.claims WHERE work_queue IN (" + in + ")",
+                Long.class, args);
+        List<ClaimQueueEntry> items = jdbc.query("""
+                SELECT claim_id, status, work_queue, policy_number, reserve, created_at FROM claimcenter.claims
+                WHERE work_queue IN (%s) ORDER BY created_at, claim_id LIMIT %d OFFSET %d""".formatted(in, size, page * size),
+                (rs, i) -> new ClaimQueueEntry(rs.getString("claim_id"), rs.getString("status"),
+                        rs.getString("work_queue"), rs.getString("policy_number"), rs.getBigDecimal("reserve"),
+                        rs.getTimestamp("created_at").toInstant()), args);
+        return new ClaimQueuePage(items, total);
+    }
+
+    /** The adjuster decisions: each one puts the claim in the queue of that name and announces claim.decided. */
+    static final Set<String> DECISIONS = Set.of("APPROVED_BY_ADJUSTER", "REJECTED_BY_ADJUSTER", "NEEDS_MORE_INFO",
+            "INVESTIGATION_REQUIRED", "CLOSED");
+
+    /** The work queue for a claim status, when nothing more specific (a routing, a decision) is known. */
+    static String queueFor(String status) {
+        return status == null ? null : switch (status) {
+            case "SUBMITTED" -> "ANALYSIS_PENDING";
+            case "DRAFT_PENDING_REVIEW" -> "HUMAN_REVIEW";
+            case "PENDING_INFORMATION" -> "NEEDS_MORE_INFO";
+            case "PENDING_INSPECTION" -> "INSPECTION_ASSIGNED";
+            case "UNDER_INVESTIGATION" -> "INVESTIGATION_REQUIRED";
+            case "OPEN" -> "APPROVED_BY_ADJUSTER";
+            case "DENIED" -> "REJECTED_BY_ADJUSTER";
+            case "CLOSED" -> "CLOSED";
+            default -> null;
+        };
+    }
+
+    /** A denied or closed claim takes no further change of status. */
+    boolean isFinished(String claimId) {
+        return find(claimId).map(c -> "DENIED".equals(c.status()) || "CLOSED".equals(c.status())).orElse(false);
     }
 
     /** Applies an update and records it as a review action; false when the claim does not exist. */
     boolean update(String claimId, ClaimUpdateRequest r) {
-        Instant now = Instant.now();
+        return update(claimId, r, Instant.now());
+    }
+
+    /** As {@link #update(String, ClaimUpdateRequest)}, at a given time (the decision's time on its event). */
+    boolean update(String claimId, ClaimUpdateRequest r, Instant now) {
+        String queue = r.workQueue() != null ? r.workQueue()
+                : r.action() != null && DECISIONS.contains(r.action()) ? r.action() : queueFor(r.status());
         int changed = jdbc.update("""
                 UPDATE claimcenter.claims SET status = COALESCE(?, status), reserve = COALESCE(?, reserve),
-                    notes = ?, updated_at = ? WHERE claim_id = ?""",
-                r.status(), r.adjustedReserve(), r.notes(), Timestamp.from(now), claimId);
+                    work_queue = COALESCE(?, work_queue), notes = ?, updated_at = ? WHERE claim_id = ?""",
+                r.status(), r.adjustedReserve(), queue, r.notes(), Timestamp.from(now), claimId);
         if (changed == 0) {
             return false;
         }

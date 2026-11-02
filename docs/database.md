@@ -122,8 +122,10 @@ accident-related amount) − deductible, never below 0. (Column name kept from V
 
 The mock Guidewire service keeps its ClaimCenter data in the same Postgres database, in its own schema, created
 at startup from `fnol-mock-guidewire/src/main/resources/claimcenter-schema.sql` (not by Flyway):
-`claimcenter.claims`, `claimcenter.review_actions` (one row per adjuster decision pushed from FNOL) and
-`claimcenter.attachments`. Under Docker Compose all data is on the `postgres_data` volume, so `docker compose down`
+`claimcenter.claims` (with the `work_queue` extension field), `claimcenter.review_actions` (one row per adjuster
+decision), `claimcenter.attachments`, `claimcenter.fnol_reports` (the report as filed, **including the claimant's details**:
+this is the claims system's own record, and the engine's tables never hold them), `claimcenter.events` (the event
+outbox), and the exposures, activities and notes tables. Under Docker Compose all data is on the `postgres_data` volume, so `docker compose down`
 and rebuilds keep it; `docker compose down -v` deletes it.
 
 ## PII isolation

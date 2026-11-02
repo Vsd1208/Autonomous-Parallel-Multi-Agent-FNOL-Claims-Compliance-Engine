@@ -99,8 +99,17 @@ public final class Models {
             List<ClaimReviewAction> reviewActions,
             List<CcExposure> exposures,
             List<CcActivity> activities,
-            List<CcNote> claimNotes
+            List<CcNote> claimNotes,
+            String workQueue          // the adjuster work queue the claim sits in (see ClaimPatch.workQueue)
     ) {
+        public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
+                     BigDecimal estimatedDamage, BigDecimal reserve, String notes, List<ClaimAttachment> attachments,
+                     List<ClaimReviewAction> reviewActions, List<CcExposure> exposures, List<CcActivity> activities,
+                     List<CcNote> claimNotes) {
+            this(claimId, status, policyNumber, incidentDate, state, estimatedDamage, reserve, notes, attachments,
+                    reviewActions, exposures, activities, claimNotes, null);
+        }
+
         public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
                      BigDecimal estimatedDamage, BigDecimal reserve) {
             this(claimId, status, policyNumber, incidentDate, state, estimatedDamage, reserve, null, List.of(), List.of());
@@ -163,10 +172,26 @@ public final class Models {
             String notes,
             String action,            // the adjuster decision that caused the update
             String adjusterId,
-            BigDecimal adjustedReserve // set when the adjuster changed the AI-recommended reserve
+            BigDecimal adjustedReserve, // set when the adjuster changed the AI-recommended reserve
+            String workQueue,           // the work queue after this step; empty: the decision, or derived from status
+            // The rest of a decision, carried on its claim.decided event so the AI's feedback loop can learn from it
+            String overrideReason,
+            String confirmedDamageType,
+            BigDecimal finalRepairCost,
+            String repairCostSource
     ) {
         public ClaimUpdateRequest(String status, String notes) {
             this(status, notes, null, null, null);
+        }
+
+        public ClaimUpdateRequest(String status, String notes, String action, String adjusterId,
+                                  BigDecimal adjustedReserve) {
+            this(status, notes, action, adjusterId, adjustedReserve, null);
+        }
+
+        public ClaimUpdateRequest(String status, String notes, String action, String adjusterId,
+                                  BigDecimal adjustedReserve, String workQueue) {
+            this(status, notes, action, adjusterId, adjustedReserve, workQueue, null, null, null, null);
         }
     }
 
@@ -566,11 +591,17 @@ public final class Models {
             String state,
             BigDecimal estimatedDamage,
             BigDecimal reserve,
-            String initialStatus      // DRAFT_PENDING_REVIEW until a human decides; OPEN for unreviewed STP
+            String initialStatus,     // DRAFT_PENDING_REVIEW until a human decides; OPEN for unreviewed STP
+            String workQueue          // the adjuster work queue the AI routed it to (see ClaimPatch.workQueue)
     ) {
         public ClaimCreateRequest(String policyNumber, LocalDate incidentDate, String state,
                                   BigDecimal estimatedDamage, BigDecimal reserve) {
             this(policyNumber, incidentDate, state, estimatedDamage, reserve, null);
+        }
+
+        public ClaimCreateRequest(String policyNumber, LocalDate incidentDate, String state,
+                                  BigDecimal estimatedDamage, BigDecimal reserve, String initialStatus) {
+            this(policyNumber, incidentDate, state, estimatedDamage, reserve, initialStatus, null);
         }
     }
 
@@ -581,8 +612,22 @@ public final class Models {
     public record ClaimPatch(
             String status,
             BigDecimal estimatedDamage,
-            BigDecimal reserve
-    ) {}
+            BigDecimal reserve,
+            // Extension field on the claim: the adjuster work queue the AI routed it to, e.g. HUMAN_REVIEW. The claim's
+            // status says where it is in its lifecycle; this says whose desk it is on, so queues read from the claim.
+            String workQueue
+    ) {
+        public ClaimPatch(String status, BigDecimal estimatedDamage, BigDecimal reserve) {
+            this(status, estimatedDamage, reserve, null);
+        }
+    }
+
+    /** One claim in a claims-system work-queue listing. */
+    public record ClaimQueueEntry(String claimId, String status, String workQueue, String policyNumber,
+                                  BigDecimal reserve, Instant createdAt) {}
+
+    /** A page of a claims-system work-queue listing, oldest first. */
+    public record ClaimQueuePage(List<ClaimQueueEntry> items, long total) {}
 
     /** A claims-system event as delivered to subscribers (modelled on CloudEvents; field names as in that spec). */
     public record ClaimEvent(

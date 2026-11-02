@@ -304,6 +304,8 @@ export interface QueuePage {
   size: number;
   totalElements: number;
   totalPages: number;
+  /** Where the queue was read from; CLAIMS_SYSTEM_UNAVAILABLE: the engine's records, possibly behind. */
+  source?: 'CLAIMS_SYSTEM' | 'CLAIMS_SYSTEM_UNAVAILABLE' | 'ENGINE';
 }
 
 export type AdjusterDecision =

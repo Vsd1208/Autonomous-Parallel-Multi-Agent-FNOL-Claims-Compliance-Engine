@@ -239,7 +239,7 @@ class InspectionController {
                                  BigDecimal reserve) {
         ClaimEntity claim = claims.findById(claimId).orElseThrow();
         try {
-            claimCenter.updateClaim(claimId, new ClaimUpdateRequest(ccStatus, notes, action, actor, reserve));
+            claimCenter.updateClaim(claimId, new ClaimUpdateRequest(ccStatus, notes, action, actor, reserve, claim.status));
             claim.ccSyncStatus = "SYNCED";
         } catch (RuntimeException e) {
             log.warn("[FNOL] ClaimCenter update failed for claimId={} ({}); cc_sync_status=FAILED: {}",

@@ -20,11 +20,14 @@ import org.springframework.web.client.ResourceAccessException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.*;
@@ -49,6 +52,7 @@ class ClaimEventController {
     static final String SIGNATURE_HEADER = "X-Claims-Signature";
     static final String EVENT_ID_HEADER = "X-Claims-Event-Id";
     static final String CLAIM_SUBMITTED = "claim.submitted";
+    static final String CLAIM_DECIDED = "claim.decided";
     /** Claims-system status while a person reviews; the AI never moves a claim further on its own. */
     static final String IN_REVIEW = "DRAFT_PENDING_REVIEW";
 
@@ -61,6 +65,8 @@ class ClaimEventController {
     private final DuplicateSubmissionRecorder duplicates;
     private final EvidenceStore evidence;
     private final IdempotencyStore idempotency;
+    private final ClaimsSystemIntake claimsSystem;
+    private final ClaimDecisionRecorder decisions;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(2, 4, 60, TimeUnit.SECONDS,
@@ -73,7 +79,8 @@ class ClaimEventController {
     ClaimEventController(@Value("${fnol.claims-events.secret:}") String secret, ClaimCenterClient claimCenter,
                          FNOLOrchestrator orchestrator, ClaimRepository claims, AuditService auditService,
                          FailedIntakeRecorder failedIntakes, DuplicateSubmissionRecorder duplicates,
-                         EvidenceStore evidence, IdempotencyStore idempotency) {
+                         EvidenceStore evidence, IdempotencyStore idempotency, ClaimsSystemIntake claimsSystem,
+                         ClaimDecisionRecorder decisions) {
         this.secret = secret == null ? new byte[0] : secret.getBytes(StandardCharsets.UTF_8);
         this.claimCenter = claimCenter;
         this.orchestrator = orchestrator;
@@ -83,6 +90,8 @@ class ClaimEventController {
         this.duplicates = duplicates;
         this.evidence = evidence;
         this.idempotency = idempotency;
+        this.claimsSystem = claimsSystem;
+        this.decisions = decisions;
     }
 
     @PreDestroy
@@ -108,8 +117,11 @@ class ClaimEventController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", "BAD_EVENT", "message", "Not a claim event"));
         }
+        if (CLAIM_DECIDED.equals(event.type()) && event.subject() != null) {
+            return decided(event);
+        }
         if (!CLAIM_SUBMITTED.equals(event.type()) || event.subject() == null) {
-            return ResponseEntity.accepted().body(Map.of("status", "ignored", "reason", "not a claim.submitted event"));
+            return ResponseEntity.accepted().body(Map.of("status", "ignored", "reason", "not a claim event we handle"));
         }
         String claimId = event.subject();
         if (claims.existsById(claimId) || !inFlight.add(claimId)) {
@@ -133,6 +145,75 @@ class ClaimEventController {
         return ResponseEntity.accepted().body(Map.of("status", "accepted", "claimId", claimId));
     }
 
+    /**
+     * A decision recorded in the claims system, whether through the workspace or directly: the analysis record, audit
+     * trail and feedback loop follow. Answered with 503 if it cannot be applied yet (the analysis is still running, or
+     * the database failed), so the claims system delivers it again; nothing is lost.
+     */
+    private ResponseEntity<Map<String, String>> decided(ClaimEvent event) {
+        String claimId = event.subject();
+        Map<String, Object> data = event.data() == null ? Map.of() : event.data();
+        String decision = text(data, "decision");
+        Instant decidedAt;
+        try {
+            decidedAt = Instant.parse(String.valueOf(data.get("decidedAt")));
+        } catch (RuntimeException e) {
+            log.warn("[Events] claim.decided {} without a decision time; ignored", claimId);
+            return ResponseEntity.accepted().body(Map.of("status", "ignored", "reason", "no decision time"));
+        }
+        if (decision == null || !FNOLController.ADJUSTER_DECISIONS.contains(decision)) {
+            return ResponseEntity.accepted().body(Map.of("status", "ignored", "reason", "not an adjuster decision"));
+        }
+        try {
+            Optional<ClaimEntity> record = claims.findById(claimId);
+            if (record.isPresent() && record.get().reviewedAt != null && !decidedAt.isAfter(record.get().reviewedAt)) {
+                return ResponseEntity.accepted().body(Map.of("status", "duplicate", "claimId", claimId));
+            }
+            if (record.isEmpty()) {
+                boolean analysing = inFlight.contains(claimId);
+                record = analysing ? Optional.empty() : claimsSystem.recordOf(claimId);
+                if (record.isEmpty() || ClaimsSystemIntake.ANALYSIS_PENDING.equals(record.get().status)) {
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("error", "NOT_READY",
+                            "message", "The claim's analysis has not finished; deliver this event again later"));
+                }
+                claimsSystem.saveForDecision(record.get());
+            }
+            String costSource = text(data, "repairCostSource");
+            boolean applied = decisions.apply(new ClaimDecisionRecorder.Decision(claimId, decision,
+                    Objects.requireNonNullElse(text(data, "adjusterId"), "UNKNOWN"), notesOf(claimId),
+                    decimal(data, "adjustedReserve"), text(data, "overrideReason"), text(data, "confirmedDamageType"),
+                    decimal(data, "finalRepairCost"),
+                    // Anything unrecognised counts as no stated evidence, so it can never teach the cost model.
+                    costSource != null && AdjusterReviewRequest.REPAIR_COST_SOURCES.contains(costSource) ? costSource : null,
+                    decidedAt));
+            log.info("[Events] claim.decided {} {}: {}", claimId, applied ? "applied" : "already recorded", decision);
+            return ResponseEntity.accepted().body(Map.of("status", applied ? "applied" : "duplicate", "claimId", claimId));
+        } catch (RuntimeException e) {
+            log.error("[Events] claim.decided {} could not be applied; it will be delivered again", claimId, e);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "NOT_APPLIED", "message", "The decision could not be applied; retry later"));
+        }
+    }
+
+    /** The event leaves out free text; the claim holds it. Best effort. */
+    private String notesOf(String claimId) {
+        try {
+            return claimCenter.getClaim(claimId).notes();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static String text(Map<String, Object> data, String key) {
+        Object value = data.get(key);
+        return value == null ? null : value.toString();
+    }
+
+    private static BigDecimal decimal(Map<String, Object> data, String key) {
+        Object value = data.get(key);
+        return value == null ? null : new BigDecimal(value.toString());
+    }
+
     /** Reads the FNOL from the claims system, analyses it and writes the results back onto that claim. */
     void analyse(String claimId) {
         FNOLPayload fnol;
@@ -141,8 +222,8 @@ class ClaimEventController {
         } catch (RuntimeException e) {
             log.error("[Events] FNOL for {} could not be read from the claims system; the event will not be retried "
                     + "by the engine: {}", claimId, e.getMessage());
-            flagForAdjuster(claimId, "AI analysis could not start: the loss report could not be read. Handle this claim "
-                    + "manually.");
+            flagForAdjuster(claimId, "HUMAN_REVIEW", "AI analysis could not start: the loss report could not be read. "
+                    + "Handle this claim manually.");
             return;
         }
         String policy = fnol.policyNumber();
@@ -151,7 +232,7 @@ class ClaimEventController {
             Optional<String> original = duplicates.record(fnol);
             failedIntakes.record(claimId, fnol, "HUMAN_REVIEW", "DUPLICATE_FNOL",
                     "Possible duplicate of " + original.orElse("a claim still being processed"));
-            flagForAdjuster(claimId, "Possible duplicate: the same policy, loss date and state were already reported"
+            flagForAdjuster(claimId, "HUMAN_REVIEW", "Possible duplicate: the same policy, loss date and state were already reported"
                     + original.map(id -> " as " + id).orElse("") + ". Verify before any action.");
             return;
         }
@@ -162,13 +243,27 @@ class ClaimEventController {
             idempotency.release(policy, date.toString(), fnol.state());
             String[] outcome = classify(e);
             failedIntakes.record(claimId, fnol, outcome[0], outcome[1], outcome[2]);
-            flagForAdjuster(claimId, "AI analysis could not complete (" + outcome[1] + "): " + outcome[2]
+            flagForAdjuster(claimId, outcome[0], "AI analysis could not complete (" + outcome[1] + "): " + outcome[2]
                     + ". Handle this claim manually.");
             return;
         }
-        claims.save(ClaimEntity.from(response, fnol));
-        auditService.append(claimId, response.branchB().audit(), AuditService.SYSTEM_ACTOR);
-        evidence.store(claimId, fnol);
+        try {
+            claims.save(ClaimEntity.from(response, fnol));
+            auditService.append(claimId, response.branchB().audit(), AuditService.SYSTEM_ACTOR);
+            evidence.store(claimId, fnol);
+        } catch (RuntimeException e) {
+            log.error("[Events] The analysis of {} finished but could not be saved", claimId, e);
+            flagForAdjuster(claimId, "HUMAN_REVIEW", "The AI analysis finished but could not be saved. Handle this "
+                    + "claim manually.");
+            return;
+        }
+        // Only now does the claim leave Awaiting AI Analysis: its record is complete. If this fails the claim stays
+        // listed there, showing its real status, and can be opened and decided.
+        try {
+            claimCenter.patchClaim(claimId, new ClaimPatch(null, null, null, response.status()));
+        } catch (RuntimeException e) {
+            log.error("[Events] Claim {} analysed, but its work queue could not be set: {}", claimId, e.getMessage());
+        }
         log.info("[Events] Claim {} analysed and written back: status={}, flags={}", claimId, response.status(),
                 response.gateFlags());
     }
@@ -194,9 +289,9 @@ class ClaimEventController {
     }
 
     /** The claim stays in review with an activity telling the adjuster what happened. Best effort. */
-    private void flagForAdjuster(String claimId, String what) {
+    private void flagForAdjuster(String claimId, String workQueue, String what) {
         try {
-            claimCenter.patchClaim(claimId, new ClaimPatch(IN_REVIEW, null, null));
+            claimCenter.patchClaim(claimId, new ClaimPatch(IN_REVIEW, null, null, workQueue));
             claimCenter.addActivity(claimId, new CcActivity(null, "Review needed: AI analysis did not complete", what,
                     "high", LocalDate.now().plusDays(1), null, null, null));
         } catch (RuntimeException e) {

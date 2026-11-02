@@ -56,7 +56,21 @@ All errors use this body (`claimId` is present only when a failed intake was sav
 ---
 
 ## `GET /api/v1/health`
-`200 {"status":"UP"}`
+`200 {"status":"UP","intake":"CLAIMS_SYSTEM"}`. `intake` is `CLAIMS_SYSTEM` (losses are filed there and analysed from
+its event) or `DIRECT` (no event secret set).
+
+## `POST /api/v1/fnol/report` (token)
+
+Reports a loss: agent phone intake and partner channels. Takes the intake payload, and answers at once:
+`200 {"claimId":"CLM-2026-000061","status":"SUBMITTED"}`. The analysis follows in the background. In `DIRECT` mode it runs
+the direct intake and answers with that claim's status.
+
+Errors: `400 VALIDATION_ERROR` (nothing filed), `409 DUPLICATE_FNOL`, `503 CLAIMS_SYSTEM_UNAVAILABLE` (nothing filed).
+
+## `POST /api/v1/events/claimcenter` (signature)
+
+Receives claims-system events. No adjuster token: `X-Claims-Signature: sha256=<hex HMAC-SHA256 of the body>`. Event format
+and answers: [guidewire-integration.md](guidewire-integration.md#the-claims-system-contract).
 
 ## `POST /api/v1/fnol/intake` (token)
 
@@ -157,8 +171,10 @@ Response `200` (abridged):
 The portal (`frontend/portal`, port 5174) is a separate build from the adjuster workspace and never carries the
 adjuster token.
 
-- `POST /api/v1/portal/claims` with the intake payload (`channel` is ignored and set to `WEB`). Runs the same intake
-  as `POST /fnol/intake` (same validation, duplicate check and error codes) but returns only a receipt:
+- `POST /api/v1/portal/claims` with the intake payload (`channel` is ignored and set to `WEB`). In `CLAIMS_SYSTEM` mode
+  it files the loss there and answers at once with stage `RECEIVED`, no dates and no letter yet, which arrive within
+  seconds through tracking; `503 CLAIMS_SYSTEM_UNAVAILABLE` if nothing could be filed. In `DIRECT` mode it runs the same
+  intake as `POST /fnol/intake`. Either way the claimant gets only a receipt:
 
 ```json
 {
@@ -171,8 +187,9 @@ adjuster token.
 
 - `GET /api/v1/portal/claims/{claimId}?policyNumber=POL-AUTO-112233`: the same view. The policy number must match
   (case and surrounding spaces ignored); a wrong policy number and an unknown claim give the same `404 NOT_FOUND`.
-- `stage`: `IN_REVIEW` (also used for an investigation, in neutral words), `ACTION_NEEDED` (open photo request or
-  `NEEDS_MORE_INFO`), `ACCEPTED`, `DECIDED`, `CLOSED`, `SPECIALIST` (REJ- claims). `letter` is the acknowledgement
+- `stage`: `RECEIVED` (filed, analysis not finished), `IN_REVIEW` (also used for an investigation, in neutral words),
+  `ACTION_NEEDED` (open photo request or `NEEDS_MORE_INFO`), `ACCEPTED`, `DECIDED`, `CLOSED`, `SPECIALIST` (REJ- claims,
+  or a filed claim whose analysis failed). `letter` is the acknowledgement
   letter stored in ClaimCenter, `null` if ClaimCenter is unavailable.
 
 ## `GET /api/v1/fnol/status/{claimId}` (token)
@@ -298,15 +315,22 @@ Response `200`:
   "adjustedReserve": 6100, "overrideReason": "Body shop estimate is higher than the photo estimate" }
 ```
 
+In `CLAIMS_SYSTEM` mode the decision is recorded in the claims system first: `503 CLAIMS_SYSTEM_UNAVAILABLE` if it cannot
+be reached, with nothing recorded anywhere, and `409 INVALID_STATE` if it refuses (a denied or closed claim).
+
 ## `GET /api/v1/fnol/queue?status=HUMAN_REVIEW&page=0&size=20` (token)
-Claims in the given statuses (comma-separated, default `HUMAN_REVIEW`), oldest first. `size` 1–100.
+Claims in the given statuses (comma-separated, default `HUMAN_REVIEW`), oldest first. `size` 1–100. `ANALYSIS_PENDING`
+lists claims filed but not analysed yet.
+
+`source` says where it came from: `CLAIMS_SYSTEM`; `CLAIMS_SYSTEM_UNAVAILABLE` (the engine's records, possibly behind, and
+without claims awaiting analysis); `ENGINE` (direct mode).
 
 ```json
 {
   "items": [ { "claimId": "REJ-3433000d", "status": "BLOCKED_COMPLIANCE", "policyNumber": "POL-AUTO-112233",
                "reserve": 0, "severityGate": null, "inputFlags": null, "gateFlags": null,
                "failureReason": "Medical Record Number (MRN) detected. Compliance violation.", "createdAt": "…" } ],
-  "page": 0, "size": 20, "totalElements": 1, "totalPages": 1
+  "page": 0, "size": 20, "totalElements": 1, "totalPages": 1, "source": "CLAIMS_SYSTEM"
 }
 ```
 
@@ -321,5 +345,6 @@ Claims in the given statuses (comma-separated, default `HUMAN_REVIEW`), oldest f
 | GET | `/pc/policies/{policyNumber}/history` | Prior claims |
 | POST | `/cc/claims` | Creates `CLM-2026-NNNNNN`, continuing after the highest stored claim (at least `MOCK_CC_START_SEQUENCE`, default 1) with `initialStatus` (default `OPEN`); delayed 11 s when `MOCK_GW_TIMEOUT=true` |
 | GET | `/cc/claims/{claimId}` | Claim with `notes`, `attachments` and `reviewActions` |
-| PUT | `/cc/claims/{claimId}` | `{ "status", "notes", "action", "adjusterId", "adjustedReserve" }`; applies the status and reserve and appends a review action |
+| PUT | `/cc/claims/{claimId}` | `{ "status", "notes", "action", "adjusterId", "adjustedReserve", "workQueue", "overrideReason", "confirmedDamageType", "finalRepairCost", "repairCostSource" }`; applies the status and reserve and appends a review action. An adjuster decision also queues `claim.decided`; a denied or closed claim refuses another status (409) |
+| POST, GET, PATCH | `/cc/rest/claim/v1/claims…` | Report, submit, read the report, patch, list work queues, events: [guidewire-integration.md](guidewire-integration.md#the-claims-system-contract) |
 | POST | `/cc/claims/{claimId}/attachments` | `{ "name", "contentType", "body" }` → `201` |

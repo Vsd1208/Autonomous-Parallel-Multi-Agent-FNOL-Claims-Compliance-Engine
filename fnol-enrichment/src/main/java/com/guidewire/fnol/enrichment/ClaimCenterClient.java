@@ -2,6 +2,8 @@ package com.guidewire.fnol.enrichment;
 
 import com.guidewire.fnol.common.Models.*;
 
+import java.util.Collection;
+
 public interface ClaimCenterClient {
 
     ClaimCreateResponse createClaim(ClaimCreateRequest request);
@@ -33,6 +35,16 @@ public interface ClaimCenterClient {
     /** Records the AI's routing, estimate and recommended reserve on a claim the claims system already holds. */
     default void patchClaim(String claimId, ClaimPatch patch) {
         throw new UnsupportedOperationException("patchClaim is not supported by this ClaimCenter client");
+    }
+
+    /** Records an adjuster decision on the claim and returns the claim, with the decision's time on its review actions. */
+    default Claim recordDecision(String claimId, ClaimUpdateRequest decision) {
+        throw new UnsupportedOperationException("recordDecision is not supported by this ClaimCenter client");
+    }
+
+    /** A page of the claims in these adjuster work queues, oldest first. */
+    default ClaimQueuePage listWorkQueues(Collection<String> workQueues, int page, int size) {
+        throw new UnsupportedOperationException("listWorkQueues is not supported by this ClaimCenter client");
     }
 
     /**

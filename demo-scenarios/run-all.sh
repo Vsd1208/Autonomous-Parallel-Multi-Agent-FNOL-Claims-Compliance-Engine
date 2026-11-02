@@ -11,6 +11,9 @@
 #                  analyses it in the background and writes the results back. The script waits for the analysis,
 #                  then checks the same outcomes. A failed analysis is not an HTTP error here: the claim is filed
 #                  and stays in review ("expectedEventClaimStatus"), and the claims system's claim is checked too.
+#                  Then the claims system's side of decisions: the queue is read from it; a decision through the
+#                  workspace reaches it; a finished claim refuses another; a decision made directly in it reaches the
+#                  engine's feedback loop.
 #
 # Each scenario gets a fresh random incident date 1-28 days ago (a scenario can set its own range with
 # "daysAgoMin" / "daysAgoMax"), so the script can be re-run without tripping the duplicate check (a
@@ -128,13 +131,18 @@ run_claims_system() {
     check "$name" "filed status" "SUBMITTED" "$(json_string "$BODY" status)"
     id=$(json_string "$BODY" claimId)
     [[ -z "$id" ]] && continue
+    case "$name" in
+      scenario_1_*) DECIDE_IN_WORKSPACE="$id" ;;
+      scenario_2_*) DECIDE_IN_CLAIMS_SYSTEM="$id" ;;
+    esac
 
     row=""
     for i in $(seq 1 80); do   # up to 40 s: the analysis deadline is 10 s
-      row=$(api_get "/api/v1/fnol/status/$id") && [[ -n "$row" ]] && break
+      row=$(api_get "/api/v1/fnol/status/$id")
+      [[ -n "$row" && "$(json_string "$row" status)" != "ANALYSIS_PENDING" ]] && break
       sleep 0.5
     done
-    if [[ -z "$row" ]]; then
+    if [[ -z "$row" || "$(json_string "$row" status)" == "ANALYSIS_PENDING" ]]; then
       FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] no analysis for $id after 40 s"; continue
     fi
 
@@ -157,6 +165,40 @@ run_claims_system() {
 
     check_duplicate "$name" "$file" /api/v1/fnol/report
   done
+  check_decisions
+}
+
+# The claims system owns the queue and the decision; the engine follows.
+check_decisions() {
+  local fb i code
+  echo "== decisions (claims system)"
+  check "decisions" "queue source" "CLAIMS_SYSTEM" \
+    "$(json_string "$(api_get "/api/v1/fnol/queue?status=HUMAN_REVIEW&size=1")" source)"
+
+  if [[ -n "${DECIDE_IN_WORKSPACE:-}" ]]; then
+    post '{"decision":"APPROVED_BY_ADJUSTER","adjusterId":"ADJ-DEMO","notes":"Demo approval"}' \
+      "/api/v1/fnol/$DECIDE_IN_WORKSPACE/review"
+    check "decisions" "workspace decision HTTP status" "200" "$HTTP_CODE"
+    check "decisions" "claims system status after it" "OPEN" \
+      "$(json_string "$(curl -s --max-time 5 "$CC_URL/cc/claims/$DECIDE_IN_WORKSPACE")" status)"
+    post '{"decision":"REJECTED_BY_ADJUSTER","adjusterId":"ADJ-DEMO"}' "/api/v1/fnol/$DECIDE_IN_WORKSPACE/review"
+    check "decisions" "second decision HTTP status" "409" "$HTTP_CODE"
+  fi
+
+  if [[ -n "${DECIDE_IN_CLAIMS_SYSTEM:-}" ]]; then
+    code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X PUT "$CC_URL/cc/claims/$DECIDE_IN_CLAIMS_SYSTEM" \
+      -H "Content-Type: application/json" \
+      -d '{"status":"DENIED","notes":"Not covered","action":"REJECTED_BY_ADJUSTER","adjusterId":"ADJ-IN-CLAIMS-SYSTEM"}')
+    check "decisions" "decision in the claims system HTTP status" "200" "$code"
+    fb=""
+    for i in $(seq 1 40); do   # up to 20 s: its claim.decided event is delivered within a second or so
+      fb=$(api_get "/api/v1/ai/feedback" | grep -oE "\"claimId\":\"$DECIDE_IN_CLAIMS_SYSTEM\"")
+      [[ -n "$fb" ]] && break
+      sleep 0.5
+    done
+    if [[ -n "$fb" ]]; then PASSES=$((PASSES + 1));
+    else FAILURES=$((FAILURES + 1)); echo "  FAIL [decisions] feedback loop did not follow the claims system's decision"; fi
+  fi
 }
 
 if ! curl -s --max-time 5 "$API_URL/api/v1/health" | grep -q UP; then

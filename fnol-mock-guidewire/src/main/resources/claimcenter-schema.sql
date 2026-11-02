@@ -98,3 +98,19 @@ CREATE TABLE IF NOT EXISTS claimcenter.events (
     last_error       VARCHAR(500)
 );
 CREATE INDEX IF NOT EXISTS idx_cc_events_pending ON claimcenter.events (delivered_at, next_attempt_at);
+
+-- The adjuster work queue a claim sits in (an extension field on the claim). Claims from before it existed get one from
+-- their status; a draft waiting for a person goes to human review, the cautious queue.
+ALTER TABLE claimcenter.claims ADD COLUMN IF NOT EXISTS work_queue VARCHAR(40);
+UPDATE claimcenter.claims SET work_queue = CASE status
+        WHEN 'SUBMITTED' THEN 'ANALYSIS_PENDING'
+        WHEN 'DRAFT_PENDING_REVIEW' THEN 'HUMAN_REVIEW'
+        WHEN 'PENDING_INFORMATION' THEN 'NEEDS_MORE_INFO'
+        WHEN 'PENDING_INSPECTION' THEN 'INSPECTION_ASSIGNED'
+        WHEN 'UNDER_INVESTIGATION' THEN 'INVESTIGATION_REQUIRED'
+        WHEN 'OPEN' THEN 'APPROVED_BY_ADJUSTER'
+        WHEN 'DENIED' THEN 'REJECTED_BY_ADJUSTER'
+        WHEN 'CLOSED' THEN 'CLOSED'
+    END
+    WHERE work_queue IS NULL AND status <> 'DRAFT';
+CREATE INDEX IF NOT EXISTS idx_cc_claims_work_queue ON claimcenter.claims (work_queue, created_at);

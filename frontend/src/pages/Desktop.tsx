@@ -21,6 +21,11 @@ const VIEWS: Record<string, { label: string; statuses: string[]; hint: string }>
     statuses: ['PENDING_ADVISORY_REVIEW'],
     hint: 'STP-eligible claims waiting for an adjuster to confirm the AI advisory.',
   },
+  analysing: {
+    label: 'Awaiting AI Analysis',
+    statuses: ['ANALYSIS_PENDING'],
+    hint: 'Filed in the claims system; the AI analysis is running. A claim should stay here only for seconds.',
+  },
   inspection: {
     label: 'Awaiting Inspection',
     statuses: ['INSPECTION_ASSIGNED'],
@@ -87,6 +92,12 @@ export default function Desktop() {
     <Workspace sidebar={sidebar}>
       <PageTitle title={`Desktop: ${current.label}`} subtitle={current.hint} />
       {error && <MessageBar tone="error" title="The queue could not be loaded">{error}</MessageBar>}
+      {data?.source === 'CLAIMS_SYSTEM_UNAVAILABLE' && (
+        <MessageBar tone="warning" title="The claims system cannot be reached">
+          This queue comes from the AI engine's records and may be behind, and claims still awaiting analysis are not
+          shown. Decisions cannot be recorded until the claims system is back.
+        </MessageBar>
+      )}
       <Panel
         title={`Claims (${data ? data.totalElements : '…'})`}
         flush

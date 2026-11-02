@@ -95,3 +95,16 @@
   - A duplicate submission is refused (409) and flags and audits the original claim (`DUPLICATE_SUBMISSION`); an original filed straight through goes back to `HUMAN_REVIEW`.
 - **Deliberate differences from the diagram**: the branches run as `FutureTask`s on a bounded executor rather than `CompletableFuture`, because `CompletableFuture.cancel` cannot interrupt a stuck branch (ADR-007). The adjuster console is React, standing in for Guidewire Jutro, which is proprietary. Human Review Point 1 is automated flagging that routes the claim to an adjuster rather than a separate manual step before processing.
 - **Consequences**: Each of the 23 diagram components maps to code and tests (`docs/diagram-traceability.md`).
+
+---
+
+## ADR-012: The Engine Is an Extension of the Claims System
+- **Status**: Accepted
+- **Context**: The engine used to take the FNOL, analyse it, create the claim and hold the decision, with ClaimCenter told afterwards. That makes it a second system of record beside the one an insurer already runs, and raises the obvious question of why it is not part of ClaimCenter.
+- **Decision**: The claims system owns the claim, the work queue and the decision. Losses are filed there first; its signed events (`claim.submitted`, `claim.decided`, from a transactional outbox, delivered at least once) drive the engine, which writes results back onto the claim and keeps only an analysis and audit record. A decision is recorded in the claims system first, and the engine counts it once using the claims system's time. A claim reaches a work queue only after its analysis record is saved.
+- **Alternatives**: Keeping the engine as the entry point, with sync afterwards: the two can disagree, and a decision made in ClaimCenter would never reach the feedback loop. Gosu rules and message transports inside ClaimCenter: Guidewire's public material steers integration logic out of the core, and such code could not be compiled here.
+- **Consequences**:
+  - A claims-system outage now stops decisions (503, nothing recorded) rather than recording them for a later sync. The two can never disagree about a decision, at the cost of availability.
+  - An engine outage no longer stops intake: claims are filed and analysed when it returns.
+  - The direct intake remains for partner channels and when no event secret is set, so two paths must be kept working; `run-all.sh` checks both.
+  - The modelling has limits, chiefly that a submitted claim is open on real ClaimCenter, so "draft until a person decides" cannot carry over literally ([guidewire-integration.md](guidewire-integration.md)).

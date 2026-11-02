@@ -22,6 +22,8 @@ import org.springframework.http.*;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.math.BigDecimal;
@@ -58,6 +60,14 @@ public class FNOLController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setClaimsSystemIntake(ClaimsSystemIntake claimsSystemIntake) {
         this.claimsSystemIntake = claimsSystemIntake;
+    }
+
+    /** Applies decisions recorded in the claims system to the analysis record; optional for the same reason. */
+    private ClaimDecisionRecorder decisions;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setDecisions(ClaimDecisionRecorder decisions) {
+        this.decisions = decisions;
     }
 
     /** True when new losses go to the claims system first and the analysis follows its event. */
@@ -219,9 +229,21 @@ public class FNOLController {
     // ── Claim Status ─────────────────────────────────────────────────────────
     @GetMapping("/fnol/status/{claimId}")
     ResponseEntity<?> status(@PathVariable("claimId") String claimId) {
-        return claims.findById(claimId)
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        Optional<ClaimEntity> record = claims.findById(claimId);
+        if (record.isEmpty()) {
+            record = reportsToClaimsSystem() ? claimsSystemIntake.recordOf(claimId) : Optional.empty();
+        } else if (reportsToClaimsSystem() && !claimId.startsWith("REJ-")) {
+            // The claims system owns the claim's place: a decision made there shows before its event has arrived.
+            try {
+                String queue = claimCenter.getClaim(claimId).workQueue();
+                if (queue != null && !ClaimsSystemIntake.ANALYSIS_PENDING.equals(queue)) {
+                    record.get().status = queue;   // for this answer only: the record is not saved here
+                }
+            } catch (RuntimeException e) {
+                log.warn("[FNOL] Claims system unavailable; showing the stored status of {}: {}", claimId, e.getMessage());
+            }
+        }
+        return record.<ResponseEntity<?>>map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     // ── Full AI analysis (any adjuster's browser) ─────────────────────────────
@@ -246,11 +268,13 @@ public class FNOLController {
      */
     @GetMapping("/fnol/{claimId}/claimcenter")
     ResponseEntity<?> claimCenterView(@PathVariable("claimId") String claimId) {
-        if (!claims.existsById(claimId)) {
+        if (!reportsToClaimsSystem() && !claims.existsById(claimId)) {
             return ResponseEntity.notFound().build();
         }
         try {
             return ResponseEntity.ok(claimCenter.getClaim(claimId));
+        } catch (HttpClientErrorException.NotFound e) {
+            return ResponseEntity.notFound().build();
         } catch (RuntimeException e) {
             log.warn("[FNOL] ClaimCenter view failed for claimId={}: {}", claimId, e.getMessage());
             return ResponseEntity.status(502).body(Map.of("error", "CLAIMCENTER_UNAVAILABLE",
@@ -337,9 +361,44 @@ public class FNOLController {
         if (statuses.isEmpty() || page < 0 || size < 1 || size > 100) {
             throw new IllegalArgumentException("status must be non-empty, page >= 0 and size between 1 and 100");
         }
+        String source = QueuePage.ENGINE;
+        if (reportsToClaimsSystem()) {
+            try {
+                return queueFromClaimsSystem(statuses, page, size);
+            } catch (RuntimeException e) {
+                log.warn("[FNOL] Claims system unavailable; showing the queue from the analysis records: {}", e.getMessage());
+                source = QueuePage.CLAIMS_SYSTEM_UNAVAILABLE;
+            }
+        }
         Page<ClaimEntity> result = claims.findByStatusInOrderByCreatedAtAsc(statuses, PageRequest.of(page, size));
         return new QueuePage(result.getContent().stream().map(QueueItem::of).toList(),
-                page, size, result.getTotalElements(), result.getTotalPages());
+                page, size, result.getTotalElements(), result.getTotalPages(), source);
+    }
+
+    /**
+     * The queue as the claims system holds it, with the AI's severity, flags and failure reason from the analysis
+     * record. Includes claims with no analysis yet. Failed direct intakes (REJ-...), which the claims system never
+     * held, follow its claims, so no claim disappears from a queue.
+     */
+    private QueuePage queueFromClaimsSystem(Set<String> statuses, int page, int size) {
+        ClaimQueuePage filed = claimCenter.listWorkQueues(statuses, page, size);
+        Map<String, ClaimEntity> analysed = new HashMap<>();
+        claims.findAllById(filed.items().stream().map(ClaimQueueEntry::claimId).toList())
+                .forEach(c -> analysed.put(c.claimId, c));
+        List<QueueItem> items = new ArrayList<>();
+        for (ClaimQueueEntry e : filed.items()) {
+            ClaimEntity c = analysed.get(e.claimId());
+            // Analysed, but the claims system's queue was not updated: the record knows where it really stands.
+            String status = c != null && ClaimsSystemIntake.ANALYSIS_PENDING.equals(e.workQueue()) ? c.status : e.workQueue();
+            items.add(new QueueItem(e.claimId(), status, e.policyNumber(), e.reserve(),
+                    c == null ? null : c.severityGate, c == null ? null : c.inputFlags,
+                    c == null ? null : c.gateFlags, c == null ? null : c.failureReason, e.createdAt()));
+        }
+        List<ClaimEntity> unfiled = claims.findByStatusInAndClaimIdStartingWithOrderByCreatedAtAsc(statuses, "REJ-");
+        long skip = Math.max(0, (long) page * size - filed.total());
+        unfiled.stream().skip(skip).limit(size - items.size()).map(QueueItem::of).forEach(items::add);
+        long total = filed.total() + unfiled.size();
+        return new QueuePage(items, page, size, total, (int) Math.ceil((double) total / size), QueuePage.CLAIMS_SYSTEM);
     }
 
     // ── Evidence documents ────────────────────────────────────────────────────
@@ -421,6 +480,9 @@ public class FNOLController {
                 && (request.overrideReason() == null || request.overrideReason().isBlank())) {
             throw new IllegalArgumentException("overrideReason is required when adjustedReserve is set");
         }
+        if (reportsToClaimsSystem() && !claimId.startsWith("REJ-")) {
+            return reviewInClaimsSystem(claimId, decision, costSource, request);
+        }
         ClaimEntity claim = claims.findById(claimId).orElse(null);
         if (claim == null) {
             return ResponseEntity.notFound().build();
@@ -464,6 +526,45 @@ public class FNOLController {
                 updated.overrideReason
         ));
     }
+
+    /**
+     * The decision is recorded in the claims system first, which owns the claim and announces it (claim.decided). Only
+     * then does the analysis record follow. If the claims system cannot take it, nothing is recorded anywhere and the
+     * adjuster is told to try again, so the two can never disagree about a decision.
+     */
+    private ResponseEntity<?> reviewInClaimsSystem(String claimId, String decision, String costSource,
+                                                   AdjusterReviewRequest request) {
+        ClaimEntity claim = claims.findById(claimId).or(() -> claimsSystemIntake.recordOf(claimId)).orElse(null);
+        if (claim == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!REVIEWABLE_STATUSES.contains(claim.status)) {
+            throw new InvalidStateException("Claim " + claimId + " is in status " + claim.status
+                    + "; a decision can only be recorded for " + String.join(", ", new TreeSet<>(REVIEWABLE_STATUSES)));
+        }
+        claimsSystemIntake.saveForDecision(claim);
+        Claim recorded;
+        try {
+            recorded = claimCenter.recordDecision(claimId, new ClaimUpdateRequest(CLAIMCENTER_STATUS.get(decision),
+                    request.notes(), decision, request.adjusterId(), request.adjustedReserve(), decision,
+                    request.overrideReason(), request.confirmedDamageType(), request.finalRepairCost(), costSource));
+        } catch (HttpClientErrorException.Conflict | HttpClientErrorException.NotFound e) {
+            throw new InvalidStateException("The claims system refused this decision on claim " + claimId
+                    + "; refresh the claim to see where it stands");
+        } catch (ResourceAccessException | HttpServerErrorException e) {
+            log.error("[FNOL] Decision on {} not recorded: the claims system could not be reached: {}", claimId, e.getMessage());
+            throw new ClaimsSystemUnavailableException();
+        }
+        List<ClaimReviewAction> actions = recorded.reviewActions();
+        Instant decidedAt = actions == null || actions.isEmpty() ? Instant.now() : actions.get(actions.size() - 1).at();
+        decisions.apply(new ClaimDecisionRecorder.Decision(claimId, decision, request.adjusterId(), request.notes(),
+                request.adjustedReserve(), request.overrideReason(), request.confirmedDamageType(),
+                request.finalRepairCost(), costSource, decidedAt));
+        ClaimEntity updated = claims.findById(claimId).orElseThrow();
+        return ResponseEntity.ok(new AdjusterReviewResponse(updated.claimId, updated.status, updated.adjusterDecision,
+                updated.adjusterId, updated.adjusterNotes, updated.reviewedAt, updated.adjusterReserve,
+                updated.overrideReason));
+    }
 }
 
 /** Adjuster queue entry (GET /api/v1/fnol/queue). */
@@ -475,7 +576,14 @@ record QueueItem(String claimId, String status, String policyNumber, java.math.B
     }
 }
 
-record QueuePage(List<QueueItem> items, int page, int size, long totalElements, int totalPages) {}
+record QueuePage(List<QueueItem> items, int page, int size, long totalElements, int totalPages, String source) {
+    /** Read from the claims system. */
+    static final String CLAIMS_SYSTEM = "CLAIMS_SYSTEM";
+    /** Claims-system mode, but it could not be reached: the engine's analysis records, possibly behind. */
+    static final String CLAIMS_SYSTEM_UNAVAILABLE = "CLAIMS_SYSTEM_UNAVAILABLE";
+    /** Direct intake: the engine's own records. */
+    static final String ENGINE = "ENGINE";
+}
 
 class DuplicateFNOLException extends RuntimeException {
     public DuplicateFNOLException(String message) { super(message); }

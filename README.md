@@ -10,24 +10,33 @@ mostly by hand and under time pressure.
 **Solution.** This engine takes the FNOL, then runs an operational branch (photo damage assessment with Google Gemini,
 checked by an on-premise vision model trained here that also takes over when Gemini is unavailable; a sourced
 repair-cost range; coverage; reserve) and a legal branch (PII redaction, a cited state claim clock,
-subrogation) in parallel under one deadline. A reconciliation gate cross-checks the two, explains its recommendation in
-a six-factor WHY panel and files a draft claim in (mock) Guidewire ClaimCenter. A licensed adjuster makes every
-decision, and every step is written to a tamper-evident audit chain.
+subrogation) in parallel under one deadline. A reconciliation gate cross-checks the two and explains its recommendation
+in a six-factor WHY panel. A licensed adjuster makes every decision, and every step is written to a tamper-evident audit
+chain.
+
+**It works as an extension of the claims system, not beside it.** ClaimCenter (mocked here) owns the claim, the work
+queue and the decision. A signed event wakes the engine, which writes its results back onto that claim; a decision made
+anywhere reaches its feedback loop. How this maps to App Events, Integration Gateway and the Cloud API, and where a real
+tenant would differ: [docs/guidewire-integration.md](docs/guidewire-integration.md) (modelled from public documentation,
+not verified against a tenant).
 
 ```mermaid
 flowchart LR
-    P["Policyholder portal<br/>(report, track, add photos)"] --> I
-    W["Adjuster workspace<br/>(phone / agent intake)"] --> I
-    I["Intake API<br/>guardrails + intake flags"] --> E["Enrichment<br/>policy, claim history<br/>(mock PolicyCenter)"]
+    P["Policyholder portal<br/>(report, track, add photos)"] --> CS
+    W["Adjuster workspace<br/>(phone / agent intake)"] --> CS
+    CS["Claims system (mock ClaimCenter)<br/>owns the claim, queue and decision"] -- "signed claim.submitted" --> I
+    I["AI engine<br/>guardrails + intake flags"] --> E["Enrichment<br/>policy, claim history<br/>(mock PolicyCenter)"]
     E --> A["Branch A: operational<br/>Gemini vision + on-premise model<br/>trust score, repair-cost range,<br/>coverage, reserve"]
     E --> B["Branch B: legal<br/>PII redaction, claim clock,<br/>subrogation, attorney check"]
     A --> G["Reconciliation gate<br/>consistency flags, WHY panel"]
     B --> G
-    G --> C["Draft claim in<br/>mock ClaimCenter"]
-    G --> Q["Adjuster queue"]
+    G -- "results written back<br/>onto the claim" --> CS
+    CS --> Q["Adjuster queue"]
     Q --> D["Adjuster decision<br/>(approve, deny, more photos,<br/>inspection, investigate)"]
+    D --> CS
+    CS -- "signed claim.decided" --> F["Analysis record,<br/>feedback loop"]
     G -.-> L["SHA-256 audit chain"]
-    D -.-> L
+    F -.-> L
 ```
 
 ### What is real and what is simulated
@@ -44,7 +53,8 @@ flowchart LR
 | PII redaction in text | **Real**, rule-based | Personal data must not reach models or logs | `PiiRedactionAgent.java`, `PIIGuardrail.java` |
 | State claim clock (CA, NY, TX, FL, IL) | **Real citations**; a prototype not reviewed by a lawyer; 3 recovery limits unverified | Deadlines are what regulators examine | `claim-regulations.json`, `CitedDeadlineRuleProvider.java`, [docs/legal-compliance.md](docs/legal-compliance.md) |
 | Coverage rules, subrogation weights | **Simulated** (synthetic prototype values) | No insurer's real rules are available | `SyntheticCoverageRuleProvider.java`, `DeterministicSubrogationScorer.java` |
-| PolicyCenter and ClaimCenter | **Simulated**: a mock service over HTTP, modelled on but not verified against Guidewire's Cloud API | Students have no Guidewire Cloud tenant | `fnol-mock-guidewire/`, [docs/guidewire-integration.md](docs/guidewire-integration.md) |
+| Event-driven extension (signed events from a transactional outbox, retries, write-back, decisions first in the claims system) | **Real code, tested and run**, against the mock claims system | How an AI engine should sit on a core system | `ClaimEventController.java`, `ClaimDecisionRecorder.java`, `ClaimEventOutbox.java` |
+| PolicyCenter and ClaimCenter | **Simulated**: a mock service over HTTP, modelled on public Guidewire documentation but not verified against a tenant | Students have no Guidewire Cloud tenant | `fnol-mock-guidewire/`, [docs/guidewire-integration.md](docs/guidewire-integration.md) |
 | Policies, claimants, claim history | **Simulated** seed data | No real customer data | `fnol-mock-guidewire/` |
 | Claim photos | **Real** public-domain photos (NHTSA crash tests, FEMA, CC0) | Realistic input without privacy issues | `demo-scenarios/sample-images/`, [CREDITS.md](CREDITS.md) |
 | Fraud signals | **Real** rules (duplicates, reused photos, claim frequency, early-policy losses, amount above estimate) applied to simulated data | Common fraud patterns an adjuster checks | `IntakeReviewService.java`, `GateConsistencyChecker.java`, `EvidenceStore.java` |
@@ -64,7 +74,7 @@ All from small public datasets, not real claims. Every number, with its run, dat
 | Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated (median 2.7x the published range midpoint, see [metrics §8](docs/metrics.md#8-repair-cost-estimates)) | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
 | Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
 | Our own on-premise vision model: damaged area right, strict / lenient | **78% / 87%** out-of-fold on 734 car photos, each reviewed (CLIP alone 65% / 81%); property cause of loss **93%** and property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests, build warnings | 294 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
+| Backend tests, build warnings | 325 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
 
 ### Quick start (no API key needed)
 
@@ -88,7 +98,8 @@ limits](docs/ROADMAP.md).
 
 - AI analyzes, recommends and explains; it never pays.
 - Any failed factor, HIGH severity or intake flag routes the claim to `HUMAN_REVIEW`.
-- Every failed intake (blocked, uncovered, timed out or any processing error) is saved as a `REJ-…` claim and queued for a human instead of being dropped. Duplicate submissions flag the original claim for verification.
+- No claim is dropped. A filed claim whose analysis fails stays in review with a high-priority activity for an adjuster; a failed direct intake is saved as a `REJ-…` claim and queued for a human. Duplicate reports are refused and flag the original claim for verification.
+- A decision is recorded in the claims system first; if it cannot be reached, nothing is recorded anywhere and the adjuster is told.
 - ClaimCenter claims stay drafts (`DRAFT_PENDING_REVIEW`) until a human decides.
 - Every agent step, failure and adjuster decision is recorded in a SHA-256 hash-chained audit trail. Raw PII is never stored or hashed.
 - Coverage rules and subrogation weights are **synthetic prototype values**. The state claim clock cites real regulations ([docs/legal-compliance.md](docs/legal-compliance.md)) but has not been reviewed by a lawyer; Compliance must confirm all rules before production use.
@@ -97,13 +108,14 @@ limits](docs/ROADMAP.md).
 
 ```text
 0. Policyholder portal       report a loss (WEB), track it, add requested photos (separate app, no adjuster access)
-1. FNOL intake               claim, policy, claimant, evidence URIs, channel
+1. Report to claims system   claim number issued, duplicate check, then a signed claim.submitted event to the engine
 2. Input validation (HRP1)   format guardrail + intake review flags
 3. Context enrichment        policy, claim history, frequency risk
 4. Dual-branch analysis      Branch A: damage, coverage, reserve + confidence | Branch B: PII, deadlines, liability
-5. Reconciliation gate       subrogation, guardrails, consistency checks, WHY panel, ClaimCenter draft, audit
+5. Reconciliation gate       subrogation, guardrails, consistency checks, WHY panel, results written onto the claim, audit
 6. Routing                   PENDING_ADVISORY_REVIEW | STRAIGHT_THROUGH_PROCESSING | HUMAN_REVIEW
-7. Human review (HRP2/HRP3)  adjuster queue, modify findings, decision, ClaimCenter update + tracked action, audit
+7. Human review (HRP2/HRP3)  queue from the claims system, modify findings, decision recorded there first
+8. Feedback                  claim.decided event: analysis record, audit chain and feedback loop follow, for a decision made anywhere
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs/diagram-traceability.md](docs/diagram-traceability.md) for how each of the 23 diagram components maps to code, endpoints and tests.
@@ -184,10 +196,12 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/api/v1/health` | Health check |
+| GET | `/api/v1/health` | Health check; `intake` says whether losses go to the claims system (`CLAIMS_SYSTEM`) or the direct path (`DIRECT`) |
+| POST 🔒 | `/api/v1/fnol/report` | Agent phone intake and partner channels: file the loss in the claims system; answers at once with the claim number |
+| POST | `/api/v1/events/claimcenter` | Signed claims-system events (`claim.submitted`, `claim.decided`); HMAC signature, no adjuster token |
 | POST | `/api/v1/portal/claims` | Policyholder reports a loss (channel WEB); returns a receipt without AI findings or reserve |
 | GET | `/api/v1/portal/claims/{claimId}?policyNumber=` | Policyholder tracks a claim: plain-language stage, dates, requested photos, acknowledgement letter |
-| POST 🔒 | `/api/v1/fnol/intake` | Internal intake (phone, agent, API): submit an FNOL and receive the full analysis |
+| POST 🔒 | `/api/v1/fnol/intake` | Direct intake (partner channels): analyse, then create the claim, and receive the full analysis |
 | GET 🔒 | `/api/v1/fnol/status/{claimId}` | Saved claim row (status, decision, flags, failure reason, sync status) |
 | GET 🔒 | `/api/v1/fnol/{claimId}/explanation` | Saved WHY panel |
 | GET 🔒 | `/api/v1/fnol/{claimId}/analysis` | Full AI analysis saved at intake (no description text) |
@@ -204,7 +218,7 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit` | Audit events in chain order + `chainValid` |
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit/pdf` | PDF audit report |
 | POST 🔒 | `/api/v1/fnol/{claimId}/review` | Record an adjuster decision (approve, reject, more info, investigation, close), optionally adjusting the reserve and recording the final repair cost and its evidence (`finalRepairCost`, `repairCostSource`) |
-| GET 🔒 | `/api/v1/fnol/queue?status=HUMAN_REVIEW&page=0&size=20` | Adjuster queue, oldest first |
+| GET 🔒 | `/api/v1/fnol/queue?status=HUMAN_REVIEW&page=0&size=20` | Adjuster queue from the claims system, oldest first; `source` says if it fell back to the engine's records |
 | GET 🔒 | `/api/v1/ai/metrics` | AI governance: routing, flags, leakage, adjuster agreement, repair-cost accuracy, privacy, drift, fairness |
 | GET 🔒 | `/api/v1/ai/feedback` | Each adjuster decision next to the AI's view |
 
@@ -246,7 +260,9 @@ npm run build:portal                           # policyholder portal (dist-porta
 
 ## Demo scenarios
 
-Run with mock vision (`.env.demo`). `run-all.sh` substitutes a fresh incident date per run, 1–28 days ago unless a scenario sets its own range.
+Run with mock vision (`.env.demo`). `run-all.sh` runs every scenario twice and checks the same outcomes: by **direct intake** (expected results below) and **through the claims system** (filed there, analysed from its event, results checked on both sides). A failure is then not an HTTP error: scenario 3 ends as `BLOCKED_COMPLIANCE` and scenario 4 as `HUMAN_REVIEW`, each a filed claim waiting for a person. It finishes with decisions: through the workspace, refused on a finished claim, and made directly in the claims system with the engine following. `INTAKE=direct` or `INTAKE=claims-system` runs one pass.
+
+It substitutes a fresh incident date per run, 1–28 days ago unless a scenario sets its own range. A full run uses up about 12 of those dates on one policy, so after two or three runs the duplicate check refuses further reports and the script says so; `docker compose down -v` resets the demo database.
 
 | # | File | Expected |
 |---|---|---|
@@ -293,6 +309,8 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `GUIDEWIRE_AUTH_BEARER_TOKEN` | empty | Bearer token sent on PolicyCenter / ClaimCenter calls (the mock needs none) |
 | `MOCK_GW_TIMEOUT` | `false` | Mock ClaimCenter create waits 11 s |
 | `MOCK_PC_TIMEOUT` | `false` | Mock PolicyCenter coverages wait 12 s |
+| `CLAIMS_EVENT_SECRET` | local-only default in Compose | Signs claims-system events; set the same value on both services. Empty: the engine refuses events and uses direct intake |
+| `CLAIMS_EVENT_SUBSCRIBERS` | the API, in Compose | Where the claims system delivers its events |
 | `MOCK_CC_START_SEQUENCE` | `1` | Lowest first mock ClaimCenter claim number; numbering otherwise continues after the highest stored claim |
 | `MOCK_CC_DB_URL` | in-memory H2 | Mock ClaimCenter database; Compose uses Postgres (schema `claimcenter`), so its claims survive restarts |
 | `API_HOST_PORT` | `8080` | Host port for the API (use e.g. `8081` if another server already uses 8080) |
@@ -322,9 +340,10 @@ no waiting (in one observed claim with Gemini: operational 3.9 s, legal about 1 
 
 What comes next and why: [docs/ROADMAP.md](docs/ROADMAP.md).
 
-- Guidewire is mocked; `PolicyCenterClient` and `ClaimCenterClient` are the swap point for real clients ([docs/guidewire-integration.md](docs/guidewire-integration.md)).
+- Guidewire is mocked, and the extension design is modelled from public documentation, not verified against a tenant. The largest known difference: a submitted claim is open on real ClaimCenter, so "draft until a person decides" cannot carry over literally. All of it: [docs/guidewire-integration.md](docs/guidewire-integration.md).
+- If the claims system is down during a photo request or inspection step, its work queue for that claim stays out of date (the claim file shows the right status). Decisions are not affected: they stop, with a clear error.
 - The adjuster token is a shared secret embedded in the console bundle — a prototype control, not authentication. `adjusterId` is taken from the request body.
-- Claims with `cc_sync_status=FAILED` are marked for retry, but no retry job exists yet.
+- Claims with `cc_sync_status=FAILED` (direct intake, photo and inspection steps) are marked for retry, but no retry job exists yet.
 - Photos are uploaded in the console as inline data URIs (≤ 5 MB) or referenced by allow-listed URL; there is no separate document store.
 - The branches use `FutureTask`s on a bounded executor rather than `CompletableFuture` (so a stuck branch can be interrupted), and the console is React rather than Guidewire Jutro — see ADR-011.
 - The idempotency guard's in-memory layer is per JVM; run one API instance or move it to the database.

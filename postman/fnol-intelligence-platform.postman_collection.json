@@ -57,6 +57,27 @@
       }
     },
     {
+      "name": "Report a Loss (claims system first)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Adjuster-Token",
+            "value": "{{adjusterToken}}"
+          }
+        ],
+        "url": "http://localhost:8080/api/v1/fnol/report",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"policyNumber\": \"POL-AUTO-112233\", \"incidentDate\": \"2026-08-16\", \"state\": \"CA\", \"description\": \"Rear-ended by other driver. Police report filed.\", \"claimantName\": \"Avery Johnson\", \"claimantDob\": \"01/02/1980\", \"claimantSsn\": \"123-45-6789\", \"evidenceUris\": [\"mock://photo/normal-front-bumper.jpg\"], \"channel\": \"API\"}"
+        }
+      }
+    },
+    {
       "name": "FNOL Intake",
       "request": {
         "method": "POST",

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guidewire.fnol.common.Models.ClaimEvent;
 import com.guidewire.fnol.common.Models.ClaimPatch;
+import com.guidewire.fnol.common.Models.ClaimUpdateRequest;
 import com.guidewire.fnol.common.Models.FNOLPayload;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -13,6 +14,7 @@ import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +29,7 @@ import java.util.UUID;
 class ClaimEventOutbox {
 
     static final String CLAIM_SUBMITTED = "claim.submitted";
+    static final String CLAIM_DECIDED = "claim.decided";
     static final String SOURCE = "claims-system";
     /** Statuses: DRAFT (being reported), SUBMITTED (reported, AI analysis pending), then the extension's routing. */
     static final String DRAFT = "DRAFT";
@@ -76,8 +79,10 @@ class ClaimEventOutbox {
      */
     @Transactional
     boolean submit(String claimId) {
-        int changed = jdbc.update("UPDATE claimcenter.claims SET status = ?, updated_at = ? WHERE claim_id = ? AND status = ?",
-                SUBMITTED, Timestamp.from(Instant.now()), claimId, DRAFT);
+        int changed = jdbc.update("""
+                UPDATE claimcenter.claims SET status = ?, work_queue = ?, updated_at = ?
+                WHERE claim_id = ? AND status = ?""",
+                SUBMITTED, ClaimCenterStore.queueFor(SUBMITTED), Timestamp.from(Instant.now()), claimId, DRAFT);
         if (changed == 0) {
             return false;
         }
@@ -91,8 +96,26 @@ class ClaimEventOutbox {
     boolean patch(String claimId, ClaimPatch p) {
         return jdbc.update("""
                 UPDATE claimcenter.claims SET status = COALESCE(?, status), estimated_damage = COALESCE(?, estimated_damage),
-                    reserve = COALESCE(?, reserve), updated_at = ? WHERE claim_id = ?""",
-                p.status(), p.estimatedDamage(), p.reserve(), Timestamp.from(Instant.now()), claimId) > 0;
+                    reserve = COALESCE(?, reserve), work_queue = COALESCE(?, work_queue), updated_at = ? WHERE claim_id = ?""",
+                p.status(), p.estimatedDamage(), p.reserve(), p.workQueue(), Timestamp.from(Instant.now()), claimId) > 0;
+    }
+
+    /**
+     * Announces an adjuster decision. It carries what the AI's feedback loop needs, but not the free-text notes:
+     * a subscriber that wants them reads them from the claim.
+     */
+    void decided(String claimId, ClaimUpdateRequest r, Instant decidedAt) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("claimId", claimId);
+        data.put("decision", r.action());
+        data.put("adjusterId", r.adjusterId());
+        data.put("decidedAt", decidedAt.toString());
+        data.put("adjustedReserve", r.adjustedReserve());
+        data.put("overrideReason", r.overrideReason());
+        data.put("confirmedDamageType", r.confirmedDamageType());
+        data.put("finalRepairCost", r.finalRepairCost());
+        data.put("repairCostSource", r.repairCostSource());
+        enqueue(CLAIM_DECIDED, claimId, data);
     }
 
     void enqueue(String type, String claimId, Map<String, Object> data) {

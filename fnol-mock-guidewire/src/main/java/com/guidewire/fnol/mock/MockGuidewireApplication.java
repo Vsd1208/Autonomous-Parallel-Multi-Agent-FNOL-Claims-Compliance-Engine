@@ -9,11 +9,14 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -97,11 +100,27 @@ class ClaimCenterController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Synthetic claim not found"));
     }
 
-    /** Applies a status/notes/reserve change and tracks it as a review action. */
+    /**
+     * Applies a status/notes/reserve change and tracks it as a review action. An adjuster decision also announces
+     * claim.decided, in the same transaction, so the AI's feedback loop follows decisions made anywhere. A finished
+     * (denied or closed) claim refuses another status (409); repeating the status it has changes nothing.
+     */
     @PutMapping("/cc/claims/{claimId}")
+    @Transactional
     Claim update(@PathVariable("claimId") String claimId, @RequestBody ClaimUpdateRequest request) {
-        if (!store.update(claimId, request)) {
+        if (store.isFinished(claimId)) {
+            if (request.status() == null || request.status().equals(get(claimId).status())) {
+                return get(claimId);
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This claim is finished: " + get(claimId).status());
+        }
+        // Milliseconds: the time is compared with the subscriber's stored copy, whatever precision that keeps.
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        if (!store.update(claimId, request, now)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Synthetic claim not found");
+        }
+        if (request.action() != null && ClaimCenterStore.DECISIONS.contains(request.action())) {
+            outbox.decided(claimId, request, now);
         }
         return get(claimId);
     }
@@ -156,6 +175,18 @@ class ClaimCenterController {
     ResponseEntity<Map<String, String>> duplicate(DuplicateLossException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "DUPLICATE_FNOL",
                 "message", e.getMessage(), "claimId", e.originalClaimId));
+    }
+
+    /** A work queue: the claims in these queues (comma-separated), oldest first. */
+    @GetMapping("/cc/rest/claim/v1/claims")
+    ClaimQueuePage queue(@RequestParam("workQueue") String workQueue,
+                         @RequestParam(name = "page", defaultValue = "0") int page,
+                         @RequestParam(name = "size", defaultValue = "20") int size) {
+        List<String> queues = Arrays.stream(workQueue.split(",")).map(String::trim).filter(q -> !q.isEmpty()).toList();
+        if (queues.isEmpty() || page < 0 || size < 1 || size > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workQueue, page >= 0 and size 1-100 are required");
+        }
+        return store.queue(queues, page, size);
     }
 
     @PostMapping("/cc/rest/claim/v1/claims/{claimId}/submit")

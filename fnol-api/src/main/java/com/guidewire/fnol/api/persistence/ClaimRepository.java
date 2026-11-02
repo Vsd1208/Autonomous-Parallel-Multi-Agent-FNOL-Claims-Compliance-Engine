@@ -29,6 +29,34 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, String> {
             @Param("state") String state);
 
     /**
+     * Records a decision the claims system holds, unless this one or a later one is already recorded. One conditional
+     * UPDATE, so the same decision arriving twice at the same moment (request and event) is applied once.
+     *
+     * @return 1 if applied, 0 if not
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update ClaimEntity c
+               set c.status = :decision, c.adjusterDecision = :decision, c.adjusterId = :adjusterId,
+                   c.adjusterNotes = :notes, c.reviewedAt = :decidedAt, c.updatedAt = :decidedAt,
+                   c.adjusterReserve = coalesce(:adjustedReserve, c.adjusterReserve),
+                   c.overrideReason = coalesce(:overrideReason, c.overrideReason),
+                   c.ccSyncStatus = 'SYNCED'
+             where c.claimId = :claimId and (c.reviewedAt is null or c.reviewedAt < :decidedAt)
+            """)
+    int applyClaimsSystemDecision(@Param("claimId") String claimId,
+                                  @Param("decision") String decision,
+                                  @Param("adjusterId") String adjusterId,
+                                  @Param("notes") String notes,
+                                  @Param("adjustedReserve") java.math.BigDecimal adjustedReserve,
+                                  @Param("overrideReason") String overrideReason,
+                                  @Param("decidedAt") Instant decidedAt);
+
+    /** Failed direct intakes (REJ-...): the claims system never held them, so its queues cannot list them. */
+    java.util.List<ClaimEntity> findByStatusInAndClaimIdStartingWithOrderByCreatedAtAsc(Collection<String> statuses,
+                                                                                         String prefix);
+
+    /**
      * Records an adjuster decision only if the claim is still in a reviewable status.
      * Done as one conditional UPDATE so two concurrent reviews cannot both record a final decision.
      *

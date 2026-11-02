@@ -161,6 +161,79 @@ class ClaimEventFlowTest {
     }
 
     @Test
+    @DisplayName("A decision announces claim.decided with what the feedback loop needs, no free text, and moves the work queue; other updates announce nothing")
+    void decisionAnnouncesAnEvent() throws Exception {
+        start();
+        String id = cc.reportLoss(fnol()).claimId();
+        cc.submit(id);
+        jdbc.update("UPDATE claimcenter.events SET delivered_at = next_attempt_at");   // claim.submitted is done with
+
+        cc.update(id, new ClaimUpdateRequest("PENDING_INFORMATION", "photos please", "PHOTOS_REQUESTED", "ADJ-001", null,
+                "NEEDS_MORE_INFO"));
+        cc.update(id, new ClaimUpdateRequest("DRAFT_PENDING_REVIEW", "got them"));   // no action at all
+        assertThat(cc.events(id, true)).isEmpty();
+
+        Claim decided = cc.update(id, new ClaimUpdateRequest("OPEN", "private adjuster note", "APPROVED_BY_ADJUSTER",
+                "ADJ-001", new BigDecimal("3500"), "APPROVED_BY_ADJUSTER", "invoice lower", "REAR_BUMPER",
+                new BigDecimal("4500"), "INVOICE"));
+        assertThat(decided.workQueue()).isEqualTo("APPROVED_BY_ADJUSTER");
+        assertThat(cc.events(id, true)).hasSize(1);
+        String payload = outbox.due(5).get(0).payload();
+        ClaimEvent event = mapper.readValue(payload, ClaimEvent.class);
+        assertThat(event.type()).isEqualTo(ClaimEventOutbox.CLAIM_DECIDED);
+        assertThat(event.subject()).isEqualTo(id);
+        assertThat(event.data()).containsEntry("decision", "APPROVED_BY_ADJUSTER").containsEntry("repairCostSource", "INVOICE")
+                .containsEntry("confirmedDamageType", "REAR_BUMPER");
+        assertThat(Instant.parse((String) event.data().get("decidedAt")))
+                .isEqualTo(decided.reviewActions().get(decided.reviewActions().size() - 1).at());
+        assertThat(payload).doesNotContain("private adjuster note");
+    }
+
+    @Test
+    @DisplayName("A finished claim refuses another status (409); repeating its status changes nothing and announces nothing")
+    void finishedClaimRefusesChange() throws Exception {
+        start();
+        String id = cc.reportLoss(fnol()).claimId();
+        cc.submit(id);
+        cc.update(id, new ClaimUpdateRequest("DENIED", "no cover", "REJECTED_BY_ADJUSTER", "ADJ-001", null));
+        int events = cc.events(id, false).size();
+
+        assertThatThrownBy(() -> cc.update(id, new ClaimUpdateRequest("OPEN", null, "APPROVED_BY_ADJUSTER", "ADJ-002", null)))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(cc.update(id, new ClaimUpdateRequest("DENIED", "again", "REJECTED_BY_ADJUSTER", "ADJ-002", null)).reviewActions())
+                .hasSize(1);
+        assertThat(cc.events(id, false)).hasSize(events);
+    }
+
+    @Test
+    @DisplayName("Work queues list claims oldest first with paging: unanalysed ones too; drafts are in no queue")
+    void workQueues() throws Exception {
+        start();
+        String draft = cc.reportLoss(fnol()).claimId();
+        FNOLPayload other = new FNOLPayload("POL-AUTO-112233", LocalDate.of(2026, 10, 21), "CA", "Another", null, null,
+                null, List.of(), "WEB");
+        String submitted = cc.reportLoss(other).claimId();
+        cc.submit(submitted);
+        assertThat(cc.queue("ANALYSIS_PENDING", 0, 20).items()).extracting(ClaimQueueEntry::claimId).containsExactly(submitted);
+        assertThat(cc.queue("ANALYSIS_PENDING,HUMAN_REVIEW", 0, 20).items()).extracting(ClaimQueueEntry::claimId)
+                .doesNotContain(draft);
+
+        cc.patch(submitted, new ClaimPatch("DRAFT_PENDING_REVIEW", null, new BigDecimal("800"), "PENDING_ADVISORY_REVIEW"));
+        assertThat(cc.queue("ANALYSIS_PENDING", 0, 20).total()).isZero();
+        ClaimQueueEntry entry = cc.queue("PENDING_ADVISORY_REVIEW", 0, 20).items().get(0);
+        assertThat(entry.reserve()).isEqualByComparingTo("800");
+
+        String created = cc.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 10, 22), "CA",
+                new BigDecimal("100"), new BigDecimal("115"), "DRAFT_PENDING_REVIEW", "PENDING_ADVISORY_REVIEW")).claimId();
+        ClaimQueuePage first = cc.queue("PENDING_ADVISORY_REVIEW", 0, 1);
+        assertThat(first.total()).isEqualTo(2);
+        assertThat(first.items()).extracting(ClaimQueueEntry::claimId).containsExactly(submitted);
+        assertThat(cc.queue("PENDING_ADVISORY_REVIEW", 1, 1).items()).extracting(ClaimQueueEntry::claimId).containsExactly(created);
+        assertThatThrownBy(() -> cc.queue(" ", 0, 20)).isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
     @DisplayName("Without a signing secret nothing is sent")
     void noSecretNoDelivery() throws Exception {
         start();

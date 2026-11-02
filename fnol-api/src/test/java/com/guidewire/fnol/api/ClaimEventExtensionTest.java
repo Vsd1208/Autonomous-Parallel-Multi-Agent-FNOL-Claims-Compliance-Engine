@@ -55,6 +55,8 @@ class ClaimEventExtensionTest {
     @MockBean private PolicyCenterClient policyCenterClient;
     @MockBean private ClaimCenterClient claimCenterClient;
 
+    private java.util.concurrent.atomic.AtomicBoolean recordExistedWhenQueued;
+
     private void activePolicy() {
         LocalDate start = LocalDate.now().minusMonths(6);
         when(policyCenterClient.getPolicy(POLICY)).thenReturn(new Policy(POLICY, "AUTO", "ACTIVE",
@@ -117,15 +119,27 @@ class ClaimEventExtensionTest {
         String id = "CLM-2026-0E0003";
         activePolicy();
         when(claimCenterClient.getFnol(id)).thenReturn(fnol(31));
+        java.util.concurrent.atomic.AtomicBoolean queued = new java.util.concurrent.atomic.AtomicBoolean();
+        doAnswer(call -> {
+            ClaimPatch sent = call.getArgument(1);
+            if (sent.workQueue() != null) {
+                queued.set(claims.existsById(id));
+            }
+            return null;
+        }).when(claimCenterClient).patchClaim(eq(id), any());
+        recordExistedWhenQueued = queued;
 
         String body = event("claim.submitted", id);
         send(body, sign(body)).andExpect(status().isAccepted()).andExpect(jsonPath("$.status").value("accepted"));
         await(() -> claims.existsById(id));
 
         ArgumentCaptor<ClaimPatch> patch = ArgumentCaptor.forClass(ClaimPatch.class);
-        verify(claimCenterClient, timeout(5000)).patchClaim(eq(id), patch.capture());
-        assertThat(patch.getValue().status()).isNotBlank();
-        assertThat(patch.getValue().estimatedDamage()).isNotNull();
+        verify(claimCenterClient, timeout(5000).times(2)).patchClaim(eq(id), patch.capture());
+        assertThat(patch.getAllValues().get(0).status()).isNotBlank();
+        assertThat(patch.getAllValues().get(0).estimatedDamage()).isNotNull();
+        assertThat(patch.getAllValues().get(0).workQueue()).isNull();   // not on a desk until its record is saved
+        assertThat(patch.getAllValues().get(1).workQueue()).isEqualTo(claims.findById(id).orElseThrow().status);
+        assertThat(recordExistedWhenQueued.get()).as("the record existed when the claim reached a work queue").isTrue();
         verify(claimCenterClient, never()).createClaim(any());   // the claims system owns the claim
 
         ClaimEntity stored = claims.findById(id).orElseThrow();
@@ -149,7 +163,7 @@ class ClaimEventExtensionTest {
         ArgumentCaptor<CcActivity> activity = ArgumentCaptor.forClass(CcActivity.class);
         verify(claimCenterClient, timeout(10_000)).addActivity(eq(id), activity.capture());
         assertThat(activity.getValue().priority()).isEqualTo("high");
-        verify(claimCenterClient).patchClaim(eq(id), eq(new ClaimPatch(ClaimEventController.IN_REVIEW, null, null)));
+        verify(claimCenterClient).patchClaim(eq(id), eq(new ClaimPatch(ClaimEventController.IN_REVIEW, null, null, "HUMAN_REVIEW")));
     }
 
     @Test

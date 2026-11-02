@@ -287,7 +287,7 @@ class UploadRequestController {
     private void syncClaimCenter(String claimId, String ccStatus, String action, String actor, String notes) {
         ClaimEntity claim = claims.findById(claimId).orElseThrow();
         try {
-            claimCenter.updateClaim(claimId, new ClaimUpdateRequest(ccStatus, notes, action, actor, null));
+            claimCenter.updateClaim(claimId, new ClaimUpdateRequest(ccStatus, notes, action, actor, null, claim.status));
             claim.ccSyncStatus = "SYNCED";
         } catch (RuntimeException e) {
             log.warn("[FNOL] ClaimCenter update failed for claimId={} ({}): {}", claimId, action, e.getMessage());

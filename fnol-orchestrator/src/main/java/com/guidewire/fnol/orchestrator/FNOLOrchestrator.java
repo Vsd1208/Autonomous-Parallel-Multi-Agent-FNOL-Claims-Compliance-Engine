@@ -576,13 +576,16 @@ public class FNOLOrchestrator {
                     payload.state(),
                     branchA.damageAssessment().estimatedDamage(),
                     branchA.reserve().recommendedReserve(),
-                    initialCcStatus
+                    initialCcStatus,
+                    status
             ));
             claimId = created.claimId();
             log.info("[FNOL] Claim pre-populated in ClaimCenter — claimId={}, ccStatus={}", claimId, initialCcStatus);
         } else {
             // Extension mode: the claims system owns the claim; record the AI's estimate, recommended reserve and
             // routing on it. It stays in review (a draft) until a person decides, exactly as a created claim would.
+            // Its work queue is set by the caller once the analysis record is saved, so an adjuster can never pick up
+            // a claim that has no record yet.
             claimId = existingClaimId;
             cc.patchClaim(claimId, new ClaimPatch(initialCcStatus, branchA.damageAssessment().estimatedDamage(),
                     branchA.reserve().recommendedReserve()));

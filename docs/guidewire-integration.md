@@ -1,27 +1,155 @@
-# Guidewire Integration & Adapter Architecture
+# Guidewire Integration: how the engine would sit on ClaimCenter
 
-## Simulation Scope & Honesty Statement
+> **Status: modelled, not verified.** This project has never run against a Guidewire tenant. The claims system here is
+> a mock over real HTTP and a real database. Its flow is modelled on Guidewire's **public** documentation, cited below;
+> no non-public material was used. Anything the public pages do not state is marked as not verified.
 
-> **Important Honesty Requirement**: This prototype does **not** assume or claim live connectivity to a production Guidewire Cloud Platform tenant. It uses contract-first mock implementations of the required PolicyCenter and ClaimCenter integration boundaries over actual HTTP.
+## The short version
 
-## What is Simulated and Why
+The engine is built as an **extension of the claims system, not a replacement for it**:
 
-Guidewire PolicyCenter and ClaimCenter are enterprise core systems with extensive API surfaces. For this prototype FNOL intelligence platform, we isolate and simulate the exact subset of capabilities necessary to execute an FNOL workflow:
+```text
+ Portal / agent ──> report the loss ──> CLAIMS SYSTEM (owns the claim, the queue, the decision)
+                                           │  ▲                      │
+                 signed claim.submitted    │  │ writes results back  │ signed claim.decided
+                 (outbox, at least once)   ▼  │ onto the same claim  ▼
+                                        AI ENGINE (analysis, audit, feedback loop; owns no claim)
+```
 
-1. **PolicyCenter (Policy Inquiry)**:
-   - Policy verification and active status checking (`GET /pc/policies/{policyNumber}`)
-   - Coverages, limits, and deductible extraction (`GET /pc/policies/{policyNumber}/coverages`)
-   - Prior loss and claim frequency history (`GET /pc/policies/{policyNumber}/history`)
+- A loss is reported to the claims system, which issues the claim number and refuses a duplicate.
+- Submitting it emits `claim.submitted`. The engine reacts, analyses, and writes the estimate, recommended reserve,
+  routing, exposure, activities, advisory note and documents **onto that claim**.
+- An adjuster's decision is recorded **in the claims system first**, which emits `claim.decided`. The engine's record,
+  audit chain and feedback loop follow, including for a decision made in the claims system without the engine.
+- If the engine is down, claims are still filed, listed under **Awaiting AI Analysis**, and analysed when it returns.
+  If the claims system is down, a decision is refused (503) and nothing is recorded anywhere.
 
-2. **ClaimCenter (Claim File Ingestion)**:
-   - Initial claim file creation with preliminary reserve allocations (`POST /cc/claims`)
-   - Claim inquiry, including notes and attachments (`GET /cc/claims/{claimId}`)
-   - Adjuster decision and notes (`PUT /cc/claims/{claimId}`)
-   - Attached documents: the WHY-panel advisory and the evidence list (`POST /cc/claims/{claimId}/attachments`)
+The AI recommends; it never pays or decides.
 
-ClaimCenter calls after the claim exists (attachments, decision updates) are best effort: a failure is logged and the claim's `cc_sync_status` is set to `FAILED` for a retry job, so a ClaimCenter outage never fails an intake or a review.
+## How each piece maps to Guidewire Cloud
 
-### Seeded data and failure switches
+Checked on 2 Nov 2026. "Documented" means a public Guidewire page says so, linked in [Sources](#sources). Paths and
+behaviour can differ between releases; a real adapter must be built from the tenant's own API definition.
+
+| In this project | On Guidewire Cloud | Status |
+|---|---|---|
+| Draft, then submit: `POST /cc/rest/claim/v1/claims`, `POST .../{id}/submit` | The same two steps: create a draft with `POST /claims` in the Claim API, then `POST /claim/v1/claims/{claimId}/submit` [1][2] | **Documented**; same shape, payload is this project's |
+| `claim.submitted`, `claim.decided` events | App Events: business events published from ClaimCenter to downstream systems, without custom Gosu [3] | Concept documented; **the event names here are this project's**, and the real events must be chosen from the tenant's list |
+| Outbox and retrying dispatcher | App Events' own delivery, documented as at least once, and safe-ordered by the primary object [3] | Same guarantee modelled; the engine tolerates repeats. **Ordering differs**: the mock does not hold later events behind a failing one, so the engine re-requests a decision that arrives early |
+| `POST /api/v1/events/claimcenter` | A webhook subscription, the no-code route for a system that can expose an HTTP endpoint [3][4] | Documented; request format **not verified** |
+| Integration Gateway | Not needed for this engine, which can expose an endpoint. It is the alternative where a target cannot: an app built on Apache Camel that reads events and calls the target [3][5] | Documented; nothing built |
+| HMAC-SHA256 signature on events | How a real webhook is authenticated is not stated on the pages read | **Not verified**; the signature is this project's own and would follow whatever the platform provides |
+| A thin event; the engine reads the report from the claim | Events carry a full claim graph snapshot (claim, incidents, exposures, parties, policy) [3][4] | **Differs**: the real event would itself carry personal data, so the engine's redaction would apply on receipt. No raw personal data would be stored, as now |
+| `POST .../claims/{id}/activities` | `POST /claim/v1/claims/{claimId}/activities` appears in the documentation [6] | Documented; payload not checked |
+| `POST .../claims/{id}/exposures` | `POST /claims/{claimId}/exposures` is documented, and an exposure **requires a coverage, claimant and incident** [7] | Path documented. **The mock is looser**: it needs no claimant or incident |
+| `POST .../claims/{id}/notes` | The guide has a "Creating claim notes" topic; the path was not confirmed [8] | **Not verified** |
+| `PATCH .../claims/{id}` for routing, estimate and reserve | `PATCH /claims/{claimId}` is documented for drafts [1]. Reserves live on exposures; a work-queue field does not exist as such | **Differs**, see below |
+| `workQueue` field on the claim | Not a ClaimCenter field. The natural equivalents are assignment and activities in a group's queue, or a data-model extension | **This project's design**; to be decided with an implementer |
+| Duplicate check when a loss is reported | ClaimCenter's own duplicate search is not described on the pages read | **Modelled on the idea; not verified** |
+| Adjuster workspace (React) | A Jutro-based experience, or only an AI panel inside ClaimCenter, where adjusters already work | Nothing built |
+| Static bearer token on calls | Guidewire Cloud APIs use OAuth2 tokens | Seam only; token fetching not built |
+
+### Where a real deployment would differ most
+
+These are the differences an implementer should weigh first. None is hidden by the mock's naming.
+
+1. **A submitted claim is an open claim.** On success the draft becomes open and gets an open claim number, and claim
+   setup rules run. It cannot be cancelled afterwards, only closed [2]. The mock instead keeps a separate
+   `SUBMITTED` / `DRAFT_PENDING_REVIEW` state after submit, so the rule here that "a claim stays a draft until a person
+   decides" **cannot carry over literally**. On a real tenant the claim would open at submit, and the human gate would be
+   enforced differently: the AI only writes recommendations and activities, and an adjuster's authority governs reserves
+   and payments. Which ClaimCenter controls to use for that is an open design question.
+2. **The claim number changes.** A draft has a draft number and an open claim gets an open number [1][2]. The mock keeps
+   one number throughout. A real adapter must key on the claim's `id`, and show the claimant the open number.
+3. **Submission can fail validation** and leave the claim a draft [2]; in the base configuration it also needs a
+   reporter [2]. The mock checks only the policy number and loss date, so the portal would need to handle this case.
+4. **There is no single "decided" event.** `claim.decided` bundles things ClaimCenter represents separately: reserve
+   changes, activity completion, closing a claim. It also carries `finalRepairCost` and `repairCostSource`, the evidence
+   behind the cost model's learning, which have no standard home. A real version needs a mapping for each, probably
+   several subscriptions and an extension or a structured note for the cost evidence.
+5. **Policy lookup.** During draft creation ClaimCenter retrieves the policy itself, and unverified policies need a
+   composite request [1]. The engine reads a mock PolicyCenter directly.
+
+### Why there is no Gosu here
+
+The usual in-core route is event messaging with Gosu rules and custom message transport plugins, where changes to the
+integration logic require Gosu changes [3]. Guidewire's public material presents App Events and Integration Gateway as
+the way to move that logic out of InsuranceSuite [3][5], and the engine already runs outside it, so it needs no Gosu in
+the core for this flow. Gosu written here could not have been compiled or checked, so none is included rather than
+shipping code that looks finished. A data-model extension for a field like `workQueue` would be configuration inside the
+tenant; it is not built.
+
+## What is real in this repository
+
+The mock is a stand-in; the integration behaviour around it is real code, tested and run:
+
+| Behaviour | Where | Evidence |
+|---|---|---|
+| Change and event written in one transaction (outbox) | `ClaimEventOutbox`, `ClaimCenterController.update` | `ClaimEventFlowTest` |
+| Signed delivery, retry with backoff, nothing sent without a secret | `ClaimEventDispatcher` | `ClaimEventFlowTest` |
+| Signature check, repeats ignored, failures reach an adjuster | `ClaimEventController` | `ClaimEventExtensionTest` |
+| Decisions first in the claims system; 503 and nothing recorded if it is down | `FNOLController.reviewInClaimsSystem` | `ClaimsSystemDecisionTest` |
+| A decision counts once, using the claims system's time | `ClaimDecisionRecorder`, `ClaimRepository.applyClaimsSystemDecision` | `ClaimsSystemDecisionTest` |
+| Queue read from the claims system, with a labelled fallback | `FNOLController.queueFromClaimsSystem` | `ClaimsSystemDecisionTest` |
+| End to end, both intake paths and decisions | `demo-scenarios/run-all.sh` | Run against a stack |
+
+The one-off live checks during development (not a benchmark, one laptop, mock claims system, claims without
+photos): results written back about 1 s after submit; a decision made directly in the claims system reached the engine's
+record about 1 s later; with the engine stopped a claim was filed, then analysed 14 s after the engine restarted.
+
+## The claims-system contract
+
+| Method and path | Purpose |
+|---|---|
+| `POST /cc/rest/claim/v1/claims` | Report a loss as a draft; 409 `DUPLICATE_FNOL` naming the original if the same policy, loss date and state was already reported, and the original gets an activity |
+| `POST /cc/rest/claim/v1/claims/{id}/submit` | Draft to `SUBMITTED`, queues `claim.submitted`; 409 if not a draft |
+| `GET /cc/rest/claim/v1/claims/{id}/fnol` | The report as filed |
+| `PATCH /cc/rest/claim/v1/claims/{id}` | The extension records routing, estimate, reserve and work queue; empty fields are left alone |
+| `GET /cc/rest/claim/v1/claims?workQueue=A,B&page=&size=` | Work queue listing, oldest first |
+| `PUT /cc/claims/{id}` | Status and notes. An adjuster decision queues `claim.decided`; a denied or closed claim refuses another status (409) |
+| `GET /cc/events?claimId=&undelivered=` | Operations view of the outbox |
+| `.../{id}/exposures`, `/activities`, `/notes`, `/documents`; `/cc/claims/{id}/attachments` | What the engine writes on the claim |
+
+**Events** are posted to `claims.events.subscribers` with `X-Claims-Event-Id` and
+`X-Claims-Signature: sha256=<hex HMAC of the exact body>`. Field names follow CloudEvents:
+
+```json
+{ "id": "…", "type": "claim.decided", "source": "claims-system", "time": "…", "subject": "CLM-2026-000061",
+  "data": { "claimId": "CLM-2026-000061", "decision": "REJECTED_BY_ADJUSTER", "adjusterId": "ADJ-001",
+            "decidedAt": "2026-11-02T07:45:01.123Z", "adjustedReserve": null, "overrideReason": null,
+            "confirmedDamageType": null, "finalRepairCost": 1500, "repairCostSource": "BODY_SHOP_ESTIMATE" } }
+```
+
+Neither event carries the claimant's details or free text; the engine reads them from the claim.
+
+| Engine's answer | Meaning |
+|---|---|
+| `202` `accepted` / `applied` | Taken |
+| `202` `duplicate` / `ignored` | A repeat, or an event it does not act on |
+| `401` | Missing or wrong signature |
+| `503` | No secret configured, too busy, or not ready yet (for example a decision on a claim still being analysed). The claims system delivers it again, with backoff up to 5 minutes |
+
+**Modes.** With `CLAIMS_EVENT_SECRET` set on both services (Compose does this) new losses take the path above, and
+`GET /api/v1/health` answers `"intake":"CLAIMS_SYSTEM"`. Without it the engine uses the older **direct intake**
+(`POST /api/v1/fnol/intake`: analyse, then create the claim), answering `"intake":"DIRECT"`. The direct endpoint also stays
+available in claims-system mode, for partner channels and the demo's comparison pass. A failed direct intake is saved as
+`REJ-…`, which the claims system never held, so those claims are listed after its own in the queue.
+
+### What the engine writes on a claim
+
+| ClaimCenter object | What the engine puts there |
+|---|---|
+| Claim | AI estimate and recommended reserve; routing as the work queue |
+| Exposure | One for the matched coverage (e.g. `VehicleDamage` / COLLISION, `Dwelling` / DWELLING) carrying the reserve line (cost type `claimcost`). ClaimCenter holds reserves on exposures, not on the claim |
+| Activity | One per AI review flag, or "Confirm AI advisory" for an STP-eligible claim; due by the statutory acknowledgement date; urgent when severity is HIGH |
+| Note | The AI advisory, ending "advisory only: the adjuster decides". The claimant's description is not copied |
+| Documents | The WHY panel, the evidence list and the acknowledgement letter |
+
+When the adjuster decides, the claim's update completes the open review activities and sets the exposure reserve to the
+final figure, or zeroes and closes it on a denial. Interim steps (requesting photos, assigning an inspector) leave the
+activities open and move the work queue.
+
+## Seeded data and failure switches
 
 | Policy | Line | State | Insured | Notes |
 |---|---|---|---|---|
@@ -34,128 +162,63 @@ Policy terms start six months before today and run for a year, so the data never
 
 | Variable | Effect |
 |---|---|
-| `MOCK_GW_TIMEOUT=true` | `POST /cc/claims` waits 11 s (trips the API's 3 s read timeout after the fan-out) |
+| `MOCK_GW_TIMEOUT=true` | `POST /cc/claims` waits 11 s (trips the API's 3 s read timeout) |
 | `MOCK_PC_TIMEOUT=true` | `GET /pc/policies/{id}/coverages` waits 12 s (trips the 3 s read timeout inside Branch A) |
-| `MOCK_CC_START_SEQUENCE=N` | Lowest first claim number. Claims are stored in the database (`MOCK_CC_DB_URL`; Postgres schema `claimcenter` under Compose), so numbering continues after the highest stored claim and a restart neither loses claims nor reissues IDs |
+| `MOCK_CC_START_SEQUENCE=N` | Lowest first claim number. Claims are stored in the database, so numbering continues after the highest stored claim |
+| `CLAIMS_EVENT_SUBSCRIBERS` | Where events are delivered |
+| `CLAIMS_EVENT_SECRET` | Signs events; set the same value on both services. Compose's default is for local runs only |
+| `CLAIMS_EVENT_POLL_MS` | How often due events are sent (default 1000) |
 
-## Adapter Abstraction Architecture
+## Adapter seam
 
-The FNOL application NEVER directly interacts with the mock services or mock classes. All communication occurs strictly through clean Java interfaces:
+The engine reaches Guidewire only through two interfaces, so the mock clients are the swap point:
 
 ```text
-                     FNOL ORCHESTRATOR / AGENTS
-                                  |
-            +---------------------+---------------------+
-            |                                           |
-            v                                           v
-    PolicyCenterClient                          ClaimCenterClient
-       (Interface)                                 (Interface)
-            |                                           |
-            v                                           v
-  MockPolicyCenterClient                      MockClaimCenterClient
-    (HTTP RestTemplate)                         (HTTP RestTemplate)
-            |                                           |
-            v (HTTP on :9090)                           v (HTTP on :9090)
-    Mock PolicyCenter                           Mock ClaimCenter
+   FNOL orchestrator, controllers
+            |                   |
+   PolicyCenterClient    ClaimCenterClient      <- interfaces
+            |                   |
+   MockPolicyCenterClient  MockClaimCenterClient  (HTTP, @Profile("!guidewire"))
 ```
-
-## What the engine files in ClaimCenter
-
-The AI does not keep its own claim: it files the claim in ClaimCenter and fills it the way an adjuster works with it.
-ClaimCenter stays the system of record. The mock ClaimCenter stores each object on a path modelled on the Cloud API
-claim resources (not verified against them; see [What was checked against Guidewire's documentation](#what-was-checked-against-guidewires-documentation)):
-
-| ClaimCenter object | Mock path | What the engine puts there |
-|---|---|---|
-| Claim | `POST /cc/claims` | Policy, loss date, state, AI estimate; `DRAFT_PENDING_REVIEW` until a person decides (`OPEN` only for unreviewed STP) |
-| Exposure | `POST /cc/rest/claim/v1/claims/{id}/exposures` | One exposure for the matched coverage (e.g. `VehicleDamage` / COLLISION, `Dwelling` / DWELLING) carrying the reserve line (cost type `claimcost`). ClaimCenter holds reserves on exposures, not on the claim |
-| Activity | `POST /cc/rest/claim/v1/claims/{id}/activities` | One per AI review flag ("Review AI flag: claimed exceeds ai estimate", with the reason), or "Confirm AI advisory" for an STP-eligible claim; due by the statutory acknowledgement date; urgent when severity is HIGH; assigned to the FNOL adjuster queue |
-| Note | `POST /cc/rest/claim/v1/claims/{id}/notes` | The AI advisory: summary, every review note, "advisory only: the adjuster decides". The claimant's description is not copied (PII stays out) |
-| Documents | `POST /cc/claims/{id}/attachments`, `GET /cc/rest/claim/v1/claims/{id}/documents` | The WHY panel and the evidence list |
-
-When the adjuster decides, the update to the claim completes the open review activities (completed by the adjuster),
-sets the exposure reserve to the adjuster's final reserve, or zeroes and closes it on a denial. Interim steps
-(requesting photos, assigning an inspector) leave the activities open. The console's **In ClaimCenter** page shows all
-of this for a claim (`GET /api/v1/fnol/{id}/claimcenter`, adjusters only).
-
-In a real deployment the same calls go to ClaimCenter's Cloud API, and a ClaimCenter app event on claim creation (for
-FNOL taken in ClaimCenter or a customer portal) would trigger the engine instead of the engine creating the claim.
-
-## What was checked against Guidewire's documentation
-
-Checked on 31 Oct 2026 against Guidewire's public Cloud API documentation (ClaimCenter Cloud API Consumer Guide). Only
-what the pages state is listed as verified.
-
-| Topic | Guidewire's Cloud API (documented) | This mock | Status |
-|---|---|---|---|
-| FNOL is a draft first | Create a draft claim with `POST /claims` in the Claim API; the response carries the claim's id and a **draft claim number**. Optionally `PATCH /claims/{claimId}` one or more times. ([The FNOL process in Cloud API](https://docs.guidewire.com/cloud/is/202603/cloudapibf/cloudAPI/ClaimCenter/fnol/executing-fnol/c_the-FNOL-process-in-Cloud-API.html)) | `POST /cc/claims` with `initialStatus: DRAFT_PENDING_REVIEW`; the claim number is final at once | Concept matches; path and numbering differ |
-| Submitting the draft | `POST /claim/v1/claims/{claimId}/submit` turns the draft into an open claim with an open claim number and runs claim setup rules (segmentation, assignment, activities). A failed validation leaves the claim in draft. ([Submitting a draft claim](https://docs.guidewire.com/cloud/is/202603/cloudapibf/cloudAPI/ClaimCenter/fnol/executing-fnol/c_submitting-a-draft-claim.html)) | The adjuster's decision moves the draft to `OPEN` through `PUT /cc/claims/{id}` | Not modelled: a real adapter would call `submit` when the adjuster approves |
-| Policy on the claim | During draft creation ClaimCenter retrieves the policy from the policy administration system; unverified policies need a composite request | The engine reads the policy from mock PolicyCenter itself | Differs |
-| Exposures, activities, notes, documents | Documented as Claim API resources (the consumer guide has sections for each), but the exact paths were not confirmed | `/cc/rest/claim/v1/claims/{id}/exposures`, `/activities`, `/notes`, `/documents` | **Not verified**; the paths are this project's own |
-| Authentication | Guidewire Cloud APIs use OAuth2 tokens | No auth on the mock; a configurable bearer token (`guidewire.auth.bearer-token`) is sent when set | Seam only; token fetching not built |
-
-Endpoint paths can differ between Guidewire releases; a real adapter must be built from the tenant's own API
-definition.
 
 ## Contract tests
 
-`fnol-mock-guidewire/src/test/java/com/guidewire/fnol/mock/GuidewireClientContractTest.java` exercises the engine's
-own client classes (`MockPolicyCenterClient`, `MockClaimCenterClient`) for everything the engine relies on: an
-in-force policy with term, state and line of business; coverages with a limit and a deductible; claim history; a 404
-for an unknown policy; a claim created as a draft that stays a draft until the adjuster's update; exposures,
-activities, notes and documents stored with server ids; a 404 for writes to an unknown claim.
-
-It runs against the mock on a random port in every build. To point it at another server:
+`GuidewireClientContractTest` (in `fnol-mock-guidewire`) exercises the engine's own client classes for what the engine
+relies on, against the mock on a random port in every build. To point it at another server:
 
 ```bash
 GUIDEWIRE_CONTRACT_BASE_URL=https://… GUIDEWIRE_CONTRACT_TOKEN=… GUIDEWIRE_CONTRACT_POLICY=…   mvn -pl fnol-mock-guidewire -am test -Dtest=GuidewireClientContractTest -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
-Against a real tenant this only becomes meaningful once a `GuidewireClaimCenterClient` maps these calls onto the
-tenant's Cloud API paths (see below); the assertions describe the engine's needs, not Guidewire's wire format.
+Against a real tenant this only means something once a real client maps these calls onto the tenant's paths; the
+assertions describe the engine's needs, not Guidewire's wire format.
 
 ## Path to production
 
-**Nothing below is built.** It is the plan for connecting to a real Guidewire Cloud tenant.
+**Nothing below is built.** It needs a sandbox tenant, which this project does not have.
 
-What changes:
+1. **Decide the human gate** on an open claim (difference 1 above). This comes first: the governance rule depends on it.
+2. **Subscribe** to the real App Events by webhook, and replace `ClaimEventController`'s parsing with the real event
+   format and authentication, reading the claim graph with the same redaction.
+3. **Adapters.** `GuidewirePolicyCenterClient` and `GuidewireClaimCenterClient` under the `guidewire` profile, mapping
+   these calls to the tenant's Cloud API, with incidents and claimants for exposures.
+4. **Authentication.** OAuth2 client credentials with token caching, replacing the static bearer token.
+5. **Map routing and decisions** to assignment, activities and ClaimCenter's own events, with a home for cost evidence.
+6. **Adjuster experience.** Move the AI panel into ClaimCenter (Jutro), retiring the separate workspace's queue.
+7. **Contract tests** against the sandbox, with field mappings checked against the tenant's API definitions.
 
-1. **Adapters.** New `GuidewirePolicyCenterClient` and `GuidewireClaimCenterClient` implementing the existing
-   interfaces, active under the `guidewire` Spring profile (the mock clients are already `@Profile("!guidewire")`).
-   They map the engine's calls onto the tenant's Cloud API: create the draft claim, add exposures, activities, notes
-   and documents, then call `submit` when the adjuster approves.
-2. **Authentication.** OAuth2 client credentials against the tenant's identity provider, with token caching and
-   refresh, replacing the static bearer token in `GuidewireAuthInterceptor`.
-3. **Events instead of polling.** Subscribe to ClaimCenter App Events (or webhooks) for claim creation and updates, so
-   FNOL taken in ClaimCenter or a Guidewire portal triggers the engine, and adjuster actions in ClaimCenter flow back.
-4. **Adjuster UI.** The React workspace would become a Jutro-based experience embedded in ClaimCenter; the engine's
-   REST API stays the back end.
-5. **Contract tests** re-pointed at a sandbox tenant through the adapters, plus field mappings validated against the
-   tenant's OpenAPI definitions.
+What should not change: the agents, the reconciliation gate and its flags, the WHY panel, the audit chain, the rule that
+the AI never pays, and the engine's analysis record. That is an expectation, to be confirmed against a tenant.
 
-What does not change: the agents, the orchestrator, the reconciliation gate and its flags, the WHY panel, the audit
-chain, the governance rules (the AI never pays; drafts until a person decides) and the engine's database.
+## Sources
 
-## Production Replacement Path
+Public pages, read on 2 Nov 2026:
 
-When connecting to an authentic Guidewire Cloud environment, the replacement is seamless and isolated to the adapter layer:
-
-```
-MockPolicyCenterClient  ----->  GuidewirePolicyCenterClient (OAuth2 / Cloud API REST)
-MockClaimCenterClient   ----->  GuidewireClaimCenterClient  (OAuth2 / Cloud API REST)
-```
-
-No changes are required in:
-- `VisionDamageAgent`, `PolicyValidatorAgent`, or any other agent (coverage rules live in `CoverageRuleProvider`)
-- `FNOLOrchestrator`
-- `FNOLController` or REST endpoints
-- Guardrails or validation layers
-- PostgreSQL JPA entities or Flyway migrations
-- Frontend React contracts
-
-## Verification Assumptions
-
-Before deploying production adapters:
-1. Verify authentication mechanisms (Guidewire Cloud Platform OAuth2 / JWT client credentials).
-2. Validate field mappings against the customer's specific PolicyCenter and ClaimCenter Cloud API OpenAPI specifications.
-3. Review line-of-business (LOB) coverage structures (Personal Auto, Commercial Auto, Homeowners).
+1. [The FNOL process in Cloud API](https://docs.guidewire.com/cloud/is/202603/cloudapibf/cloudAPI/ClaimCenter/fnol/executing-fnol/c_the-FNOL-process-in-Cloud-API.html)
+2. [Submitting a draft claim](https://docs.guidewire.com/cloud/is/202603/cloudapibf/cloudAPI/ClaimCenter/fnol/executing-fnol/c_submitting-a-draft-claim.html)
+3. [App Events (Cloud Integration Basics)](https://docs.guidewire.com/education/cloud-integration-basics/latest/docs/integration_cloud_basics/appevents_overview/)
+4. [Simplifying Outbound Integrations in InsuranceSuite Cloud, Part 1](https://www.guidewire.com/resources/blog/developers/simplifying-outbound-integrations-in-insurancesuite-cloud-part-1) (February 2022, written when App Events was in early access; [general availability announced November 2022](https://guidewire.com/blog/technology/simplify-event-driven-integrations-on-guidewire-cloud-with-app-events))
+5. [Integration Gateway overview](https://docs.guidewire.com/education/cloud-integration-basics/latest/docs/integration_cloud_basics/integration_gateway_overview)
+6. [Service request messages](https://docs.guidewire.com/cloud/cc/202507/cloudapibf/cloudAPI/topics/111-CCFNOL/06-service-requests/c_messages.html)
+7. [Creating exposures](https://docs.guidewire.com/cloud/cc/202411/cloudapibf/cloudAPI/topics/111-CCFNOL/05-exposures/c_creating-exposures.html)
+8. [Activities](https://docs.guidewire.com/cloud/cc/202511/cloudapibf/cloudAPI/topics/141-Framework/01_activities/c_activities.html) (lists the "Creating claim notes" topic in its navigation)
