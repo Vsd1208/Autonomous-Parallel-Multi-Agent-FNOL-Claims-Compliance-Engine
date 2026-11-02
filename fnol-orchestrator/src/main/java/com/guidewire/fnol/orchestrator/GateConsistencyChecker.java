@@ -57,8 +57,8 @@ public class GateConsistencyChecker {
      */
     public static final String ON_PREMISE_VISION = "ON_PREMISE_VISION";
     /**
-     * Gemini's dollar estimate is more than RepairCostEstimator.TOLERANCE (4x) outside the repair-cost range for the
-     * damaged area and visible extent. Replayed on 41 Gemini answers with a range it fired on 3
+     * Gemini's dollar estimate is more than RepairCostEstimator.TOLERANCE (2x) outside the repair-cost range for the
+     * damaged area and visible extent. Replayed on 41 Gemini answers with a range it fired on 12
      * (tools/cost-eval/results/gemini-estimates-v3-subject.md); no true costs exist yet, so it asks for a check, it
      * does not say which figure is right.
      */

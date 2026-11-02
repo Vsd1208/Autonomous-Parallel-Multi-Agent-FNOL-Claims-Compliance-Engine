@@ -1,5 +1,24 @@
 # Agent Architecture & Provider Design
 
+## What we mean by "autonomous" and "agent"
+
+**Autonomous** means the analysis pipeline runs end to end with no one driving it. It never means autonomous decisions:
+a licensed adjuster makes every call, the AI never pays, and with the default settings every claim gets a human decision.
+The one exception is an explicit business setting, off by default ([ADR-009](architecture-decisions.md)), which an
+insurer could turn on to let eligible claims skip the adjuster's confirmation.
+
+**Agent** means a specialist component with one job, typed inputs and outputs, and its own audit record. It does not mean
+an LLM agent choosing its own actions: the pipeline's order is fixed in code. (In insurance an "agent" is also a person who
+sells or services policies; we say "insurance agent" for that.)
+
+| Uses machine learning | Deliberately rule-based, because the decision must be explainable and auditable |
+|---|---|
+| Gemini vision (`GeminiVisionProvider`) | Coverage (`PolicyValidatorAgent`) |
+| On-premise vision model, also the second opinion (`SecondOpinionAgent`, `OnPremiseVision`) | Claim clock (`StatutoryDeadlineAgent`) |
+| Trust score (`TrustScorer`) | PII redaction (`PiiRedactionAgent`) |
+| Fraud anomaly score (`FraudAnomalyScorer`; fitted statistics on synthetic claims, accuracy on real claims unknown) | Reserve (`ReserveCalculatorAgent`) |
+| | Subrogation (`SubrogationScorerAgent`) |
+
 ## Overview
 Most evaluations follow the `FNOLAgent<I, O>` contract (`O execute(I input)`). Each agent has one responsibility, typed input and output records, and is testable without a Spring context. Anything that would differ between a prototype and production (vision model, deadline rules, coverage rules, subrogation weights) sits behind a provider interface.
 

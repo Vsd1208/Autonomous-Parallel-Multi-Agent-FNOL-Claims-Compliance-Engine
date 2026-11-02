@@ -116,7 +116,7 @@ export function StatusChip({ value }: { value?: string | null }) {
 }
 
 const CHANNELS: Record<string, string> = {
-  WEB: 'Web portal', MOBILE: 'Mobile app', PHONE: 'Phone (agent)', API: 'API / partner',
+  WEB: 'Web portal', MOBILE: 'Mobile app', PHONE: 'Phone (staff)', API: 'API / partner',
 };
 
 export function channelLabel(value?: string | null): string {

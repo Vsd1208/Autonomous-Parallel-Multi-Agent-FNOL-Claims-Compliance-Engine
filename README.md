@@ -1,4 +1,6 @@
-# AI-Powered Human-Governed FNOL Claims Intelligence Engine
+# Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine
+
+> Autonomous analysis, human decision: specialist agents assess every claim in parallel; a licensed adjuster makes every call.
 
 [![CI](https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
@@ -59,7 +61,7 @@ flowchart LR
 | Claim photos | **Real** public-domain photos (NHTSA crash tests, FEMA, CC0) | Realistic input without privacy issues | `demo-scenarios/sample-images/`, [CREDITS.md](CREDITS.md) |
 | Fraud signals | **Real** rules (duplicates, reused photos, claim frequency, early-policy losses, amount above estimate) applied to simulated data | Common fraud patterns an adjuster checks | `IntakeReviewService.java`, `GateConsistencyChecker.java`, `EvidenceStore.java` |
 | Fraud anomaly score | **Real** explainable scorer; **simulated** calibration (fitted on synthetic claims, accuracy on real claims unknown) | No labelled fraud data is public | `FraudAnomalyScorer.java`, `tools/fraud-eval/` |
-| Adjuster authentication | **Simulated**: one shared token | Prototype; real identity is out of scope | `AdjusterTokenFilter.java` |
+| Adjuster authentication | **Real** sign-in with roles, using local accounts (no insurer identity provider) | Decisions are recorded under who made them | `AuthService.java`, `AdjusterTokenFilter.java` |
 | Orchestration, persistence, audit chain | **Real** (Spring Boot, PostgreSQL, Flyway) | The production-shaped part of the system | `FNOLOrchestrator.java`, `AuditService.java` |
 
 ### Key results
@@ -91,6 +93,25 @@ More: [running locally](#running-locally), [the insurance terms explained](docs/
 limits](docs/ROADMAP.md).
 
 ---
+
+## What we mean by "autonomous" and "agent"
+
+**Autonomous** means the analysis pipeline runs end to end with no one driving it. It never means autonomous decisions:
+a licensed adjuster makes every call, the AI never pays, and with the default settings every claim gets a human decision.
+The one exception is an explicit business setting, off by default ([ADR-009](docs/architecture-decisions.md)), which an
+insurer could turn on to let eligible claims skip the adjuster's confirmation.
+
+**Agent** means a specialist component with one job, typed inputs and outputs, and its own audit record. It does not mean
+an LLM agent choosing its own actions: the pipeline's order is fixed in code. (In insurance an "agent" is also a person who
+sells or services policies; we say "insurance agent" for that.)
+
+| Uses machine learning | Deliberately rule-based, because the decision must be explainable and auditable |
+|---|---|
+| Gemini vision (`GeminiVisionProvider`) | Coverage (`PolicyValidatorAgent`) |
+| On-premise vision model, also the second opinion (`SecondOpinionAgent`, `OnPremiseVision`) | Claim clock (`StatutoryDeadlineAgent`) |
+| Trust score (`TrustScorer`) | PII redaction (`PiiRedactionAgent`) |
+| Fraud anomaly score (`FraudAnomalyScorer`; fitted statistics on synthetic claims, accuracy on real claims unknown) | Reserve (`ReserveCalculatorAgent`) |
+| | Subrogation (`SubrogationScorerAgent`) |
 
 ## Governance statement
 
@@ -198,7 +219,7 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 |---|---|---|
 | POST | `/api/v1/auth/login` | Sign in; roles decide the rest. Also `/logout`, `/me` |
 | GET | `/api/v1/health` | Health check; `intake` says whether losses go to the claims system (`CLAIMS_SYSTEM`) or the direct path (`DIRECT`) |
-| POST 🔒 | `/api/v1/fnol/report` | Agent phone intake and partner channels: file the loss in the claims system; answers at once with the claim number |
+| POST 🔒 | `/api/v1/fnol/report` | Staff phone intake and partner channels: file the loss in the claims system; answers at once with the claim number |
 | POST | `/api/v1/events/claimcenter` | Signed claims-system events (`claim.submitted`, `claim.decided`); HMAC signature, no adjuster token |
 | POST | `/api/v1/portal/claims` | Policyholder reports a loss (channel WEB); returns a receipt without AI findings or reserve |
 | GET | `/api/v1/portal/claims/{claimId}?policyNumber=` | Policyholder tracks a claim: plain-language stage, dates, requested photos, acknowledgement letter |

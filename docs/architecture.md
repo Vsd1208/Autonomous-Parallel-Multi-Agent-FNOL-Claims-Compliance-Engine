@@ -1,7 +1,7 @@
 # FNOL Intelligence Platform — System Architecture
 
 ## Overview
-The **Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine** is a decision-support platform for P&C First Notice of Loss. It runs operational analysis (damage, coverage, reserve) and legal analysis (PII, deadlines) in parallel, reconciles them through a safety gate that explains its reasoning, pre-files the claim in ClaimCenter, and gives an adjuster a console and a queue for the final decision. Failed intakes are saved and escalated rather than dropped.
+The **Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine** (autonomous analysis, human decision; the terms are defined in [agent-architecture.md](agent-architecture.md)) is a decision-support platform for P&C First Notice of Loss. It runs operational analysis (damage, coverage, reserve) and legal analysis (PII, deadlines) in parallel, reconciles them through a safety gate that explains its reasoning, pre-files the claim in ClaimCenter, and gives an adjuster a console and a queue for the final decision. Failed intakes are saved and escalated rather than dropped.
 
 ## How a claim flows
 
