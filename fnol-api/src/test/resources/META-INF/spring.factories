@@ -1,0 +1,1 @@
+org.springframework.test.context.TestExecutionListener=com.guidewire.fnol.api.FreshContextPerTestClass

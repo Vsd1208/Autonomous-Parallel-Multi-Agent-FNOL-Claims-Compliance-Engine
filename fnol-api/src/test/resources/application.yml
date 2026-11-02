@@ -14,7 +14,8 @@ gemini:
     enabled: false
 spring:
   datasource:
-    url: jdbc:h2:mem:fnol_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    # Its own database per Spring context: test classes must not see each other's claims, whatever order they run in.
+    url: jdbc:h2:mem:fnol_test_${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password:
