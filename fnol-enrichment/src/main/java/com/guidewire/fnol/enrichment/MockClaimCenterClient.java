@@ -13,7 +13,7 @@ import java.util.Collection;
 import java.util.Map;
 
 @Component
-@Profile("!guidewire")
+@Profile("!guidewire & !guidewire-cloud-claims")
 public class MockClaimCenterClient implements ClaimCenterClient {
 
     private final RestTemplate rest;

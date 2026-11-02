@@ -100,8 +100,17 @@ public final class Models {
             List<CcExposure> exposures,
             List<CcActivity> activities,
             List<CcNote> claimNotes,
-            String workQueue          // the adjuster work queue the claim sits in (see ClaimPatch.workQueue)
+            String workQueue,         // the adjuster work queue the claim sits in (see ClaimPatch.workQueue)
+            String claimNumber        // what people quote: a draft number, then the open claim number
     ) {
+        public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
+                     BigDecimal estimatedDamage, BigDecimal reserve, String notes, List<ClaimAttachment> attachments,
+                     List<ClaimReviewAction> reviewActions, List<CcExposure> exposures, List<CcActivity> activities,
+                     List<CcNote> claimNotes, String workQueue) {
+            this(claimId, status, policyNumber, incidentDate, state, estimatedDamage, reserve, notes, attachments,
+                    reviewActions, exposures, activities, claimNotes, workQueue, null);
+        }
+
         public Claim(String claimId, String status, String policyNumber, LocalDate incidentDate, String state,
                      BigDecimal estimatedDamage, BigDecimal reserve, String notes, List<ClaimAttachment> attachments,
                      List<ClaimReviewAction> reviewActions, List<CcExposure> exposures, List<CcActivity> activities,
@@ -130,17 +139,24 @@ public final class Models {
      */
 
     /**
-     * What is claimed under which coverage, carrying the reserve line. ClaimCenter holds reserves on exposures,
-     * not on the claim.
+     * What is claimed under which coverage, for which claimant and incident. ClaimCenter holds reserves on exposures,
+     * not on the claim. The reserve stays empty until a person's decision sets it: the AI only recommends one.
      */
     public record CcExposure(
             String exposureId,
             String exposureType,      // e.g. VehicleDamage, Dwelling
             String coverageType,      // the policy coverage that pays, e.g. COLLISION, DWELLING
-            BigDecimal reserve,       // open reserve on the exposure (cost type claimcost)
+            BigDecimal reserve,       // open reserve on the exposure (cost type claimcost); empty until a person decides
             String costType,          // claimcost
-            String status             // open | closed
-    ) {}
+            String status,            // open | closed
+            String incident,          // what happened to what, e.g. VehicleIncident; required
+            String claimant           // who claims; required
+    ) {
+        public CcExposure(String exposureId, String exposureType, String coverageType, BigDecimal reserve,
+                          String costType, String status) {
+            this(exposureId, exposureType, coverageType, reserve, costType, status, null, null);
+        }
+    }
 
     /** A task for a person, e.g. "Review AI flag: claimed amount above estimate", due by the statutory deadline. */
     public record CcActivity(
@@ -168,7 +184,7 @@ public final class Models {
      * tracked as a review action on the claim.
      */
     public record ClaimUpdateRequest(
-            String status,            // ClaimCenter status, e.g. OPEN, DENIED, PENDING_INFORMATION
+            String status,            // claim lifecycle: OPEN or CLOSED; empty leaves it unchanged
             String notes,
             String action,            // the adjuster decision that caused the update
             String adjusterId,
@@ -548,8 +564,18 @@ public final class Models {
             @PositiveOrZero BigDecimal finalRepairCost,
             // what finalRepairCost rests on: INVOICE, BODY_SHOP_ESTIMATE or INSPECTION (evidence: the cost model learns
             // from these) or ADJUSTER_JUDGEMENT (recorded, never learned from); empty with a cost = ADJUSTER_JUDGEMENT
-            @Size(max = 20) String repairCostSource
+            @Size(max = 20) String repairCostSource,
+            // Evidence from people using the workspace (kept only for signed-in people, never for scripts)
+            @jakarta.validation.constraints.Min(0) Integer handlingSeconds,
+            @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(5) Integer advisoryRating
     ) {
+        public AdjusterReviewRequest(String decision, String adjusterId, String notes, BigDecimal adjustedReserve,
+                                     String overrideReason, String confirmedDamageType, BigDecimal finalRepairCost,
+                                     String repairCostSource) {
+            this(decision, adjusterId, notes, adjustedReserve, overrideReason, confirmedDamageType, finalRepairCost,
+                    repairCostSource, null, null);
+        }
+
         /**
          * Sources backed by a document, an inspection or an investigation; only these teach the repair-cost model.
          * INVESTIGATION (the investigator's reported cost on a claim sent to investigation) is set by the system.
@@ -591,7 +617,7 @@ public final class Models {
             String state,
             BigDecimal estimatedDamage,
             BigDecimal reserve,
-            String initialStatus,     // DRAFT_PENDING_REVIEW until a human decides; OPEN for unreviewed STP
+            String initialStatus,     // OPEN: a filed claim is open; a person's decision is what closes or settles it
             String workQueue          // the adjuster work queue the AI routed it to (see ClaimPatch.workQueue)
     ) {
         public ClaimCreateRequest(String policyNumber, LocalDate incidentDate, String state,
@@ -641,8 +667,13 @@ public final class Models {
 
     public record ClaimCreateResponse(
             String claimId,
-            String status
-    ) {}
+            String status,
+            String claimNumber
+    ) {
+        public ClaimCreateResponse(String claimId, String status) {
+            this(claimId, status, claimId);
+        }
+    }
 
     public record PolicyHistoryContext(
             int totalPriorClaims,

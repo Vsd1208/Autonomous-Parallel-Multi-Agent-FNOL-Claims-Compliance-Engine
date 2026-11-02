@@ -172,6 +172,7 @@ a:hover { text-decoration: underline; }
   font: inherit;
 }
 .header-user { display: flex; align-items: center; gap: 8px; white-space: nowrap; color: #dbe4ec; }
+.header-signout { background: none; border: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; padding: 0 0 0 6px; }
 .avatar {
   display: inline-grid;
   place-items: center;

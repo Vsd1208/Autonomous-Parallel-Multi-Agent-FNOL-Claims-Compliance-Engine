@@ -22,6 +22,7 @@ import org.springframework.http.*;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import com.guidewire.fnol.api.security.Actor;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
@@ -108,13 +109,21 @@ public class FNOLController {
     static final Set<String> REVIEWABLE_STATUSES =
             Set.of("HUMAN_REVIEW", "PENDING_ADVISORY_REVIEW", "NEEDS_MORE_INFO", "INVESTIGATION_REQUIRED");
 
-    /** Adjuster decision → ClaimCenter status. Approval moves the draft into the standard claim process. */
+    /** Adjuster decision → claim lifecycle. A claim is open until a denial or a closure; the work queue says the rest. */
     static final Map<String, String> CLAIMCENTER_STATUS = Map.of(
             "APPROVED_BY_ADJUSTER", "OPEN",
-            "REJECTED_BY_ADJUSTER", "DENIED",
-            "NEEDS_MORE_INFO", "PENDING_INFORMATION",
-            "INVESTIGATION_REQUIRED", "UNDER_INVESTIGATION",
+            "REJECTED_BY_ADJUSTER", "CLOSED",
+            "NEEDS_MORE_INFO", "OPEN",
+            "INVESTIGATION_REQUIRED", "OPEN",
             "CLOSED", "CLOSED");
+
+    /**
+     * What a decision posts as the reserve. This is the only way the AI's recommendation reaches the money: an approval
+     * posts the adjuster's figure, or the recommendation they approved.
+     */
+    static BigDecimal reserveToPost(String decision, BigDecimal adjustedReserve, ClaimEntity claim) {
+        return adjustedReserve == null && "APPROVED_BY_ADJUSTER".equals(decision) ? claim.reserve : adjustedReserve;
+    }
     static final Set<String> ADJUSTER_DECISIONS = CLAIMCENTER_STATUS.keySet();
 
     // ── Health ──────────────────────────────────────────────────────────────
@@ -319,7 +328,7 @@ public class FNOLController {
         try {
             // Updates the pre-populated claim and tracks the review action in ClaimCenter.
             claimCenter.updateClaim(claim.claimId, new ClaimUpdateRequest(CLAIMCENTER_STATUS.get(decision),
-                    notes, decision, adjusterId, adjustedReserve));
+                    notes, decision, adjusterId, reserveToPost(decision, adjustedReserve, claim)));
             return "SYNCED";
         } catch (RuntimeException e) {
             log.warn("[FNOL] ClaimCenter update failed for claimId={} after review; cc_sync_status=FAILED: {}",
@@ -390,7 +399,9 @@ public class FNOLController {
             ClaimEntity c = analysed.get(e.claimId());
             // Analysed, but the claims system's queue was not updated: the record knows where it really stands.
             String status = c != null && ClaimsSystemIntake.ANALYSIS_PENDING.equals(e.workQueue()) ? c.status : e.workQueue();
-            items.add(new QueueItem(e.claimId(), status, e.policyNumber(), e.reserve(),
+            // No reserve is posted until a person decides: until then the queue shows the AI's recommendation.
+            items.add(new QueueItem(e.claimId(), status, e.policyNumber(),
+                    e.reserve() != null || c == null ? e.reserve() : c.reserve,
                     c == null ? null : c.severityGate, c == null ? null : c.inputFlags,
                     c == null ? null : c.gateFlags, c == null ? null : c.failureReason, e.createdAt()));
         }
@@ -463,8 +474,12 @@ public class FNOLController {
     @Transactional
     ResponseEntity<?> review(
             @PathVariable("claimId") String claimId,
-            @Valid @RequestBody AdjusterReviewRequest request) {
+            @Valid @RequestBody AdjusterReviewRequest submitted) {
 
+        // A decision is recorded under who is signed in, whatever name the request carries.
+        AdjusterReviewRequest request = new AdjusterReviewRequest(submitted.decision(), Actor.idOr(submitted.adjusterId()),
+                submitted.notes(), submitted.adjustedReserve(), submitted.overrideReason(), submitted.confirmedDamageType(),
+                submitted.finalRepairCost(), submitted.repairCostSource(), submitted.handlingSeconds(), submitted.advisoryRating());
         String decision = request.decision().trim().toUpperCase(Locale.ROOT);
         if (!ADJUSTER_DECISIONS.contains(decision)) {
             throw new IllegalArgumentException("Unsupported adjuster decision: " + request.decision());
@@ -514,6 +529,7 @@ public class FNOLController {
         if (governance != null) {
             governance.recordDecision(updated, decision, request.adjusterId(), request.adjustedReserve(),
                     request.confirmedDamageType(), request.finalRepairCost(), costSource);
+            recordUsage(claimId, request);
         }
         return ResponseEntity.ok(new AdjusterReviewResponse(
                 updated.claimId,
@@ -525,6 +541,13 @@ public class FNOLController {
                 updated.adjusterReserve,
                 updated.overrideReason
         ));
+    }
+
+    /** Timing and usefulness count only from a signed-in person, so scripts and integrations cannot skew the evidence. */
+    private void recordUsage(String claimId, AdjusterReviewRequest request) {
+        if (governance != null && Actor.current().isPresent()) {
+            governance.recordUsage(claimId, request.handlingSeconds(), request.advisoryRating());
+        }
     }
 
     /**
@@ -546,8 +569,8 @@ public class FNOLController {
         Claim recorded;
         try {
             recorded = claimCenter.recordDecision(claimId, new ClaimUpdateRequest(CLAIMCENTER_STATUS.get(decision),
-                    request.notes(), decision, request.adjusterId(), request.adjustedReserve(), decision,
-                    request.overrideReason(), request.confirmedDamageType(), request.finalRepairCost(), costSource));
+                    request.notes(), decision, request.adjusterId(),
+                    reserveToPost(decision, request.adjustedReserve(), claim), decision, request.overrideReason(), request.confirmedDamageType(), request.finalRepairCost(), costSource));
         } catch (HttpClientErrorException.Conflict | HttpClientErrorException.NotFound e) {
             throw new InvalidStateException("The claims system refused this decision on claim " + claimId
                     + "; refresh the claim to see where it stands");
@@ -560,6 +583,7 @@ public class FNOLController {
         decisions.apply(new ClaimDecisionRecorder.Decision(claimId, decision, request.adjusterId(), request.notes(),
                 request.adjustedReserve(), request.overrideReason(), request.confirmedDamageType(),
                 request.finalRepairCost(), costSource, decidedAt));
+        recordUsage(claimId, request);
         ClaimEntity updated = claims.findById(claimId).orElseThrow();
         return ResponseEntity.ok(new AdjusterReviewResponse(updated.claimId, updated.status, updated.adjusterDecision,
                 updated.adjusterId, updated.adjusterNotes, updated.reviewedAt, updated.adjusterReserve,

@@ -33,7 +33,7 @@ export function EvidenceImage({ doc, className, onClick }: {
   if (!doc.viewable) {
     return (
       <div className={`evidence-placeholder ${className ?? ''}`} title={doc.sourceUri ?? ''}>
-        <span>{doc.source === 'MOCK' ? 'Demo reference' : 'Linked file'}</span>
+        <span>{doc.source === 'MOCK' ? 'No image: demo placeholder' : 'Linked file'}</span>
         <small>{doc.name}</small>
       </div>
     );
@@ -105,13 +105,17 @@ export function EvidenceGallery({ docs, empty }: { docs: ClaimDocument[]; empty?
   const ordered = [...docs].sort((a, b) => angleRank(a.angle) - angleRank(b.angle));
   return (
     <>
+      {docs.some((d) => d.source === 'MOCK') && (
+        <p className="muted">This claim came from a scripted demo scenario, which names its photos without including
+          any images. To see real photos, use New Claim and choose Load real photo set.</p>
+      )}
       <div className="evidence-grid">
         {ordered.map((d) => (
           <figure key={d.documentId} className="evidence-card">
             <EvidenceImage doc={d} className="evidence-thumb" onClick={() => setOpen(d)} />
             <figcaption>
               <span className="evidence-name" title={d.name}><strong>{angleLabel(d.angle)}</strong></span>
-              <Button onClick={() => setOpen(d)}>View</Button>
+              {d.source !== 'MOCK' && <Button onClick={() => setOpen(d)}>View</Button>}
             </figcaption>
           </figure>
         ))}

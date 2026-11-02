@@ -13,7 +13,8 @@
 #                  and stays in review ("expectedEventClaimStatus"), and the claims system's claim is checked too.
 #                  Then the claims system's side of decisions: the queue is read from it; a decision through the
 #                  workspace reaches it; a finished claim refuses another; a decision made directly in it reaches the
-#                  engine's feedback loop.
+#                  engine's feedback loop. Finally people: sign-in, and an inspector refused a decision. It uses
+#                  the .env.demo accounts (DEMO_PASSWORD).
 #
 # Each scenario gets a fresh random incident date 1-28 days ago (a scenario can set its own range with
 # "daysAgoMin" / "daysAgoMax"), so the script can be re-run without tripping the duplicate check (a
@@ -25,8 +26,9 @@ API_URL="${API_URL:-http://localhost:8080}"
 # The claims system (mock), for checking what was written back onto its claim.
 CC_URL="${CC_URL:-http://localhost:9090}"
 INTAKE="${INTAKE:-both}"
-# Internal intake needs the adjuster token (.env.demo sets demo-adjuster-token). Policyholders use the portal.
+# Scripts use the service credential (.env.demo sets demo-adjuster-token). People sign in; policyholders use the portal.
 ADJUSTER_TOKEN="${ADJUSTER_TOKEN:-demo-adjuster-token}"
+DEMO_PASSWORD="${DEMO_PASSWORD:-demo-password}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FAILURES=0
 PASSES=0
@@ -128,7 +130,7 @@ run_claims_system() {
     echo "== $name (claims system)"
     submit_fresh "$file" /api/v1/fnol/report
     check "$name" "report HTTP status" "200" "$HTTP_CODE"
-    check "$name" "filed status" "SUBMITTED" "$(json_string "$BODY" status)"
+    check "$name" "filed status" "OPEN" "$(json_string "$BODY" status)"
     id=$(json_string "$BODY" claimId)
     [[ -z "$id" ]] && continue
     case "$name" in
@@ -153,19 +155,51 @@ run_claims_system() {
     has_flag "$name" inputFlags "$(expected "$file" expectedInputFlag)" "$row"
     has_flag "$name" gateFlags "$(expected "$file" expectedGateFlag)" "$row"
 
-    # Written back: the claims system's claim has left SUBMITTED (routing set, or held for review).
+    # Written back: the claim is open and has left Awaiting AI Analysis, and the AI posted no reserve on it.
     cc_status=""
     for i in $(seq 1 20); do
-      cc_status=$(json_string "$(curl -s --max-time 5 "$CC_URL/cc/claims/$id")" status)
-      [[ -n "$cc_status" && "$cc_status" != "SUBMITTED" ]] && break
+      cc_status=$(json_string "$(curl -s --max-time 5 "$CC_URL/cc/claims/$id")" workQueue)
+      [[ -n "$cc_status" && "$cc_status" != "ANALYSIS_PENDING" ]] && break
       sleep 0.5
     done
-    if [[ -n "$cc_status" && "$cc_status" != "SUBMITTED" ]]; then PASSES=$((PASSES + 1));
-    else FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] claims system claim $id not updated (status '$cc_status')"; fi
+    if [[ -n "$cc_status" && "$cc_status" != "ANALYSIS_PENDING" ]]; then PASSES=$((PASSES + 1));
+    else FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] claims system claim $id not updated (queue '$cc_status')"; fi
+    check "$name" "claims system status" "OPEN" "$(json_string "$(curl -s --max-time 5 "$CC_URL/cc/claims/$id")" status)"
+    if curl -s --max-time 5 "$CC_URL/cc/rest/claim/v1/claims/$id/exposures" | grep -qE '"reserve":[0-9]'; then
+      FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] the AI posted a reserve on $id before anyone decided"
+    else PASSES=$((PASSES + 1)); fi
 
     check_duplicate "$name" "$file" /api/v1/fnol/report
   done
   check_decisions
+  check_people
+}
+
+# People sign in with their own account; their role decides what they may do.
+check_people() {
+  local who token code
+  echo "== sign-in and roles"
+  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$API_URL/api/v1/auth/login" \
+    -H "Content-Type: application/json" -d '{"username":"ADJ-001","password":"not-the-password"}')
+  check "people" "wrong password" "401" "$code"
+  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$API_URL/api/v1/fnol/queue")
+  check "people" "queue with no credentials" "401" "$code"
+
+  who=$(curl -s --max-time 10 -X POST "$API_URL/api/v1/auth/login" -H "Content-Type: application/json" \
+    -d "{\"username\":\"INS-101\",\"password\":\"$DEMO_PASSWORD\"}")
+  token=$(json_string "$who" token)
+  check "people" "inspector signs in" "INSPECTOR" "$(json_string "$who" role)"
+  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$API_URL/api/v1/fnol/${DECIDE_IN_CLAIMS_SYSTEM:-none}/review" \
+    -H "Content-Type: application/json" -H "Authorization: Bearer $token" \
+    -d '{"decision":"APPROVED_BY_ADJUSTER","adjusterId":"INS-101"}')
+  check "people" "inspector tries to decide" "403" "$code"
+
+  who=$(curl -s --max-time 10 -X POST "$API_URL/api/v1/auth/login" -H "Content-Type: application/json" \
+    -d "{\"username\":\"ADJ-001\",\"password\":\"$DEMO_PASSWORD\"}")
+  token=$(json_string "$who" token)
+  check "people" "adjuster signs in" "ADJUSTER" "$(json_string "$who" role)"
+  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$API_URL/api/v1/fnol/queue" -H "Authorization: Bearer $token")
+  check "people" "adjuster reads the queue" "200" "$code"
 }
 
 # The claims system owns the queue and the decision; the engine follows.
@@ -181,6 +215,9 @@ check_decisions() {
     check "decisions" "workspace decision HTTP status" "200" "$HTTP_CODE"
     check "decisions" "claims system status after it" "OPEN" \
       "$(json_string "$(curl -s --max-time 5 "$CC_URL/cc/claims/$DECIDE_IN_WORKSPACE")" status)"
+    if curl -s --max-time 5 "$CC_URL/cc/rest/claim/v1/claims/$DECIDE_IN_WORKSPACE/exposures" | grep -qE '"reserve":[0-9]'; then
+      PASSES=$((PASSES + 1))
+    else FAILURES=$((FAILURES + 1)); echo "  FAIL [decisions] approving did not post the reserve"; fi
     post '{"decision":"REJECTED_BY_ADJUSTER","adjusterId":"ADJ-DEMO"}' "/api/v1/fnol/$DECIDE_IN_WORKSPACE/review"
     check "decisions" "second decision HTTP status" "409" "$HTTP_CODE"
   fi
@@ -188,7 +225,7 @@ check_decisions() {
   if [[ -n "${DECIDE_IN_CLAIMS_SYSTEM:-}" ]]; then
     code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X PUT "$CC_URL/cc/claims/$DECIDE_IN_CLAIMS_SYSTEM" \
       -H "Content-Type: application/json" \
-      -d '{"status":"DENIED","notes":"Not covered","action":"REJECTED_BY_ADJUSTER","adjusterId":"ADJ-IN-CLAIMS-SYSTEM"}')
+      -d '{"status":"CLOSED","notes":"Not covered","action":"REJECTED_BY_ADJUSTER","adjusterId":"ADJ-IN-CLAIMS-SYSTEM"}')
     check "decisions" "decision in the claims system HTTP status" "200" "$code"
     fb=""
     for i in $(seq 1 40); do   # up to 20 s: its claim.decided event is delivered within a second or so

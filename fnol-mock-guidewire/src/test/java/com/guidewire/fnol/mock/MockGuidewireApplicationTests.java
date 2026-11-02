@@ -149,11 +149,11 @@ class MockGuidewireApplicationTests {
                 "state", "CA",
                 "estimatedDamage", new BigDecimal("4200"),
                 "reserve", new BigDecimal("4830"),
-                "initialStatus", "DRAFT_PENDING_REVIEW");
+                "initialStatus", "OPEN");
         ClaimCreateResponse created = rest.postForObject("/cc/claims", createRequest, ClaimCreateResponse.class);
-        assertThat(created.status()).isEqualTo("DRAFT_PENDING_REVIEW");
+        assertThat(created.status()).isEqualTo("OPEN");
 
-        rest.put("/cc/claims/" + created.claimId(), new ClaimUpdateRequest("UNDER_INVESTIGATION", "Check photos.",
+        rest.put("/cc/claims/" + created.claimId(), new ClaimUpdateRequest("OPEN", "Check photos.",
                 "INVESTIGATION_REQUIRED", "ADJ-009", null));
         rest.put("/cc/claims/" + created.claimId(), new ClaimUpdateRequest("OPEN", "Cleared.",
                 "APPROVED_BY_ADJUSTER", "ADJ-009", new BigDecimal("6100")));

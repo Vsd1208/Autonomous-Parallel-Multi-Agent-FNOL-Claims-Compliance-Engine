@@ -55,8 +55,8 @@ class PortalApiTest {
                 start, start.plusYears(1), "Avery Johnson", "CA", "2025 Camry", List.of()));
         when(policyCenterClient.getCoverages("POL-AUTO-112233")).thenReturn(List.of(
                 new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000"))));
-        when(claimCenterClient.createClaim(any())).thenReturn(new ClaimCreateResponse("CLM-2026-000861", "DRAFT_PENDING_REVIEW"));
-        when(claimCenterClient.getClaim(anyString())).thenReturn(new Claim("CLM-2026-000861", "DRAFT_PENDING_REVIEW",
+        when(claimCenterClient.createClaim(any())).thenReturn(new ClaimCreateResponse("CLM-2026-000861", "OPEN"));
+        when(claimCenterClient.getClaim(anyString())).thenReturn(new Claim("CLM-2026-000861", "OPEN",
                 "POL-AUTO-112233", LocalDate.now().minusDays(77), "CA", null, null, null,
                 List.of(new ClaimAttachment("acknowledgement-letter.txt", "text/plain", LETTER)), List.of()));
 

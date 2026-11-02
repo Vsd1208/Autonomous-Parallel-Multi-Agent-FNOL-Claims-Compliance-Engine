@@ -38,9 +38,10 @@ public class RepairCostEstimator {
     static final String LEARNED = "repair-cost-learned.json";
     /**
      * An estimate below low / TOLERANCE or above high x TOLERANCE is far outside. Replayed on 41 Gemini answers with a
-     * published range (tools/cost-eval/check_gemini_estimates.py): 2x would flag 12, 3x 6, 4x 3.
+     * published range (tools/cost-eval/check_gemini_estimates.py): 2x flags 12, 3x 6, 4x 3. Gemini's figures mostly restate
+     * its severity band (tools/cost-eval/stock_figures.py: 86% fall on five values), so the flag errs towards a person looking.
      */
-    public static final double TOLERANCE = 4.0;
+    public static final double TOLERANCE = 2.0;
 
     private final JsonNode published;
     private final JsonNode learned;

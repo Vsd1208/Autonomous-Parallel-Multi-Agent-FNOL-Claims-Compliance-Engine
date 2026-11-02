@@ -172,7 +172,7 @@ unknown.
 
 | Metric | Value | Date | Command |
 |---|---|---|---|
-| Backend tests | **327 passed**, 0 failed (fnol-agents 95, fnol-orchestrator 87, fnol-api 93, fnol-mock-guidewire 27, fnol-guardrails 13, fnol-enrichment 12; fnol-common has none) | 2 Nov 2026 | `mvn -B test` |
+| Backend tests | **340 passed**, 0 failed (fnol-agents 95, fnol-orchestrator 87, fnol-api 100, fnol-mock-guidewire 30, fnol-guardrails 13, fnol-enrichment 15; fnol-common has none) | 2 Nov 2026 | `mvn -B test` |
 | Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-orchestrator 93%, fnol-mock-guidewire 93%, fnol-agents 85%, fnol-api 79%, fnol-enrichment 66% | 31 Oct 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
 | Build warnings | 0 | 31 Oct 2026 | `mvn -B verify` |
 
@@ -225,7 +225,8 @@ from quoted AAA (2018, 2023, windshield), Consumer Reports (2017, 2021) and CCC 
 | Answers naming an area with a range | 41 of 66 | MULTIPLE / UNKNOWN / ROOF have none |
 | Gemini's estimate inside the range | 17/41 | |
 | Gemini's median estimate / range midpoint | 2.7x | |
-| Flagged at 2x / 3x / **4x (used)** / 5x outside | 12 / 6 / **3** / 3 of 41 | `ESTIMATE_OUTSIDE_PUBLISHED_RANGE` |
+| Flagged at **2x (used)** / 3x / 4x / 5x outside | **12** / 6 / 3 / 3 of 41 | `ESTIMATE_OUTSIDE_PUBLISHED_RANGE` |
+| Gemini's figures: distinct values; share on five values | 12 of 66 answers; 86% ($12,000 for 17 of 18 "severe" answers) | [`stock-figures-v3-subject.md`](../tools/cost-eval/results/stock-figures-v3-subject.md) |
 
 Caveat: without true costs this shows disagreement, not who is right.
 

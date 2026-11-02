@@ -63,7 +63,7 @@ class DiagramAlignmentApiTest {
                 "Avery Johnson", "CA", "2025 Camry", List.of()));
         when(policyCenterClient.getCoverages("POL-AUTO-112233")).thenReturn(List.of(
                 new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000"))));
-        doAnswer(inv -> new ClaimCreateResponse("CLM-2026-%06d".formatted(CLAIM_SEQ.getAndIncrement()), "DRAFT_PENDING_REVIEW"))
+        doAnswer(inv -> new ClaimCreateResponse("CLM-2026-%06d".formatted(CLAIM_SEQ.getAndIncrement()), "OPEN"))
                 .when(claimCenterClient).createClaim(any());
     }
 
@@ -115,12 +115,12 @@ class DiagramAlignmentApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("INVESTIGATION_REQUIRED"));
         verify(claimCenterClient).updateClaim(eq(claimId),
-                eq(new ClaimUpdateRequest("UNDER_INVESTIGATION", "Possible staged loss.", "INVESTIGATION_REQUIRED", "ADJ-009", null)));
+                eq(new ClaimUpdateRequest("OPEN", "Possible staged loss.", "INVESTIGATION_REQUIRED", "ADJ-009", null)));
 
         review(claimId, new AdjusterReviewRequest("REJECTED_BY_ADJUSTER", "ADJ-009", "Investigation found fraud."))
                 .andExpect(status().isOk());
         verify(claimCenterClient).updateClaim(eq(claimId),
-                eq(new ClaimUpdateRequest("DENIED", "Investigation found fraud.", "REJECTED_BY_ADJUSTER", "ADJ-009", null)));
+                eq(new ClaimUpdateRequest("CLOSED", "Investigation found fraud.", "REJECTED_BY_ADJUSTER", "ADJ-009", null)));
     }
 
     // ── Exception handling: any error escalates to a human ─────────────────────────

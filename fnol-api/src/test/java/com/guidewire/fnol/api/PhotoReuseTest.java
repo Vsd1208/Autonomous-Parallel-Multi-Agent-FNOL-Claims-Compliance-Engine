@@ -81,7 +81,7 @@ class PhotoReuseTest {
         when(policyCenterClient.getCoverages("POL-AUTO-112233")).thenReturn(List.of(
                 new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000"))));
         when(claimCenterClient.createClaim(any())).thenAnswer(inv ->
-                new ClaimCreateResponse("CLM-2026-%06d".formatted(ids.getAndIncrement()), "DRAFT_PENDING_REVIEW"));
+                new ClaimCreateResponse("CLM-2026-%06d".formatted(ids.getAndIncrement()), "OPEN"));
         FNOLPayload payload = new FNOLPayload("POL-AUTO-112233", LocalDate.now().minusDays(daysAgo), "CA",
                 "Hit a bollard while parking.", "Avery Johnson", null, null, List.of(photo), "WEB", null, null,
                 new BigDecimal("2000"), List.of("CLOSE_UP"));

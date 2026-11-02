@@ -7,6 +7,7 @@ import com.guidewire.fnol.api.persistence.InspectionEntity;
 import com.guidewire.fnol.api.persistence.InspectionRepository;
 import com.guidewire.fnol.common.Models.ClaimUpdateRequest;
 import com.guidewire.fnol.enrichment.ClaimCenterClient;
+import com.guidewire.fnol.api.security.Actor;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -100,6 +101,7 @@ class InspectionController {
         if (!TYPES.contains(type)) {
             throw new IllegalArgumentException("inspectionType must be one of " + new TreeSet<>(TYPES));
         }
+        String assignedBy = Actor.idOr(request.assignedBy());
         Inspector inspector = INSPECTORS.stream().filter(i -> i.inspectorId().equals(request.inspectorId()))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Unknown inspector " + request.inspectorId()));
         ClaimEntity claim = claims.findById(claimId).orElse(null);
@@ -123,7 +125,7 @@ class InspectionController {
         i.inspectionType = type;
         i.reason = request.reason().trim();
         i.status = "ASSIGNED";
-        i.assignedBy = request.assignedBy().trim();
+        i.assignedBy = assignedBy.trim();
         i.assignedAt = now;
         i.dueBy = LocalDate.now().plusDays(DAYS_TO_REPORT.get(type));
         inspections.save(i);
@@ -133,7 +135,7 @@ class InspectionController {
                         + ";reasonSha256=" + AuditTrailAgent.sha256(i.reason),
                 "previousStatus=" + claim.status + ";status=" + INSPECTION_ASSIGNED + ";dueBy=" + i.dueBy,
                 "ASSIGNED", i.assignedBy);
-        syncClaimCenter(claimId, "PENDING_INSPECTION", "INSPECTION_ASSIGNED", i.assignedBy,
+        syncClaimCenter(claimId, "OPEN", "INSPECTION_ASSIGNED", i.assignedBy,
                 "Inspection (" + type + ") assigned to " + i.inspectorName + ", due " + i.dueBy + ": " + i.reason, null);
         log.info("[FNOL] Inspection {} assigned on {} to {} ({}), due {}", i.inspectionId, claimId, i.inspectorId, type, i.dueBy);
         return ResponseEntity.ok(i);
@@ -155,9 +157,10 @@ class InspectionController {
         if (!"ASSIGNED".equals(i.status)) {
             throw new InvalidStateException("Inspection " + inspectionId + " is " + i.status + "; it cannot be reported");
         }
-        if (!i.inspectorId.equals(request.inspectorId())) {
+        String reporter = Actor.idOr(request.inspectorId());
+        if (!i.inspectorId.equals(reporter)) {
             throw new InvalidStateException("Inspection " + inspectionId + " is assigned to " + i.inspectorId
-                    + ", not " + request.inspectorId());
+                    + ", not " + reporter);
         }
         ClaimEntity claim = claims.findById(claimId).orElseThrow();
         Instant now = Instant.now();
@@ -189,7 +192,7 @@ class InspectionController {
                         e.getMessage());
             }
         }
-        syncClaimCenter(claimId, "DRAFT_PENDING_REVIEW", "INSPECTION_COMPLETED", i.inspectorId,
+        syncClaimCenter(claimId, "OPEN", "INSPECTION_COMPLETED", i.inspectorId,
                 "Inspection report: accident-related damage $" + i.accidentRelatedAmount
                         + (Boolean.TRUE.equals(i.priorDamageFound) ? " (earlier damage excluded)" : "")
                         + "; recommendation " + recommendation, null);
@@ -201,7 +204,7 @@ class InspectionController {
     @Transactional
     ResponseEntity<?> cancel(@PathVariable("claimId") String claimId, @PathVariable("inspectionId") String inspectionId,
                              @RequestBody Map<String, String> body) {
-        String adjusterId = Objects.toString(body.get("adjusterId"), "").trim();
+        String adjusterId = Actor.idOr(Objects.toString(body.get("adjusterId"), "")).trim();
         if (adjusterId.isEmpty()) {
             throw new IllegalArgumentException("adjusterId is required");
         }
@@ -218,7 +221,7 @@ class InspectionController {
         i.completedAt = now;
         inspections.save(i);
         audit(claimId, "InspectionCancelled", "inspectionId=" + inspectionId, "status=HUMAN_REVIEW", "CANCELLED", adjusterId);
-        syncClaimCenter(claimId, "DRAFT_PENDING_REVIEW", "INSPECTION_CANCELLED", adjusterId,
+        syncClaimCenter(claimId, "OPEN", "INSPECTION_CANCELLED", adjusterId,
                 "Inspection by " + i.inspectorName + " cancelled", null);
         return ResponseEntity.ok(i);
     }

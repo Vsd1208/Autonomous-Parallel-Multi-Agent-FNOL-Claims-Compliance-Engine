@@ -145,6 +145,34 @@ public class AiGovernanceService {
         }
     }
 
+    /** Adds what the workspace measured to the claim's latest decision. Never throws: the decision is already saved. */
+    public void recordUsage(String claimId, Integer handlingSeconds, Integer advisoryRating) {
+        if (handlingSeconds == null && advisoryRating == null) return;
+        try {
+            List<AiFeedbackEntity> rows = feedback.findByClaimIdOrderByDecidedAtAsc(claimId);
+            if (rows.isEmpty()) return;
+            AiFeedbackEntity latest = rows.get(rows.size() - 1);
+            latest.handlingSeconds = handlingSeconds;
+            latest.advisoryRating = advisoryRating;
+            feedback.save(latest);
+        } catch (RuntimeException e) {
+            log.warn("[AI governance] Usage not recorded for claimId={}: {}", claimId, e.getMessage());
+        }
+    }
+
+    /** What signed-in people's decisions show: the evidence a study reads. Empty until real people use it. */
+    static Map<String, Object> adjusterEvidence(List<AiFeedbackEntity> decisions) {
+        List<Integer> seconds = decisions.stream().map(f -> f.handlingSeconds).filter(Objects::nonNull).sorted().toList();
+        List<Integer> ratings = decisions.stream().map(f -> f.advisoryRating).filter(Objects::nonNull).toList();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("decisionsTimed", seconds.size());
+        out.put("medianHandlingSeconds", seconds.isEmpty() ? null : seconds.get(seconds.size() / 2));
+        out.put("ratings", ratings.size());
+        out.put("meanAdvisoryRating", ratings.isEmpty() ? null : BigDecimal.valueOf(ratings.stream().mapToInt(i -> i).average().orElse(0))
+                .setScale(2, java.math.RoundingMode.HALF_UP));
+        return out;
+    }
+
     /** When the claim was first sent to investigation, or null if it never was. */
     Instant investigationStarted(String claimId) {
         if (feedback == null) return null;
@@ -213,6 +241,7 @@ public class AiGovernanceService {
         out.put("claims", Map.of("filed", filed.size(), "withAiAnalysis", withAnalysis, "straightThroughEligible", stp,
                 "sentToAdjuster", withAnalysis - stp));
         out.put("flags", countFlags(filed));
+        out.put("adjusterEvidence", adjusterEvidence(decisions));
 
         // Leakage: what claimants asked for above what the photos support, which the reserve rule never pays.
         BigDecimal askedAbove = BigDecimal.ZERO;

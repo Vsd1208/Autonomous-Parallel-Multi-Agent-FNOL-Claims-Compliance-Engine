@@ -114,3 +114,23 @@ UPDATE claimcenter.claims SET work_queue = CASE status
     END
     WHERE work_queue IS NULL AND status <> 'DRAFT';
 CREATE INDEX IF NOT EXISTS idx_cc_claims_work_queue ON claimcenter.claims (work_queue, created_at);
+
+-- A claim's number: a draft number, then the open claim number once submitted. Exposures name their incident and claimant.
+ALTER TABLE claimcenter.claims ADD COLUMN IF NOT EXISTS claim_number VARCHAR(32);
+ALTER TABLE claimcenter.exposures ADD COLUMN IF NOT EXISTS incident VARCHAR(40);
+ALTER TABLE claimcenter.exposures ADD COLUMN IF NOT EXISTS claimant VARCHAR(120);
+UPDATE claimcenter.claims SET claim_number = claim_id WHERE claim_number IS NULL AND status <> 'DRAFT';
+
+-- Claims from before the lifecycle was draft, open, closed: where they stood is already in work_queue.
+UPDATE claimcenter.claims SET status = 'CLOSED' WHERE status = 'DENIED';
+UPDATE claimcenter.claims SET status = 'OPEN'
+    WHERE status IN ('SUBMITTED', 'DRAFT_PENDING_REVIEW', 'PENDING_INFORMATION', 'PENDING_INSPECTION', 'UNDER_INVESTIGATION');
+
+-- ... and an AI recommendation that was posted as a reserve before anyone decided is taken back off the claim.
+UPDATE claimcenter.exposures SET reserve = NULL WHERE claim_id IN (
+    SELECT c.claim_id FROM claimcenter.claims c WHERE c.work_queue <> 'STRAIGHT_THROUGH_PROCESSING'
+    AND NOT EXISTS (SELECT 1 FROM claimcenter.review_actions a WHERE a.claim_id = c.claim_id
+                    AND a.action IN ('APPROVED_BY_ADJUSTER', 'REJECTED_BY_ADJUSTER', 'CLOSED')));
+UPDATE claimcenter.claims SET reserve = NULL WHERE work_queue <> 'STRAIGHT_THROUGH_PROCESSING'
+    AND NOT EXISTS (SELECT 1 FROM claimcenter.review_actions a WHERE a.claim_id = claimcenter.claims.claim_id
+                    AND a.action IN ('APPROVED_BY_ADJUSTER', 'REJECTED_BY_ADJUSTER', 'CLOSED'));

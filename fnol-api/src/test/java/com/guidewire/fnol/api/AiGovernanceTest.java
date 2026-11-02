@@ -56,7 +56,7 @@ class AiGovernanceTest {
                 start, start.plusYears(1), "Avery Johnson", "CA", "2025 Camry", List.of()));
         when(policyCenterClient.getCoverages("POL-AUTO-112233")).thenReturn(List.of(
                 new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000"))));
-        when(claimCenterClient.createClaim(any())).thenReturn(new ClaimCreateResponse("CLM-2026-000814", "DRAFT_PENDING_REVIEW"));
+        when(claimCenterClient.createClaim(any())).thenReturn(new ClaimCreateResponse("CLM-2026-000814", "OPEN"));
         FNOLPayload payload = new FNOLPayload("POL-AUTO-112233", LocalDate.now().minusDays(41), "CA",
                 "Reversed into a bollard.", "Avery Johnson", null, null, List.of("mock://photo/normal.jpg"), "WEB", null,
                 null, new BigDecimal("9000"), List.of("CLOSE_UP"));

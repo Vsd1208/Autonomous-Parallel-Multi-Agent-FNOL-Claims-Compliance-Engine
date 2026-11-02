@@ -74,7 +74,7 @@ All from small public datasets, not real claims. Every number, with its run, dat
 | Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated (median 2.7x the published range midpoint, see [metrics §8](docs/metrics.md#8-repair-cost-estimates)) | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
 | Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
 | Our own on-premise vision model: damaged area right, strict / lenient | **78% / 87%** out-of-fold on 734 car photos, each reviewed (CLIP alone 65% / 81%); property cause of loss **93%** and property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests, build warnings | 327 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
+| Backend tests, build warnings | 340 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
 
 ### Quick start (no API key needed)
 
@@ -86,7 +86,7 @@ docker compose --env-file .env.demo up -d --build
 bash demo-scenarios/run-all.sh
 ```
 
-Then open the adjuster workspace at http://localhost:5173 and the policyholder portal at http://localhost:5174.
+Then open the adjuster workspace at http://localhost:5173 and the policyholder portal at http://localhost:5174. With `.env.demo`, sign in to the workspace as `ADJ-001` (adjuster) or `INS-101` (inspector), password `demo-password`. Without it, Compose's local-only password is `local-dev-password`.
 More: [running locally](#running-locally), [the insurance terms explained](docs/DOMAIN.md), [roadmap and known
 limits](docs/ROADMAP.md).
 
@@ -94,13 +94,13 @@ limits](docs/ROADMAP.md).
 
 ## Governance statement
 
-**By default every claim gets a human decision.** With `fnol.stp.require-advisory-review=true` (env `FNOL_STP_REQUIRE_ADVISORY_REVIEW`, the default) a claim that meets every straight-through-processing (STP) rule is pre-filed in ClaimCenter but saved as `PENDING_ADVISORY_REVIEW`; it counts as filed only after an adjuster confirms it. Setting the flag to `false` lets STP-eligible claims be filed as `STRAIGHT_THROUGH_PROCESSING` with no human step — a business decision (see [ADR-009](docs/architecture-decisions.md)).
+**By default every claim gets a human decision.** With `fnol.stp.require-advisory-review=true` (env `FNOL_STP_REQUIRE_ADVISORY_REVIEW`, the default) a claim that meets every straight-through-processing (STP) rule waits as `PENDING_ADVISORY_REVIEW`, with no reserve posted, until an adjuster confirms it. Setting the flag to `false` lets STP-eligible claims be filed as `STRAIGHT_THROUGH_PROCESSING` with no human step — a business decision (see [ADR-009](docs/architecture-decisions.md)).
 
 - AI analyzes, recommends and explains; it never pays.
 - Any failed factor, HIGH severity or intake flag routes the claim to `HUMAN_REVIEW`.
 - No claim is dropped. A filed claim whose analysis fails stays in review with a high-priority activity for an adjuster; a failed direct intake is saved as a `REJ-…` claim and queued for a human. Duplicate reports are refused and flag the original claim for verification.
 - A decision is recorded in the claims system first; if it cannot be reached, nothing is recorded anywhere and the adjuster is told.
-- ClaimCenter claims stay drafts (`DRAFT_PENDING_REVIEW`) until a human decides.
+- **Only a person posts a reserve.** A filed claim is open, as on ClaimCenter, but the AI's figure is only a recommendation, in an activity and a note. An adjuster's approval is what puts a reserve on the exposure ([ADR-013](docs/architecture-decisions.md)).
 - Every agent step, failure and adjuster decision is recorded in a SHA-256 hash-chained audit trail. Raw PII is never stored or hashed.
 - Coverage rules and subrogation weights are **synthetic prototype values**. The state claim clock cites real regulations ([docs/legal-compliance.md](docs/legal-compliance.md)) but has not been reviewed by a lawyer; Compliance must confirm all rules before production use.
 
@@ -149,12 +149,12 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs
 | Repair-cost range per damaged area and extent from published AAA / Consumer Reports / CCC figures, with sources shown to the adjuster; prices on-premise readings; `ESTIMATE_OUTSIDE_PUBLISHED_RANGE` when Gemini's estimate is more than 4x outside | Done (published figures; accuracy on real claims unknown) |
 | Repair-cost learning: each decision stores the repair cost and its evidence (invoice, body-shop estimate, inspection, investigation); judgements and figures entered during an investigation are never learned from; a learned table ships only when it beats the published one out of sample on 50+ claims | Done (no real costs collected yet) |
 | Hash-chained audit trail + `chainValid` + PDF report | Done |
-| ClaimCenter draft → decision status, attachments, tracked review actions; sync status with a manual retry endpoint | Done (no scheduled retry job) |
+| Claim lifecycle draft → open → closed; reserve posted by the adjuster's decision; attachments, tracked review actions; sync status with a manual retry endpoint | Done (no scheduled retry job) |
 | Adjuster queue (API + console page) | Done |
 | Console wired to live data; internal intake (phone, agent) with channel selector and photo upload | Done |
 | Policyholder claims portal (separate app on 5174): report a loss, track it with claim + policy number, add requested photos; never sees AI findings, reserve or notes | Done |
 | Reproducible demo (`.env.demo`, `run-all.sh`, 10 scenarios) | Done |
-| Authentication | Shared adjuster token only (prototype) |
+| Authentication | Sign-in with adjuster and inspector roles (local accounts; no insurer identity provider or SIU role yet) |
 
 ## Repository structure
 
@@ -192,10 +192,11 @@ A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no
 
 ## API
 
-Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires header `X-Adjuster-Token`.
+Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires a signed-in person (`Authorization: Bearer`) or the service credential (`X-Adjuster-Token`).
 
 | Method | Endpoint | Purpose |
 |---|---|---|
+| POST | `/api/v1/auth/login` | Sign in; roles decide the rest. Also `/logout`, `/me` |
 | GET | `/api/v1/health` | Health check; `intake` says whether losses go to the claims system (`CLAIMS_SYSTEM`) or the direct path (`DIRECT`) |
 | POST 🔒 | `/api/v1/fnol/report` | Agent phone intake and partner channels: file the loss in the claims system; answers at once with the claim number |
 | POST | `/api/v1/events/claimcenter` | Signed claims-system events (`claim.submitted`, `claim.decided`); HMAC signature, no adjuster token |
@@ -296,7 +297,8 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_SECOND_OPINION_URL` | `http://vision-ml:8090` in Compose | On-premise vision service; empty turns the second opinion and on-premise vision off |
 | `FNOL_REDACTION_URL` / `FNOL_REDACTION_REQUIRED` | `http://vision-ml:8090` / `true` | Face and plate blurring before photos leave; when required and unavailable, no photo is sent |
 | `VISION_ML_THREADS` | `2` | CPU threads of the vision service |
-| `FNOL_ADJUSTER_TOKEN` | empty (all adjuster requests rejected) | Shared secret for adjuster endpoints; also baked into the console build |
+| `FNOL_USERS` | local-only accounts in Compose | People's sign-ins: `id\|ROLE\|password\|Display Name;...`. Set your own beyond a laptop demo |
+| `FNOL_ADJUSTER_TOKEN` | empty (service requests rejected) | Service credential for integrations and scripts; in no browser bundle |
 | `FNOL_CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5174` | Allowed browser origins (workspace and portal) |
 | `FNOL_PORTAL_BASE_URL` | `http://localhost:5174` | Portal address used in one-time upload links |
 | `FNOL_EVIDENCE_ALLOWED_HOSTS` | empty | https hosts evidence photos may be downloaded from |
@@ -340,9 +342,10 @@ no waiting (in one observed claim with Gemini: operational 3.9 s, legal about 1 
 
 What comes next and why: [docs/ROADMAP.md](docs/ROADMAP.md).
 
-- Guidewire is mocked, and the extension design is modelled from public documentation, not verified against a tenant. The largest known difference: a submitted claim is open on real ClaimCenter, so "draft until a person decides" cannot carry over literally. All of it: [docs/guidewire-integration.md](docs/guidewire-integration.md).
+- Guidewire is mocked, and the extension design is modelled from public documentation, not verified against a tenant. ClaimCenter's reserve authority limits are not modelled. All of it: [docs/guidewire-integration.md](docs/guidewire-integration.md).
 - If the claims system is down during a photo request or inspection step, its work queue for that claim stays out of date (the claim file shows the right status). Decisions are not affected: they stop, with a clear error.
-- The adjuster token is a shared secret embedded in the console bundle — a prototype control, not authentication. `adjusterId` is taken from the request body.
+- Sign-in uses local accounts, not an insurer's identity provider, and there is no SIU or supervisor role ([ADR-014](docs/architecture-decisions.md)).
+- **No real adjuster has used this, and nothing here has run on a real Guidewire tenant.** The product measures handling time and usefulness, but the [results are empty](docs/adjuster-study.md), so no time saving is claimed. The [sandbox request and first-day steps](docs/guidewire-sandbox-request.md) are ready.
 - Claims with `cc_sync_status=FAILED` (direct intake, photo and inspection steps) are marked for retry, but no retry job exists yet.
 - Photos are uploaded in the console as inline data URIs (≤ 5 MB) or referenced by allow-listed URL; there is no separate document store.
 - The branches use `FutureTask`s on a bounded executor rather than `CompletableFuture` (so a stuck branch can be interrupted), and the console is React rather than Guidewire Jutro — see ADR-011.

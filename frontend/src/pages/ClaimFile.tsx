@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { InfoBar, PageTitle, Sidebar, Workspace } from '../components/Shell';
 import {
@@ -10,9 +10,12 @@ import { angleLabel, anglesFor } from '../photoAngles';
 import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionResult } from '../components/Inspection';
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
+import { session } from '../services/session';
 import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
+/** Inspectors report on inspections; only adjusters decide claims. */
+const canDecide = (status: string) => REVIEWABLE.has(status) && !session.isInspector();
 
 const SECTIONS = [
   ['summary', 'Summary'],
@@ -45,6 +48,8 @@ export default function ClaimFile() {
   const [reload, setReload] = useState(0);
   const [docs, setDocs] = useState<ClaimDocument[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
+  // When this claim was opened, for how long a decision took.
+  const openedAt = useMemo(() => Date.now(), [claimId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,7 +132,7 @@ export default function ClaimFile() {
   const flagCount = (claim.inputFlags?.length ?? 0) + (claim.gateFlags?.length ?? 0);
   const sidebar = (
     <Sidebar
-      actions={REVIEWABLE.has(claim.status) ? (
+      actions={canDecide(claim.status) ? (
         <Button variant="primary" onClick={() => navigate(`/claim/${claim.claimId}/decision`)}>Record Decision</Button>
       ) : undefined}
       title={`Claim ${claim.claimId}`}
@@ -139,7 +144,7 @@ export default function ClaimFile() {
           : key === 'documents' && docs.length ? docs.length
           : key === 'inspection' && claim.status === 'INSPECTION_ASSIGNED' ? '!'
           : key === 'inspection' && inspections.length ? inspections.length
-          : key === 'decision' && REVIEWABLE.has(claim.status) ? '!' : undefined,
+          : key === 'decision' && canDecide(claim.status) ? '!' : undefined,
       }))}
     />
   );
@@ -167,14 +172,14 @@ export default function ClaimFile() {
         </MessageBar>
       )}
       <SectionView section={section as Section} claim={claim} docs={docs} inspections={inspections}
-        reload={reload} onChanged={() => setReload((n) => n + 1)} />
+        reload={reload} onChanged={() => setReload((n) => n + 1)} openedAt={openedAt} />
     </Workspace>
   );
 }
 
-function SectionView({ section, claim, docs, inspections, reload, onChanged }: {
+function SectionView({ section, claim, docs, inspections, reload, onChanged, openedAt }: {
   section: Section; claim: DashboardClaim; docs: ClaimDocument[]; inspections: Inspection[]; reload: number;
-  onChanged: () => void;
+  onChanged: () => void; openedAt: number;
 }) {
   switch (section) {
     case 'summary': return <Summary claim={claim} docs={docs} onChanged={onChanged} />;
@@ -184,7 +189,7 @@ function SectionView({ section, claim, docs, inspections, reload, onChanged }: {
     case 'financials': return <Financials claim={claim} />;
     case 'documents': return <Documents claimId={claim.claimId} docs={docs} reload={reload} onChanged={onChanged} />;
     case 'inspection': return <InspectionSection claim={claim} inspections={inspections} onChanged={onChanged} />;
-    case 'decision': return <Decision claim={claim} inspections={inspections} docs={docs} reload={reload} onChanged={onChanged} />;
+    case 'decision': return <Decision claim={claim} inspections={inspections} docs={docs} reload={reload} onChanged={onChanged} openedAt={openedAt} />;
     case 'history': return <History claimId={claim.claimId} />;
     case 'claimcenter': return <InClaimCenter claimId={claim.claimId} reload={reload} />;
   }
@@ -213,7 +218,7 @@ const FLAG_TEXT: Record<string, string> = {
   ATTORNEY_REPRESENTED: 'The claimant mentions legal counsel: communicate through the attorney; litigation queue.',
   MODEL_DISAGREEMENT: 'The independently trained second-opinion model disagrees with Gemini about the damage.',
   ON_PREMISE_VISION: 'Gemini was unavailable, so the on-premise vision model read the photos; the estimate comes from the repair-cost range. Confirm it.',
-  ESTIMATE_OUTSIDE_PUBLISHED_RANGE: "Gemini's dollar estimate is more than 4x outside the repair-cost range for this area and extent. Check it.",
+  ESTIMATE_OUTSIDE_PUBLISHED_RANGE: "Gemini's dollar estimate is more than 2x outside the repair-cost range for this area and extent. Check it.",
   PHOTO_REUSED: 'A photo matches one already submitted on another claim (possibly resized).',
   PHOTO_SUBJECT_MISMATCH: 'The photos do not show what the policy insures (e.g. a house on an auto policy).',
   POSSIBLE_FLOOD_EXCLUSION: 'The photos show flood, which standard homeowners policies exclude. Confirm the cause of loss.',
@@ -416,7 +421,7 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
             ['Estimated damage', onPremise
               ? (cost ? `${money(d.estimatedDamage)} (from the repair-cost range below; confirm it)`
                 : `${money(d.estimatedDamage)} (placeholder: set it from the photos)`)
-              : money(d.estimatedDamage)],
+              : <span key="e">{money(d.estimatedDamage)} <span className="muted">(rough: {cost ? 'compare with the range below' : 'no published range for this reading'}. Gemini's figures mostly follow its severity label, not a costing of the damage)</span></span>],
             ['Repair-cost range', cost ? <RepairCostCell key="c" cost={cost} /> : null],
             ['AI confidence', d.rawConfidence != null
               ? `${Number(d.confidence).toFixed(2)} (model said ${Number(d.rawConfidence).toFixed(2)})`
@@ -536,8 +541,8 @@ function DecisionTrail({ claim }: { claim: DashboardClaim }) {
               {r!.adjusterNotes && <li>Notes: {r!.adjusterNotes}</li>}
             </ul>
           ) : (
-            <p><strong>Waiting for an adjuster.</strong> Until then the claim is a draft in ClaimCenter: nothing is paid,
-              denied or closed.</p>
+            <p><strong>Waiting for an adjuster.</strong> The claim is open in ClaimCenter, but the AI's reserve is only a
+              recommendation: nothing is posted, paid, denied or closed until a person decides.</p>
           )}
           <p className="trail-note">The adjuster can change the reserve (with a recorded reason) and confirm or correct the damage.</p>
         </section>
@@ -806,7 +811,7 @@ function InspectionSection({ claim, inspections, onChanged }: {
   claim: DashboardClaim; inspections: Inspection[]; onChanged: () => void;
 }) {
   const open = inspections.find((i) => i.status === 'ASSIGNED');
-  const canAssign = REVIEWABLE.has(claim.status) && !claim.claimId.startsWith('REJ-');
+  const canAssign = canDecide(claim.status) && !claim.claimId.startsWith('REJ-');
   return (
     <>
       <PageTitle title="Inspection" subtitle="An inspector confirms which damage this accident caused and what it costs to repair." />
@@ -820,8 +825,8 @@ function InspectionSection({ claim, inspections, onChanged }: {
   );
 }
 
-function Decision({ claim, inspections, docs, reload, onChanged }: {
-  claim: DashboardClaim; inspections: Inspection[]; docs: ClaimDocument[]; reload: number; onChanged: () => void;
+function Decision({ claim, inspections, docs, reload, onChanged, openedAt }: {
+  claim: DashboardClaim; inspections: Inspection[]; docs: ClaimDocument[]; reload: number; onChanged: () => void; openedAt: number;
 }) {
   const navigate = useNavigate();
   const latest = [...inspections].reverse().find((i) => i.status === 'COMPLETED');
@@ -834,7 +839,8 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
   const recommended = latest?.recommendedPayment ?? aiPayment;
   const recommendedBy = latest?.recommendedPayment != null ? `inspection by ${latest.inspectorName}` : 'AI (photos)';
 
-  const [adjusterId, setAdjusterId] = useState('ADJ-001');
+  const adjusterId = session.id();
+  const [rating, setRating] = useState('');
   const [notes, setNotes] = useState('');
   const [finalAmount, setFinalAmount] = useState(recommended != null ? String(recommended) : '');
   const [reason, setReason] = useState('');
@@ -866,7 +872,7 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
     setReason('');
   }, [recommended]);
 
-  const reviewable = REVIEWABLE.has(claim.status);
+  const reviewable = canDecide(claim.status);
   const final = finalAmount.trim() === '' ? null : Number(finalAmount);
   const invalidAmount = final != null && !(final >= 0);
   const changed = final != null && recommended != null && final !== Number(recommended);
@@ -909,7 +915,8 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
       const text = notes.trim() || quickNote || '';
       const res = await apiClient.submitAdjusterReview(claim.claimId,
         { decision, adjusterId, notes: text, ...override, confirmedDamageType: confirmedType || undefined,
-          finalRepairCost: finalCost ?? undefined, repairCostSource: finalCost != null ? costSource || undefined : undefined });
+          finalRepairCost: finalCost ?? undefined, repairCostSource: finalCost != null ? costSource || undefined : undefined,
+          handlingSeconds: Math.round((Date.now() - openedAt) / 1000), advisoryRating: rating ? Number(rating) : undefined });
       claimStore.updateStatus(claim.claimId, res.status);
       setSaved(`${humanize(res.adjusterDecision)} saved at ${new Date(res.reviewedAt).toLocaleString()}`);
       onChanged();
@@ -1036,8 +1043,20 @@ function Decision({ claim, inspections, docs, reload, onChanged }: {
             )}
           </label>
           <label className="field">
-            <span className="field-label">Adjuster ID<span className="required"> *</span></span>
-            <input value={adjusterId} onChange={(e) => setAdjusterId(e.target.value)} disabled={!reviewable} />
+            <span className="field-label">Decided by</span>
+            <input value={adjusterId} readOnly disabled />
+            <span className="hint">Recorded under who is signed in.</span>
+          </label>
+          <label className="field">
+            <span className="field-label">How useful was the AI advisory? (optional)</span>
+            <select value={rating} onChange={(e) => setRating(e.target.value)} disabled={!reviewable}>
+              <option value="">Not rated</option>
+              <option value="5">5: very useful</option>
+              <option value="4">4</option>
+              <option value="3">3</option>
+              <option value="2">2</option>
+              <option value="1">1: not useful</option>
+            </select>
           </label>
           <label className="field wide">
             <span className="field-label">Decision notes</span>
@@ -1087,6 +1106,7 @@ function InClaimCenter({ claimId, reload }: { claimId: string; reload: number })
         <Panel title="Claim">
           <DetailView columns={2} rows={[
             ['ClaimCenter status', <StatusChip key="s" value={cc.status} />],
+            ['Claim number', cc.claimNumber ?? cc.claimId],
             ['Policy', cc.policyNumber],
             ['Open activities', String(open)],
             ['Total open reserve', money(cc.exposures.filter((e) => e.status === 'open')
@@ -1103,7 +1123,7 @@ function InClaimCenter({ claimId, reload }: { claimId: string; reload: number })
               <td>{humanize(e.exposureType.replace(/([a-z])([A-Z])/g, '$1_$2'))}</td>
               <td>{humanize(e.coverageType)}</td>
               <td>{e.costType}</td>
-              <td className="num">{money(e.reserve)}</td>
+              <td className="num">{e.reserve != null ? money(e.reserve) : <span className="muted">Set by the adjuster's decision</span>}</td>
               <td><StatusChip value={e.status.toUpperCase()} /></td>
             </tr>
           ))}

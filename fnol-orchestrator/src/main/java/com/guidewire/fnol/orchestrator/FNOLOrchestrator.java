@@ -440,6 +440,8 @@ public class FNOLOrchestrator {
         }
         // Step A5: replace Gemini's self-reported confidence (nearly constant) with the calibrated trust score
         damage = trustScorer.apply(damage, opinion, lineOfBusiness);
+        // The reserve's confidence is built on the vision confidence, so it follows the trust score; the amount does not change.
+        res = reserve.calculate(damage, coverage, payload.claimedAmount());
         // Step A6: Gemini could not answer on usable photos → the on-premise model's reading replaces the placeholder
         // (vehicle claims; the ON_PREMISE_VISION gate flag always sends the claim to an adjuster)
         DamageAssessment onPremise = OnPremiseVision.substitute(damage, opinion, lineOfBusiness);
@@ -565,9 +567,11 @@ public class FNOLOrchestrator {
         String status = !isStp ? "HUMAN_REVIEW"
                 : stp.isRequireAdvisoryReview() ? "PENDING_ADVISORY_REVIEW" : "STRAIGHT_THROUGH_PROCESSING";
 
-        // Gate Step 5: Pre-populate the claim in Guidewire ClaimCenter. It stays a draft until a human
-        // decides; only an STP claim with no advisory review goes straight to OPEN (standard process).
-        String initialCcStatus = "STRAIGHT_THROUGH_PROCESSING".equals(status) ? "OPEN" : "DRAFT_PENDING_REVIEW";
+        // Gate Step 5: The claim in the claims system. A filed claim is open; the human gate is that the AI only
+        // recommends: no reserve is posted until a person decides. Only STP with no advisory review (a business
+        // decision, ADR-009) posts its reserve without one.
+        boolean unreviewedStp = "STRAIGHT_THROUGH_PROCESSING".equals(status);
+        java.math.BigDecimal postedReserve = unreviewedStp ? branchA.reserve().recommendedReserve() : null;
         String claimId;
         if (existingClaimId == null) {
             ClaimCreateResponse created = cc.createClaim(new ClaimCreateRequest(
@@ -575,27 +579,24 @@ public class FNOLOrchestrator {
                     payload.incidentDate(),
                     payload.state(),
                     branchA.damageAssessment().estimatedDamage(),
-                    branchA.reserve().recommendedReserve(),
-                    initialCcStatus,
+                    postedReserve,
+                    "OPEN",
                     status
             ));
             claimId = created.claimId();
-            log.info("[FNOL] Claim pre-populated in ClaimCenter — claimId={}, ccStatus={}", claimId, initialCcStatus);
+            log.info("[FNOL] Claim filed in ClaimCenter — claimId={}, workQueue={}", claimId, status);
         } else {
-            // Extension mode: the claims system owns the claim; record the AI's estimate, recommended reserve and
-            // routing on it. It stays in review (a draft) until a person decides, exactly as a created claim would.
-            // Its work queue is set by the caller once the analysis record is saved, so an adjuster can never pick up
-            // a claim that has no record yet.
+            // Extension mode: the claims system owns the claim, already open from its submission; record the AI's
+            // estimate on it. Its work queue is set by the caller once the analysis record is saved, so an adjuster
+            // can never pick up a claim that has no record yet.
             claimId = existingClaimId;
-            cc.patchClaim(claimId, new ClaimPatch(initialCcStatus, branchA.damageAssessment().estimatedDamage(),
-                    branchA.reserve().recommendedReserve()));
-            log.info("[FNOL] AI results recorded on the claims system's claim — claimId={}, ccStatus={}", claimId,
-                    initialCcStatus);
+            cc.patchClaim(claimId, new ClaimPatch(null, branchA.damageAssessment().estimatedDamage(), postedReserve));
+            log.info("[FNOL] AI results recorded on the claims system's claim — claimId={}", claimId);
         }
         String adjusterAdvisory = switch (status) {
             case "STRAIGHT_THROUGH_PROCESSING" -> "Claim meets all STP criteria. Auto-filed. No adjuster action required.";
-            case "PENDING_ADVISORY_REVIEW" -> "Claim meets all STP criteria and is pre-populated in ClaimCenter as a draft. "
-                    + "An adjuster confirmation is required before it counts as filed.";
+            case "PENDING_ADVISORY_REVIEW" -> "Claim meets all STP criteria and is open in ClaimCenter with no reserve posted. "
+                    + "An adjuster confirmation is required before the recommended reserve is posted.";
             default -> "Claim requires human review: " + explanation.summary()
                     + " | Recommended action: " + explanation.recommendedAction();
         };
@@ -796,8 +797,13 @@ public class FNOLOrchestrator {
                                        SubrogationResult subrogation, boolean recovery, List<String> missingAngles) {
         try {
             String coverage = branchA.coverage().coverageType();
-            cc.addExposure(claimId, new CcExposure(null, exposureType(policy.policyType(), coverage), coverage,
-                    branchA.reserve().recommendedReserve(), "claimcost", null));
+            boolean unreviewedStp = "STRAIGHT_THROUGH_PROCESSING".equals(status);
+            String exposureType = exposureType(policy.policyType(), coverage);
+            cc.addExposure(claimId, new CcExposure(null, exposureType, coverage,
+                    unreviewedStp ? branchA.reserve().recommendedReserve() : null, "claimcost", null,
+                    "Dwelling".equals(exposureType) || "PersonalProperty".equals(exposureType)
+                            ? "FixedPropertyIncident" : "VehicleIncident",
+                    payload.claimantName() != null ? payload.claimantName() : policy.insuredName()));
 
             cc.addNote(claimId, new CcNote(null, "AI advisory",
                     "AI advisory: " + explanation.recommendedAction().replace('_', ' ').toLowerCase(),
@@ -806,6 +812,16 @@ public class FNOLOrchestrator {
 
             String priority = "HIGH".equals(explanation.severityGate()) ? "urgent" : "high";
             LocalDate due = deadline.acknowledgeBy();
+            if (!unreviewedStp) {
+                // The recommendation reaches the money only through this person: approving posts it, or their figure.
+                cc.addActivity(claimId, new CcActivity(null, "Review recommended reserve",
+                        "AI recommends a reserve of $" + branchA.reserve().recommendedReserve() + " on " + coverage
+                                + ", from a rough AI figure of $" + branchA.damageAssessment().estimatedDamage()
+                                + (branchA.repairCost() == null ? " with no published repair-cost range to compare it with"
+                                        : "; published range " + costBasis(branchA.repairCost()))
+                                + ". Nothing is posted until an adjuster decides.",
+                        priority, due, FNOL_QUEUE, null, null));
+            }
             for (String flag : reviewFlags) {
                 cc.addActivity(claimId, new CcActivity(null, "Review AI flag: " + flag.replace('_', ' ').toLowerCase(),
                         flagReasons.getOrDefault(flag, "Raised at intake review; check before any decision."),

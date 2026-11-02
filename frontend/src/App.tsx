@@ -1,3 +1,5 @@
+import Login from './pages/Login';
+import { session } from './services/session';
 import React from 'react';
 import { BrowserRouter as Router, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import './style.css';
@@ -33,9 +35,11 @@ function App() {
 }
 
 function AdjusterWorkspace() {
+  const [signedIn, setSignedIn] = React.useState(session.get());
+  if (!signedIn) return <Login onSignedIn={setSignedIn} />;
   return (
       <div className="app">
-        <AppHeader />
+        <AppHeader onSignedOut={() => setSignedIn(null)} />
         <Routes>
           <Route path="/" element={<Desktop />} />
           <Route path="/queue/:view" element={<Desktop />} />

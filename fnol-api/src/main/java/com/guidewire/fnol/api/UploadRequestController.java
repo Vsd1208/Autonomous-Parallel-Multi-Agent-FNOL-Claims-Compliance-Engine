@@ -18,6 +18,7 @@ import com.guidewire.fnol.api.persistence.UploadRequestEntity;
 import com.guidewire.fnol.api.persistence.UploadRequestRepository;
 import com.guidewire.fnol.common.Models.ClaimUpdateRequest;
 import com.guidewire.fnol.enrichment.ClaimCenterClient;
+import com.guidewire.fnol.api.security.Actor;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -117,7 +118,7 @@ class UploadRequestController {
         r.tokenSha256 = sha256(token);
         r.requestedAngles = String.join(",", angles);
         r.message = body.message() == null || body.message().isBlank() ? null : body.message().trim();
-        r.requestedBy = body.requestedBy().trim();
+        r.requestedBy = Actor.idOr(body.requestedBy()).trim();
         r.status = "OPEN";
         r.createdAt = now;
         r.expiresAt = now.plus(LINK_VALIDITY);
@@ -133,7 +134,7 @@ class UploadRequestController {
         audit(claimId, "PhotoRequest", "requestId=" + r.requestId + ";angles=" + r.requestedAngles
                         + ";messageSha256=" + AuditTrailAgent.sha256(Objects.toString(r.message, "")),
                 "previousStatus=" + previous + ";status=NEEDS_MORE_INFO;expiresAt=" + r.expiresAt, "REQUESTED", r.requestedBy);
-        syncClaimCenter(claimId, "PENDING_INFORMATION", "PHOTOS_REQUESTED", r.requestedBy,
+        syncClaimCenter(claimId, "OPEN", "PHOTOS_REQUESTED", r.requestedBy,
                 "Requested photos from the claimant: " + String.join(", ", angles));
         log.info("[FNOL] Photo request {} for {} ({}), link valid until {}", r.requestId, claimId, r.requestedAngles, r.expiresAt);
         return ResponseEntity.ok(new Created(r.requestId, portalBaseUrl + "/upload/" + token, r.expiresAt, angles));
@@ -151,7 +152,7 @@ class UploadRequestController {
     @Transactional
     ResponseEntity<?> cancel(@PathVariable("claimId") String claimId, @PathVariable("requestId") String requestId,
                              @RequestBody Map<String, String> body) {
-        String adjusterId = Objects.toString(body.get("adjusterId"), "").trim();
+        String adjusterId = Actor.idOr(Objects.toString(body.get("adjusterId"), "")).trim();
         if (adjusterId.isEmpty()) {
             throw new IllegalArgumentException("adjusterId is required");
         }
@@ -224,7 +225,7 @@ class UploadRequestController {
 
         audit(r.claimId, "SupplementaryEvidence", "requestId=" + r.requestId + ";angles=" + String.join(",", angles),
                 "photosStored=" + stored.size() + ";status=HUMAN_REVIEW", "RECEIVED", AuditService.SYSTEM_ACTOR);
-        syncClaimCenter(r.claimId, "DRAFT_PENDING_REVIEW", "PHOTOS_RECEIVED", "CLAIMANT",
+        syncClaimCenter(r.claimId, "OPEN", "PHOTOS_RECEIVED", "CLAIMANT",
                 stored.size() + " photo(s) received from the claimant: " + String.join(", ", angles));
         log.info("[FNOL] Photo request {} used: {} photo(s) added to {}", r.requestId, stored.size(), r.claimId);
         return ResponseEntity.ok(Map.of("claimId", r.claimId, "photosReceived", stored.size()));

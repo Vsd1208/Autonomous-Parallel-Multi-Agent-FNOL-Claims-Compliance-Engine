@@ -95,12 +95,12 @@ class GuidewireClientContractTest {
     void draftUntilDecision() {
         ClaimCreateResponse created = claimCenter.createClaim(new ClaimCreateRequest(policyNumber,
                 LocalDate.now().minusDays(3), "CA", new BigDecimal("4200.00"), new BigDecimal("3200.00"),
-                "DRAFT_PENDING_REVIEW"));
+                "OPEN"));
         assertThat(created.claimId()).isNotBlank();
-        assertThat(created.status()).isEqualTo("DRAFT_PENDING_REVIEW");
+        assertThat(created.status()).isEqualTo("OPEN");
 
         Claim claim = claimCenter.getClaim(created.claimId());
-        assertThat(claim.status()).isEqualTo("DRAFT_PENDING_REVIEW");
+        assertThat(claim.status()).isEqualTo("OPEN");
         assertThat(claim.policyNumber()).isEqualTo(policyNumber);
 
         claimCenter.updateClaim(created.claimId(),
@@ -112,10 +112,9 @@ class GuidewireClientContractTest {
     @DisplayName("ClaimCenter: exposures, activities, notes and documents are stored on the claim with server ids")
     void childObjects() {
         String claimId = claimCenter.createClaim(new ClaimCreateRequest(policyNumber, LocalDate.now().minusDays(2),
-                "CA", new BigDecimal("4200.00"), new BigDecimal("3200.00"), "DRAFT_PENDING_REVIEW")).claimId();
+                "CA", new BigDecimal("4200.00"), new BigDecimal("3200.00"), "OPEN")).claimId();
 
-        CcExposure exposure = claimCenter.addExposure(claimId, new CcExposure(null, "VehicleDamage", "COLLISION",
-                new BigDecimal("3200.00"), "claimcost", null));
+        CcExposure exposure = claimCenter.addExposure(claimId, new CcExposure(null, "VehicleDamage", "COLLISION", new BigDecimal("3200.00"), "claimcost", null, "VehicleIncident", "Avery Johnson"));
         CcActivity activity = claimCenter.addActivity(claimId, new CcActivity(null, "Confirm AI advisory",
                 "Advisory only: the adjuster decides.", "normal", LocalDate.now().plusDays(15), "FNOL adjuster queue",
                 null, null));

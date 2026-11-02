@@ -290,7 +290,7 @@ class FNOLOrchestratorTest {
         assertThat(response.status()).isEqualTo("PENDING_ADVISORY_REVIEW");
         assertThat(response.branchA().reserve().settlementBasis()).isEqualByComparingTo("3000");
         assertThat(response.branchA().reserve().recommendedReserve()).isEqualByComparingTo("2000");
-        assertThat(fixture.claimCenter.created.get(0).reserve()).isEqualByComparingTo("2000");
+        assertThat(fixture.claimCenter.created.get(0).reserve()).isNull();   // recommended, not posted
         assertThat(response.notes()).anyMatch(n -> n.startsWith("RESERVE: the claimant asks $3000"));
     }
 
@@ -363,7 +363,7 @@ class FNOLOrchestratorTest {
         assertThat(fixture.claimCenter.exposures.get(id)).singleElement().satisfies(e -> {
             assertThat(e.exposureType()).isEqualTo("VehicleDamage");
             assertThat(e.coverageType()).isEqualTo("COLLISION");
-            assertThat(e.reserve()).isEqualByComparingTo(flagged.branchA().reserve().recommendedReserve());
+            assertThat(e.reserve()).isNull();
         });
         assertThat(fixture.claimCenter.notes.get(id)).singleElement().satisfies(n -> {
             assertThat(n.topic()).isEqualTo("AI advisory");
@@ -378,12 +378,12 @@ class FNOLOrchestratorTest {
             assertThat(a.assignedTo()).isEqualTo(FNOLOrchestrator.FNOL_QUEUE);
         });
 
-        // An STP-eligible claim gets one activity: confirm the advisory.
+        // An STP-eligible claim: confirm the advisory, and the reserve a person must approve.
         FNOLResponse clean = orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson",
                 "Scraped a pole in a parking garage.", "3000"));
         assertThat(clean.status()).isEqualTo("PENDING_ADVISORY_REVIEW");
         assertThat(fixture.claimCenter.activities.get(clean.claimId())).extracting(CcActivity::subject)
-                .containsExactlyInAnyOrder("Confirm AI advisory (straight-through eligible)",
+                .containsExactlyInAnyOrder("Review recommended reserve", "Confirm AI advisory (straight-through eligible)",
                         "Accept or deny the claim (regulatory deadline)");
         assertThat(FNOLOrchestrator.exposureType("HOME", "DWELLING")).isEqualTo("Dwelling");
     }
@@ -555,22 +555,38 @@ class FNOLOrchestratorTest {
     }
 
     @Test
-    @DisplayName("Diagram: ClaimCenter gets a draft until a human decides")
-    void process_claimCenterDraftUntilHumanDecides() {
+    @DisplayName("Diagram: the AI posts no reserve until a human decides; it recommends one in an activity")
+    void process_noReservePostedUntilHumanDecides() {
         orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."));
         orchestrator.process(OrchestratorFixture.payload("POL-AUTO-112233", "Demo User", "Scraped a pole."));
 
         assertThat(fixture.claimCenter.created).extracting(ClaimCreateRequest::initialStatus)
-                .containsExactly("DRAFT_PENDING_REVIEW", "DRAFT_PENDING_REVIEW");
+                .containsExactly("OPEN", "OPEN");
+        assertThat(fixture.claimCenter.created).extracting(ClaimCreateRequest::reserve).containsOnlyNulls();
+        assertThat(fixture.claimCenter.exposures.values()).allSatisfy(list -> assertThat(list).singleElement().satisfies(e -> {
+            assertThat(e.reserve()).isNull();
+            assertThat(e.incident()).isEqualTo("VehicleIncident");
+            assertThat(e.claimant()).isNotBlank();
+        }));
+        assertThat(fixture.claimCenter.activities.values()).allSatisfy(list -> assertThat(list)
+                .anySatisfy(a -> assertThat(a.subject()).isEqualTo("Review recommended reserve")));
     }
 
     @Test
     @DisplayName("Diagram: STP with no advisory review goes straight to OPEN in ClaimCenter")
     void process_unreviewedStpIsOpenInClaimCenter() {
         fixture.stp.setRequireAdvisoryReview(false);
-        fixture.build().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."));
+        FNOLResponse response = fixture.build().process(
+                OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."));
 
         assertThat(fixture.claimCenter.created.get(0).initialStatus()).isEqualTo("OPEN");
+        // The one case with no person (a business decision, ADR-009): the reserve is posted, and nothing asks to review it.
+        BigDecimal reserve = response.branchA().reserve().recommendedReserve();
+        assertThat(fixture.claimCenter.created.get(0).reserve()).isEqualByComparingTo(reserve);
+        assertThat(fixture.claimCenter.exposures.get(response.claimId())).singleElement()
+                .satisfies(e -> assertThat(e.reserve()).isEqualByComparingTo(reserve));
+        assertThat(fixture.claimCenter.activities.getOrDefault(response.claimId(), List.of())).extracting(CcActivity::subject)
+                .doesNotContain("Review recommended reserve");
     }
 
     // ── P5: complete audit trail, no raw PII hashed ─────────────────────────────────

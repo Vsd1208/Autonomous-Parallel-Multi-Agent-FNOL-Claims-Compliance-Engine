@@ -96,6 +96,19 @@ export default function Governance() {
                 data for retraining the trust score.</p>
             </Panel>
 
+            <Panel title="Evidence from adjusters">
+              {m.adjusterEvidence && (m.adjusterEvidence.decisionsTimed > 0 || m.adjusterEvidence.ratings > 0) ? (
+                <dl className="detail-view cols-1">
+                  <div className="detail-row"><dt>Decisions timed</dt><dd>{m.adjusterEvidence.decisionsTimed}</dd></div>
+                  <div className="detail-row"><dt>Median time to decide</dt><dd>{m.adjusterEvidence.medianHandlingSeconds != null
+                    ? `${m.adjusterEvidence.medianHandlingSeconds} s` : '—'}</dd></div>
+                  <div className="detail-row"><dt>Advisory usefulness (1-5)</dt><dd>{m.adjusterEvidence.meanAdvisoryRating ?? '—'} from {m.adjusterEvidence.ratings} rating(s)</dd></div>
+                </dl>
+              ) : <p className="muted">Nothing recorded yet.</p>}
+              <p className="hint">From signed-in people's decisions only, and test sign-ins count. This is not evidence that the
+                tool saves time: that needs a baseline without it (docs/adjuster-study.md). No study has been run.</p>
+            </Panel>
+
             <Panel title="Repair-cost accuracy">
               {m.repairCost && m.repairCost.claimsWithRepairCost > 0 ? (
                 <dl className="detail-view cols-1">

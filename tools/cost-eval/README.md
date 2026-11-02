@@ -28,13 +28,19 @@ the photo was taken. Cost-guide sites without a named publisher were not used.
 - every vehicle claim shows the range for its area and extent, with links to the sources;
 - when Gemini is unavailable and the on-premise model read the photos, the claim is priced at the range's geometric
   mean (instead of a $3,500 placeholder) and the reserve is recalculated; the claim still goes to an adjuster;
-- a Gemini estimate more than 4x outside the range raises `ESTIMATE_OUTSIDE_PUBLISHED_RANGE`.
+- a Gemini estimate more than 2x outside the range raises `ESTIMATE_OUTSIDE_PUBLISHED_RANGE`.
 
 **Replayed on Gemini's recorded answers** (`python -P check_gemini_estimates.py --run v3-subject`,
 [results](results/gemini-estimates-v3-subject.md)): of 66 answers, 41 name an area with a range. Gemini's estimate is
-inside the range for 17 of 41, and its median is 2.7x the range's midpoint. Flags by tolerance: 2x 12/41, 3x 6/41,
-4x 3/41 (used), 5x 3/41. With no true costs this says the two disagree, not which is right: Gemini may overestimate, or
+inside the range for 17 of 41, and its median is 2.7x the range's midpoint. Flags by tolerance: 2x 12/41 (used), 3x 6/41,
+4x 3/41, 5x 3/41. With no true costs this says the two disagree, not which is right: Gemini may overestimate, or
 the band mapping may be low.
+
+**What Gemini's figures are** (`python -P stock_figures.py`, [results](results/stock-figures-v3-subject.md)): 66 answers hold
+12 distinct values, and 86% fall on five of them. 17 of the 18 "severe" answers are exactly $12,000. So the figure mostly
+restates the severity band the prompt defines. That is why the flag tightened from 4x to 2x, and the workspace shows it as
+rough next to the range. Asking for parts and labour might do better, but a new prompt invalidates the fitted trust score
+until it is re-measured.
 
 ## Part 2: learning from this insurer's own repair costs
 

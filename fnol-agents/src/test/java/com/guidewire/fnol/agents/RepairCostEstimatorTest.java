@@ -56,14 +56,14 @@ class RepairCostEstimatorTest {
     }
 
     @Test
-    @DisplayName("Far outside = below low / 4 or above high x 4")
+    @DisplayName("Far outside = below low / 2 or above high x 2")
     void farOutside() {
         RepairCostRange small = costs.range("SIDE_PANEL", "SMALL");           // $50 - $200
         assertThat(RepairCostEstimator.farOutside(new BigDecimal("12000"), small)).isTrue();
-        assertThat(RepairCostEstimator.farOutside(new BigDecimal("800"), small)).isFalse();
-        assertThat(RepairCostEstimator.farOutside(new BigDecimal("801"), small)).isTrue();
-        assertThat(RepairCostEstimator.farOutside(new BigDecimal("13"), small)).isFalse();   // 50 / 4 = 12.50
-        assertThat(RepairCostEstimator.farOutside(new BigDecimal("12"), small)).isTrue();
+        assertThat(RepairCostEstimator.farOutside(new BigDecimal("400"), small)).isFalse();
+        assertThat(RepairCostEstimator.farOutside(new BigDecimal("401"), small)).isTrue();
+        assertThat(RepairCostEstimator.farOutside(new BigDecimal("25"), small)).isFalse();   // 50 / 2
+        assertThat(RepairCostEstimator.farOutside(new BigDecimal("24"), small)).isTrue();
         assertThat(RepairCostEstimator.farOutside(new BigDecimal("12"), null)).isFalse();
     }
 

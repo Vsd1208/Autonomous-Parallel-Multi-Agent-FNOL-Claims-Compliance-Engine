@@ -90,7 +90,7 @@ class InspectionWorkflowTest {
         verify(claimCenterClient, times(2)).updateClaim(eq(claimId), updates.capture());
         assertThat(updates.getAllValues()).extracting(ClaimUpdateRequest::action)
                 .containsExactly("INSPECTION_ASSIGNED", "INSPECTION_COMPLETED");
-        assertThat(updates.getAllValues().get(0).status()).isEqualTo("PENDING_INSPECTION");
+        assertThat(updates.getAllValues().get(0).status()).isEqualTo("OPEN");
 
         JsonNode trail = json(get("/api/v1/fnol/" + claimId + "/audit"), 200);
         assertThat(trail.path("chainValid").asBoolean()).isTrue();

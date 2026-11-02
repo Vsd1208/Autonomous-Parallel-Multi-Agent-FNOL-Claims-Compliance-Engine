@@ -24,7 +24,7 @@ public class SecurityConfig {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(allowedOrigins);
         cors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
-        cors.setAllowedHeaders(List.of("Content-Type", AdjusterTokenFilter.HEADER));
+        cors.setAllowedHeaders(List.of("Content-Type", "Authorization", AdjusterTokenFilter.HEADER));
         cors.setExposedHeaders(List.of("Content-Disposition"));
         cors.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -37,9 +37,9 @@ public class SecurityConfig {
 
     @Bean
     FilterRegistrationBean<AdjusterTokenFilter> adjusterTokenFilter(
-            @Value("${fnol.security.adjuster-token:}") String adjusterToken) {
+            @Value("${fnol.security.adjuster-token:}") String adjusterToken, AuthService auth) {
         FilterRegistrationBean<AdjusterTokenFilter> bean =
-                new FilterRegistrationBean<>(new AdjusterTokenFilter(adjusterToken));
+                new FilterRegistrationBean<>(new AdjusterTokenFilter(adjusterToken, auth));
         bean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
         return bean;
     }

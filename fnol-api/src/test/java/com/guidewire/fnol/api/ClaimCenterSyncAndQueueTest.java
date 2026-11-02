@@ -64,9 +64,9 @@ class ClaimCenterSyncAndQueueTest {
 
         review(claimId).andExpect(status().isOk());
 
-        // Approval moves the pre-populated draft into the standard claim process (OPEN) and is tracked as an action.
+        // Approval is what posts the recommended reserve, and it is tracked as an action.
         verify(claimCenterClient).updateClaim(eq(claimId),
-                eq(new ClaimUpdateRequest("OPEN", "Photos match.", "APPROVED_BY_ADJUSTER", "ADJ-001", null)));
+                eq(new ClaimUpdateRequest("OPEN", "Photos match.", "APPROVED_BY_ADJUSTER", "ADJ-001", new BigDecimal("4830.00"))));
         assertThat(claims.findById(claimId).orElseThrow().ccSyncStatus).isEqualTo("SYNCED");
     }
 
@@ -98,7 +98,7 @@ class ClaimCenterSyncAndQueueTest {
                 .andExpect(status().isOk());
 
         verify(claimCenterClient).updateClaim(eq(claimId),
-                eq(new ClaimUpdateRequest("OPEN", "Photos match.", "APPROVED_BY_ADJUSTER", "ADJ-001", null)));
+                eq(new ClaimUpdateRequest("OPEN", "Photos match.", "APPROVED_BY_ADJUSTER", "ADJ-001", new BigDecimal("4830.00"))));
         assertThat(claims.findById(claimId).orElseThrow().ccSyncStatus).isEqualTo("SYNCED");
         mockMvc.perform(post("/api/v1/fnol/" + claimId + "/claimcenter-sync").header("X-Adjuster-Token", TOKEN))
                 .andExpect(status().isConflict());
@@ -108,7 +108,7 @@ class ClaimCenterSyncAndQueueTest {
     @DisplayName("GET /claimcenter shows the claim as ClaimCenter holds it (adjusters only); 502 when ClaimCenter is down")
     void claimCenterViewIsProxied() throws Exception {
         String claimId = saveClaim("CLM-Q-", "HUMAN_REVIEW", Instant.now());
-        when(claimCenterClient.getClaim(claimId)).thenReturn(new Claim(claimId, "DRAFT_PENDING_REVIEW", "POL-AUTO-112233",
+        when(claimCenterClient.getClaim(claimId)).thenReturn(new Claim(claimId, "OPEN", "POL-AUTO-112233",
                 null, "CA", new BigDecimal("4200"), new BigDecimal("3200"), null, List.of(), List.of(),
                 List.of(new CcExposure("EXP-1", "VehicleDamage", "COLLISION", new BigDecimal("3200"), "claimcost", "open")),
                 List.of(new CcActivity("ACT-1", "Review AI flag: claimed exceeds ai estimate", "why", "high", null,

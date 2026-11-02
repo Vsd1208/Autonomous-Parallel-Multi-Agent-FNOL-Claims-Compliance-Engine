@@ -91,7 +91,7 @@ class ClaimEventFlowTest {
         assertThat(cc.fnol(draft.claimId()).policyNumber()).isEqualTo("POL-AUTO-112233");
         assertThat(cc.events(draft.claimId(), false)).isEmpty();   // a draft announces nothing
 
-        assertThat(cc.submit(draft.claimId()).status()).isEqualTo(ClaimEventOutbox.SUBMITTED);
+        assertThat(cc.submit(draft.claimId()).status()).isEqualTo(ClaimEventOutbox.OPEN);
         assertThatThrownBy(() -> cc.submit(draft.claimId()))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
@@ -168,9 +168,9 @@ class ClaimEventFlowTest {
         cc.submit(id);
         jdbc.update("UPDATE claimcenter.events SET delivered_at = next_attempt_at");   // claim.submitted is done with
 
-        cc.update(id, new ClaimUpdateRequest("PENDING_INFORMATION", "photos please", "PHOTOS_REQUESTED", "ADJ-001", null,
+        cc.update(id, new ClaimUpdateRequest("OPEN", "photos please", "PHOTOS_REQUESTED", "ADJ-001", null,
                 "NEEDS_MORE_INFO"));
-        cc.update(id, new ClaimUpdateRequest("DRAFT_PENDING_REVIEW", "got them"));   // no action at all
+        cc.update(id, new ClaimUpdateRequest("OPEN", "got them"));   // no action at all
         assertThat(cc.events(id, true)).isEmpty();
 
         Claim decided = cc.update(id, new ClaimUpdateRequest("OPEN", "private adjuster note", "APPROVED_BY_ADJUSTER",
@@ -195,13 +195,13 @@ class ClaimEventFlowTest {
         start();
         String id = cc.reportLoss(fnol()).claimId();
         cc.submit(id);
-        cc.update(id, new ClaimUpdateRequest("DENIED", "no cover", "REJECTED_BY_ADJUSTER", "ADJ-001", null));
+        cc.update(id, new ClaimUpdateRequest("CLOSED", "no cover", "REJECTED_BY_ADJUSTER", "ADJ-001", null));
         int events = cc.events(id, false).size();
 
         assertThatThrownBy(() -> cc.update(id, new ClaimUpdateRequest("OPEN", null, "APPROVED_BY_ADJUSTER", "ADJ-002", null)))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
-        assertThat(cc.update(id, new ClaimUpdateRequest("DENIED", "again", "REJECTED_BY_ADJUSTER", "ADJ-002", null)).reviewActions())
+        assertThat(cc.update(id, new ClaimUpdateRequest("CLOSED", "again", "REJECTED_BY_ADJUSTER", "ADJ-002", null)).reviewActions())
                 .hasSize(1);
         assertThat(cc.events(id, false)).hasSize(events);
     }
@@ -219,18 +219,78 @@ class ClaimEventFlowTest {
         assertThat(cc.queue("ANALYSIS_PENDING,HUMAN_REVIEW", 0, 20).items()).extracting(ClaimQueueEntry::claimId)
                 .doesNotContain(draft);
 
-        cc.patch(submitted, new ClaimPatch("DRAFT_PENDING_REVIEW", null, new BigDecimal("800"), "PENDING_ADVISORY_REVIEW"));
+        cc.patch(submitted, new ClaimPatch("OPEN", null, new BigDecimal("800"), "PENDING_ADVISORY_REVIEW"));
         assertThat(cc.queue("ANALYSIS_PENDING", 0, 20).total()).isZero();
         ClaimQueueEntry entry = cc.queue("PENDING_ADVISORY_REVIEW", 0, 20).items().get(0);
         assertThat(entry.reserve()).isEqualByComparingTo("800");
 
         String created = cc.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 10, 22), "CA",
-                new BigDecimal("100"), new BigDecimal("115"), "DRAFT_PENDING_REVIEW", "PENDING_ADVISORY_REVIEW")).claimId();
+                new BigDecimal("100"), new BigDecimal("115"), "OPEN", "PENDING_ADVISORY_REVIEW")).claimId();
         ClaimQueuePage first = cc.queue("PENDING_ADVISORY_REVIEW", 0, 1);
         assertThat(first.total()).isEqualTo(2);
         assertThat(first.items()).extracting(ClaimQueueEntry::claimId).containsExactly(submitted);
         assertThat(cc.queue("PENDING_ADVISORY_REVIEW", 1, 1).items()).extracting(ClaimQueueEntry::claimId).containsExactly(created);
         assertThatThrownBy(() -> cc.queue(" ", 0, 20)).isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    @DisplayName("A draft has a draft number; submitting opens the claim under its open number, under the same id")
+    void draftNumberThenOpenNumber() throws Exception {
+        start();
+        ClaimCreateResponse draft = cc.reportLoss(fnol());
+        assertThat(draft.claimNumber()).startsWith("DRAFT-").isNotEqualTo(draft.claimId());
+        assertThat(cc.get(draft.claimId()).claimNumber()).isEqualTo(draft.claimNumber());
+        assertThat(cc.get(draft.claimId()).workQueue()).isNull();   // a draft is on nobody's desk
+
+        ClaimCreateResponse open = cc.submit(draft.claimId());
+        assertThat(open.status()).isEqualTo("OPEN");
+        assertThat(open.claimId()).isEqualTo(draft.claimId());
+        assertThat(open.claimNumber()).isEqualTo(draft.claimId());
+        Claim claim = cc.get(draft.claimId());
+        assertThat(claim.status()).isEqualTo("OPEN");
+        assertThat(claim.claimNumber()).isEqualTo(draft.claimId());
+        assertThat(claim.workQueue()).isEqualTo(ClaimEventOutbox.ANALYSIS_PENDING);
+    }
+
+    @Test
+    @DisplayName("An exposure needs a coverage, incident and claimant; it can exist with no reserve, and a person's decision sets it")
+    void exposureRequirementsAndReserve() throws Exception {
+        start();
+        String id = cc.reportLoss(fnol()).claimId();
+        cc.submit(id);
+        for (CcExposure incomplete : List.of(
+                new CcExposure(null, "VehicleDamage", "COLLISION", null, null, null, null, "Avery Johnson"),
+                new CcExposure(null, "VehicleDamage", "COLLISION", null, null, null, "VehicleIncident", null),
+                new CcExposure(null, "VehicleDamage", null, null, null, null, "VehicleIncident", "Avery Johnson"))) {
+            assertThatThrownBy(() -> cc.addExposure(id, incomplete))
+                    .isInstanceOfSatisfying(ResponseStatusException.class,
+                            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+        }
+        CcExposure exposure = cc.addExposure(id, new CcExposure(null, "VehicleDamage", "COLLISION", null, null, null,
+                "VehicleIncident", "Avery Johnson"));
+        assertThat(exposure.reserve()).isNull();
+
+        cc.update(id, new ClaimUpdateRequest("OPEN", "photos please", "NEEDS_MORE_INFO", "ADJ-001", null));
+        assertThat(cc.get(id).exposures().get(0).reserve()).as("an interim step posts nothing").isNull();
+
+        Claim approved = cc.update(id, new ClaimUpdateRequest("OPEN", null, "APPROVED_BY_ADJUSTER", "ADJ-001", new BigDecimal("3200")));
+        assertThat(approved.exposures().get(0).reserve()).isEqualByComparingTo("3200");
+        assertThat(approved.reserve()).isEqualByComparingTo("3200");
+        assertThat(approved.exposures().get(0).claimant()).isEqualTo("Avery Johnson");
+    }
+
+    @Test
+    @DisplayName("A denial closes the claim and zeroes its exposure")
+    void denialClosesTheClaim() throws Exception {
+        start();
+        String id = cc.reportLoss(fnol()).claimId();
+        cc.submit(id);
+        cc.addExposure(id, new CcExposure(null, "VehicleDamage", "COLLISION", null, null, null, "VehicleIncident", "Avery Johnson"));
+        Claim denied = cc.update(id, new ClaimUpdateRequest("CLOSED", "no cover", "REJECTED_BY_ADJUSTER", "ADJ-001", null));
+        assertThat(denied.status()).isEqualTo("CLOSED");
+        assertThat(denied.workQueue()).isEqualTo("REJECTED_BY_ADJUSTER");
+        assertThat(denied.exposures().get(0).reserve()).isEqualByComparingTo("0");
+        assertThat(denied.exposures().get(0).status()).isEqualTo("closed");
     }
 
     @Test
@@ -249,8 +309,8 @@ class ClaimEventFlowTest {
         start();
         String id = cc.reportLoss(fnol()).claimId();
         cc.submit(id);
-        Claim patched = cc.patch(id, new ClaimPatch("DRAFT_PENDING_REVIEW", new BigDecimal("4200"), new BigDecimal("4830")));
-        assertThat(patched.status()).isEqualTo("DRAFT_PENDING_REVIEW");
+        Claim patched = cc.patch(id, new ClaimPatch("OPEN", new BigDecimal("4200"), new BigDecimal("4830")));
+        assertThat(patched.status()).isEqualTo("OPEN");
         assertThat(patched.estimatedDamage()).isEqualByComparingTo("4200");
         assertThat(patched.reserve()).isEqualByComparingTo("4830");
 

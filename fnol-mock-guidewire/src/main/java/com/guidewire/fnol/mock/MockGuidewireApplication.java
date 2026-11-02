@@ -102,8 +102,8 @@ class ClaimCenterController {
 
     /**
      * Applies a status/notes/reserve change and tracks it as a review action. An adjuster decision also announces
-     * claim.decided, in the same transaction, so the AI's feedback loop follows decisions made anywhere. A finished
-     * (denied or closed) claim refuses another status (409); repeating the status it has changes nothing.
+     * claim.decided, in the same transaction, so the AI's feedback loop follows decisions made anywhere. A closed
+     * claim refuses another status (409); repeating the status it has changes nothing.
      */
     @PutMapping("/cc/claims/{claimId}")
     @Transactional
@@ -159,7 +159,7 @@ class ClaimCenterController {
         String id = "CLM-2026-%06d".formatted(sequence.getAndIncrement());
         outbox.createDraft(id, fnol);
         log.info("[MockCC] FNOL reported as draft {} on policy {}", id, fnol.policyNumber());
-        return new ClaimCreateResponse(id, ClaimEventOutbox.DRAFT);
+        return new ClaimCreateResponse(id, ClaimEventOutbox.DRAFT, ClaimEventOutbox.draftNumber(id));
     }
 
     static class DuplicateLossException extends RuntimeException {
@@ -196,7 +196,7 @@ class ClaimCenterController {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a draft claim can be submitted");
         }
         log.info("[MockCC] Claim {} submitted; claim.submitted queued for subscribers", claimId);
-        return new ClaimCreateResponse(claimId, ClaimEventOutbox.SUBMITTED);
+        return new ClaimCreateResponse(claimId, ClaimEventOutbox.OPEN, claimId);
     }
 
     @GetMapping("/cc/rest/claim/v1/claims/{claimId}/fnol")
@@ -226,6 +226,9 @@ class ClaimCenterController {
     @ResponseStatus(HttpStatus.CREATED)
     CcExposure addExposure(@PathVariable("claimId") String claimId, @RequestBody CcExposure exposure) {
         requireClaim(claimId);
+        if (exposure.coverageType() == null || exposure.incident() == null || exposure.claimant() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "An exposure needs a coverage, incident and claimant");
+        }
         return store.addExposure(claimId, exposure);
     }
 

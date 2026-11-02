@@ -15,9 +15,22 @@ import {
   QueuePage,
 } from '../types';
 
+import { Session, session } from './session';
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
-// Shared adjuster secret for the protected endpoints (review, audit, audit PDF, explanation, queue).
-const ADJUSTER_TOKEN = import.meta.env.VITE_ADJUSTER_TOKEN || '';
+
+/** The signed-in person's credentials for the protected endpoints. A session that has ended sends them to sign in again. */
+function authHeaders(): Record<string, string> {
+  const token = session.get()?.token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function signOutIfExpired(status: number) {
+  if (status === 401 && session.get()) {
+    session.clear();
+    window.location.reload();
+  }
+}
 
 /** Error from the API, carrying the REJ-... claim ID when a failed intake was saved for review. */
 export class ApiError extends Error {
@@ -34,10 +47,11 @@ export class ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}, adjuster = false): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body) headers.set('Content-Type', 'application/json');
-  if (adjuster) headers.set('X-Adjuster-Token', ADJUSTER_TOKEN);
+  if (adjuster) Object.entries(authHeaders()).forEach(([k, v]) => headers.set(k, v));
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
+    if (adjuster) signOutIfExpired(response.status);
     const body = await response.json().catch(() => ({}));
     throw new ApiError(body.message || `HTTP ${response.status}`, response.status, body.error, body.claimId);
   }
@@ -45,6 +59,11 @@ async function request<T>(path: string, init: RequestInit = {}, adjuster = false
 }
 
 export const apiClient = {
+  login: (username: string, password: string) =>
+    request<Session>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+
+  logout: () => request<{ status: string }>('/api/v1/auth/logout', { method: 'POST' }, true),
+
   /**
    * Reports a loss. With claims-system events on, it is filed in the claims system (status SUBMITTED) and the AI
    * analysis follows in the background; otherwise the direct intake answers with the analysed claim's status.
@@ -96,7 +115,7 @@ export const apiClient = {
   getDocumentImageUrl: async (claimId: string, documentId: string) => {
     const response = await fetch(
       `${API_BASE_URL}/api/v1/fnol/${encodeURIComponent(claimId)}/documents/${encodeURIComponent(documentId)}/content`,
-      { headers: { 'X-Adjuster-Token': ADJUSTER_TOKEN } }
+      { headers: authHeaders() }
     );
     if (!response.ok) {
       throw new ApiError(`Image unavailable: HTTP ${response.status}`, response.status);
@@ -163,7 +182,7 @@ export const apiClient = {
   /** Downloads the server-generated PDF audit report. */
   downloadAuditPdf: async (claimId: string) => {
     const response = await fetch(`${API_BASE_URL}/api/v1/fnol/${encodeURIComponent(claimId)}/audit/pdf`, {
-      headers: { 'X-Adjuster-Token': ADJUSTER_TOKEN },
+      headers: authHeaders(),
     });
     if (!response.ok) {
       throw new ApiError(`PDF export failed: HTTP ${response.status}`, response.status);

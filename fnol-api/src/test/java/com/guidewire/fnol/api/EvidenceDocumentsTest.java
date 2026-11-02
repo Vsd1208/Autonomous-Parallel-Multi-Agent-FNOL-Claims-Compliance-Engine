@@ -55,7 +55,7 @@ class EvidenceDocumentsTest {
                 "Avery Johnson", "CA", "2025 Camry", List.of()));
         when(policyCenterClient.getCoverages("POL-AUTO-112233")).thenReturn(List.of(
                 new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000"))));
-        doAnswer(inv -> new ClaimCreateResponse("CLM-2026-%06d".formatted(CLAIM_SEQ.getAndIncrement()), "DRAFT_PENDING_REVIEW"))
+        doAnswer(inv -> new ClaimCreateResponse("CLM-2026-%06d".formatted(CLAIM_SEQ.getAndIncrement()), "OPEN"))
                 .when(claimCenterClient).createClaim(any());
     }
 

@@ -64,7 +64,7 @@ class ClaimsSystemIntakeTest {
     @Test
     @DisplayName("Portal: the loss is filed in the claims system and the claimant gets its claim number; no analysis runs in the request")
     void portalFilesInTheClaimsSystem() throws Exception {
-        when(claimCenterClient.submitFnol(any())).thenReturn(new ClaimCreateResponse("CLM-2026-0F0001", "SUBMITTED"));
+        when(claimCenterClient.submitFnol(any())).thenReturn(new ClaimCreateResponse("CLM-2026-0F0001", "OPEN"));
 
         mockMvc.perform(post("/api/v1/portal/claims").contentType(MediaType.APPLICATION_JSON).content(report("CA", "API")))
                 .andExpect(status().isOk())
@@ -111,7 +111,7 @@ class ClaimsSystemIntakeTest {
     @Test
     @DisplayName("Tracking a claim still being analysed answers from the claims system; the policy number must match")
     void trackingBeforeTheAnalysisFinishes() throws Exception {
-        when(claimCenterClient.getClaim("CLM-2026-0F0002")).thenReturn(new Claim("CLM-2026-0F0002", "SUBMITTED",
+        when(claimCenterClient.getClaim("CLM-2026-0F0002")).thenReturn(new Claim("CLM-2026-0F0002", "OPEN",
                 POLICY, LocalDate.now().minusDays(3), "CA", null, null));
         when(claimCenterClient.getClaim("CLM-2026-0F0003")).thenThrow(
                 HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", null, null, null));
@@ -129,7 +129,7 @@ class ClaimsSystemIntakeTest {
     @Test
     @DisplayName("Agent phone intake: files in the claims system with the adjuster token and keeps the PHONE channel")
     void phoneIntakeFilesInTheClaimsSystem() throws Exception {
-        when(claimCenterClient.submitFnol(any())).thenReturn(new ClaimCreateResponse("CLM-2026-0F0004", "SUBMITTED"));
+        when(claimCenterClient.submitFnol(any())).thenReturn(new ClaimCreateResponse("CLM-2026-0F0004", "OPEN"));
 
         mockMvc.perform(post("/api/v1/fnol/report").contentType(MediaType.APPLICATION_JSON).content(report("CA", "PHONE")))
                 .andExpect(status().isUnauthorized());
@@ -139,7 +139,7 @@ class ClaimsSystemIntakeTest {
                         .contentType(MediaType.APPLICATION_JSON).content(report("CA", "PHONE")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.claimId").value("CLM-2026-0F0004"))
-                .andExpect(jsonPath("$.status").value("SUBMITTED"));
+                .andExpect(jsonPath("$.status").value("OPEN"));
         ArgumentCaptor<FNOLPayload> filed = ArgumentCaptor.forClass(FNOLPayload.class);
         verify(claimCenterClient).submitFnol(filed.capture());
         assertThat(filed.getValue().channel()).isEqualTo("PHONE");

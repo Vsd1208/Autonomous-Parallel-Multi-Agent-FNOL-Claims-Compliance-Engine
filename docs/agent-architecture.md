@@ -55,7 +55,7 @@ For a vehicle claim, the dollar range for the damaged area at the visible extent
 (`repair-cost-ranges.json`: published AAA, Consumer Reports and CCC figures, each with its source; or, once it beats
 them on real claims, `repair-cost-learned.json` from `tools/cost-eval/fit_costs.py`). Branch A step A7 attaches it to
 the claim (`branchA.repairCost`), prices on-premise readings from it and recalculates their reserve, and the gate raises
-`ESTIMATE_OUTSIDE_PUBLISHED_RANGE` when Gemini's estimate is more than 4x outside it. Each adjuster decision stores the
+`ESTIMATE_OUTSIDE_PUBLISHED_RANGE` when Gemini's estimate is more than 2x outside it. Each adjuster decision stores the
 real repair cost (inspection or adjuster) for the next fit.
 
 ### `TrustScorer`

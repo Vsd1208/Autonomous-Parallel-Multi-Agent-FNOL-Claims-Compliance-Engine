@@ -55,6 +55,17 @@ All errors use this body (`claimId` is present only when a failed intake was sav
 
 ---
 
+## Sign-in
+
+People sign in; integrations and scripts send the service credential `X-Adjuster-Token`, and "token" below means either.
+
+- `POST /api/v1/auth/login` `{ "username", "password" }` → `200 { "token", "username", "displayName", "role", "expiresAt" }`, then
+  `Authorization: Bearer <token>` for 8 hours. `401 BAD_CREDENTIALS`; `429 LOCKED_OUT` for 15 minutes after 5 failures.
+- `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`.
+- Roles: `ADJUSTER` does everything except file an inspection report. `INSPECTOR` can read claims and file their own assigned
+  report, and gets `403 FORBIDDEN` for anything else. A signed-in person's id replaces any `adjusterId`, `assignedBy`,
+  `requestedBy` or `inspectorId` in a request. An ended session answers `401`.
+
 ## `GET /api/v1/health`
 `200 {"status":"UP","intake":"CLAIMS_SYSTEM"}`. `intake` is `CLAIMS_SYSTEM` (losses are filed there and analysed from
 its event) or `DIRECT` (no event secret set).
@@ -62,7 +73,7 @@ its event) or `DIRECT` (no event secret set).
 ## `POST /api/v1/fnol/report` (token)
 
 Reports a loss: agent phone intake and partner channels. Takes the intake payload, and answers at once:
-`200 {"claimId":"CLM-2026-000061","status":"SUBMITTED"}`. The analysis follows in the background. In `DIRECT` mode it runs
+`200 {"claimId":"CLM-2026-000061","status":"OPEN","claimNumber":"CLM-2026-000061"}`. The analysis follows in the background. In `DIRECT` mode it runs
 the direct intake and answers with that claim's status.
 
 Errors: `400 VALIDATION_ERROR` (nothing filed), `409 DUPLICATE_FNOL`, `503 CLAIMS_SYSTEM_UNAVAILABLE` (nothing filed).
@@ -164,7 +175,7 @@ Response `200` (abridged):
 - `ccSyncStatus`: `SYNCED` if the WHY panel and evidence list were attached in ClaimCenter, `FAILED` otherwise (intake still succeeds).
 - `gateFlags` (reconciliation-gate consistency checks): `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `MODEL_DISAGREEMENT`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`. Any flag routes to `HUMAN_REVIEW`.
 - `branchB.subrogation` is assessed in Branch B (third-party liability and `complianceNotes`) and finalised at the gate with Branch A's severity.
-- The ClaimCenter claim is created as `DRAFT_PENDING_REVIEW` (or `OPEN` for STP with advisory review off).
+- The ClaimCenter claim is created as `OPEN` with no reserve posted (the reserve is posted only for STP with advisory review off).
 
 ## Policyholder portal
 
@@ -266,7 +277,7 @@ photo), the adjuster assigns an inspector.
 - `POST /api/v1/fnol/{claimId}/inspections` with `{ "inspectorId": "INS-101", "inspectionType": "FIELD|DESK|SHOP",
   "reason": "…", "assignedBy": "ADJ-001" }`: only while the claim awaits a decision (`409` otherwise, including
   when an inspection is already open). The claim moves to `INSPECTION_ASSIGNED`, where `/review` returns `409`.
-  ClaimCenter gets status `PENDING_INSPECTION` and action `INSPECTION_ASSIGNED`.
+  ClaimCenter gets work queue `INSPECTION_ASSIGNED` and action `INSPECTION_ASSIGNED`.
 - `POST /api/v1/fnol/{claimId}/inspections/{inspectionId}/report` with `{ "inspectorId": "INS-101",
   "accidentRelatedAmount": 5000, "priorDamageFound": true, "findings": "…", "recommendation": "APPROVE|REDUCE|DENY|INVESTIGATE" }`:
   only by the assigned inspector. Sets `recommendedPayment` = min(claimed, accident-related) − deductible and
@@ -316,7 +327,13 @@ Response `200`:
 ```
 
 In `CLAIMS_SYSTEM` mode the decision is recorded in the claims system first: `503 CLAIMS_SYSTEM_UNAVAILABLE` if it cannot
-be reached, with nothing recorded anywhere, and `409 INVALID_STATE` if it refuses (a denied or closed claim).
+be reached, with nothing recorded anywhere, and `409 INVALID_STATE` if it refuses (a closed claim).
+
+Optional `handlingSeconds` and `advisoryRating` (1-5) are stored for signed-in people only, as evidence for a study; a service
+credential's are ignored.
+
+An approval is what posts the reserve on the exposure: `adjustedReserve`, or the AI's recommendation if none is given. A
+rejection closes the claim and zeroes the exposure. Other decisions post nothing.
 
 ## `GET /api/v1/fnol/queue?status=HUMAN_REVIEW&page=0&size=20` (token)
 Claims in the given statuses (comma-separated, default `HUMAN_REVIEW`), oldest first. `size` 1–100. `ANALYSIS_PENDING`
@@ -345,6 +362,6 @@ without claims awaiting analysis); `ENGINE` (direct mode).
 | GET | `/pc/policies/{policyNumber}/history` | Prior claims |
 | POST | `/cc/claims` | Creates `CLM-2026-NNNNNN`, continuing after the highest stored claim (at least `MOCK_CC_START_SEQUENCE`, default 1) with `initialStatus` (default `OPEN`); delayed 11 s when `MOCK_GW_TIMEOUT=true` |
 | GET | `/cc/claims/{claimId}` | Claim with `notes`, `attachments` and `reviewActions` |
-| PUT | `/cc/claims/{claimId}` | `{ "status", "notes", "action", "adjusterId", "adjustedReserve", "workQueue", "overrideReason", "confirmedDamageType", "finalRepairCost", "repairCostSource" }`; applies the status and reserve and appends a review action. An adjuster decision also queues `claim.decided`; a denied or closed claim refuses another status (409) |
+| PUT | `/cc/claims/{claimId}` | `{ "status", "notes", "action", "adjusterId", "adjustedReserve", "workQueue", "overrideReason", "confirmedDamageType", "finalRepairCost", "repairCostSource" }`; applies the status and reserve and appends a review action. An adjuster decision also queues `claim.decided`; a closed claim refuses another status (409) |
 | POST, GET, PATCH | `/cc/rest/claim/v1/claims…` | Report, submit, read the report, patch, list work queues, events: [guidewire-integration.md](guidewire-integration.md#the-claims-system-contract) |
 | POST | `/cc/claims/{claimId}/attachments` | `{ "name", "contentType", "body" }` → `201` |

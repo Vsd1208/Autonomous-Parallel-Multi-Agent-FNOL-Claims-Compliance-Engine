@@ -89,7 +89,7 @@
   - `ReserveResult.confidence` = vision confidence × photo-quality weight (CLEAR 1.00, PARTIAL 0.85, BLURRY 0.70, UNUSABLE 0.50, unknown 0.80).
   - Subrogation runs in Branch B as a liability assessment with compliance notes (`SubrogationScorer.assessLiability`); the gate adds Branch A's severity (`applySeverity`). Branch B stays independent of Branch A.
   - `GateConsistencyChecker` flags `SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH` and `CLAIMED_EXCEEDS_AI_ESTIMATE`. Gate flags block STP like intake flags.
-  - ClaimCenter claims are pre-populated as `DRAFT_PENDING_REVIEW` and move to `OPEN` (approved), `DENIED`, `PENDING_INFORMATION`, `UNDER_INVESTIGATION` or `CLOSED` when an adjuster decides; every decision is tracked as a review action. Only STP with advisory review switched off is created `OPEN`.
+  - (Since ADR-013 claims are `OPEN` once filed, and a denial or closure makes them `CLOSED`; originally:) ClaimCenter claims are pre-populated as `DRAFT_PENDING_REVIEW` and move to `OPEN` (approved), `DENIED`, `PENDING_INFORMATION`, `UNDER_INVESTIGATION` or `CLOSED` when an adjuster decides; every decision is tracked as a review action. Only STP with advisory review switched off is created `OPEN`.
   - Adjusters can set `adjustedReserve` (with a required `overrideReason`) and choose `INVESTIGATION_REQUIRED`.
   - Every processing failure except invalid input (400) is saved as a `REJ-` claim for human review.
   - A duplicate submission is refused (409) and flags and audits the original claim (`DUPLICATE_SUBMISSION`); an original filed straight through goes back to `HUMAN_REVIEW`.
@@ -107,4 +107,25 @@
   - A claims-system outage now stops decisions (503, nothing recorded) rather than recording them for a later sync. The two can never disagree about a decision, at the cost of availability.
   - An engine outage no longer stops intake: claims are filed and analysed when it returns.
   - The direct intake remains for partner channels and when no event secret is set, so two paths must be kept working; `run-all.sh` checks both.
-  - The modelling has limits, chiefly that a submitted claim is open on real ClaimCenter, so "draft until a person decides" cannot carry over literally ([guidewire-integration.md](guidewire-integration.md)).
+  - The modelling has limits, listed in [guidewire-integration.md](guidewire-integration.md).
+
+---
+
+## ADR-013: The Human Gate Is Who Posts the Reserve
+- **Status**: Accepted
+- **Context**: The rule was "a claim stays a draft until a person decides". On ClaimCenter a submitted claim is open and can only be closed afterwards, so that cannot hold. The engine also put its recommended reserve on the exposure before anyone approved it, which undercut "the AI recommends, a person decides".
+- **Decision**: One lifecycle: `DRAFT`, then `OPEN` at submit with an open claim number, then `CLOSED`. The review stage is the work queue, not a status. The AI writes no reserve and no lifecycle status: its figure is a recommendation, in a "Review recommended reserve" activity and a note. A person's decision is what posts a reserve: an approval posts their figure or the recommendation they approved, and a denial closes the claim and zeroes the exposure.
+- **Exception**: STP with advisory review off (ADR-009) posts its reserve with no person, because that setting is the business deciding exactly that. It is off by default.
+- **Consequences**:
+  - The engine keeps the recommendation in its analysis record; queues show it until a person posts a reserve.
+  - A decision made directly in the claims system without a figure leaves the exposure's reserve empty: the engine does not fill it in.
+  - ClaimCenter's reserve authority limits are not modelled.
+
+---
+
+## ADR-014: People Sign In; the Shared Token Becomes a Service Credential
+- **Status**: Accepted
+- **Context**: A shared token sat in the workspace's browser bundle, and `adjusterId` was whatever the form said, so the audit chain recorded a name anyone could type.
+- **Decision**: People sign in with their own account (salted PBKDF2 passwords, hashed session tokens, 8-hour sessions, a lockout after 5 failures). Their identity replaces any name in a request. Roles separate duties: an inspector can read and file their own assigned report but cannot decide; an adjuster can decide but cannot file a report, so whoever decides does not also write the evidence that teaches the cost model. `X-Adjuster-Token` stays as the service credential for integrations and scripts, and is in no browser bundle.
+- **Alternatives**: OIDC is what an insurer would use, but needs an identity provider this project does not have. Spring Security was not needed for this small a surface.
+- **Consequences**: A local login, to be replaced by the insurer's identity provider. No SIU or supervisor role yet. A service-token caller still states its own actor name.

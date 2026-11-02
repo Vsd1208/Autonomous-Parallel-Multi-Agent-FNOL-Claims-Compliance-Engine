@@ -135,7 +135,8 @@ class ClaimEventExtensionTest {
 
         ArgumentCaptor<ClaimPatch> patch = ArgumentCaptor.forClass(ClaimPatch.class);
         verify(claimCenterClient, timeout(5000).times(2)).patchClaim(eq(id), patch.capture());
-        assertThat(patch.getAllValues().get(0).status()).isNotBlank();
+        assertThat(patch.getAllValues().get(0).status()).isNull();   // the claim is already open; the AI does not move it
+        assertThat(patch.getAllValues().get(0).reserve()).isNull();  // the AI recommends; it posts no reserve
         assertThat(patch.getAllValues().get(0).estimatedDamage()).isNotNull();
         assertThat(patch.getAllValues().get(0).workQueue()).isNull();   // not on a desk until its record is saved
         assertThat(patch.getAllValues().get(1).workQueue()).isEqualTo(claims.findById(id).orElseThrow().status);
@@ -163,7 +164,7 @@ class ClaimEventExtensionTest {
         ArgumentCaptor<CcActivity> activity = ArgumentCaptor.forClass(CcActivity.class);
         verify(claimCenterClient, timeout(10_000)).addActivity(eq(id), activity.capture());
         assertThat(activity.getValue().priority()).isEqualTo("high");
-        verify(claimCenterClient).patchClaim(eq(id), eq(new ClaimPatch(ClaimEventController.IN_REVIEW, null, null, "HUMAN_REVIEW")));
+        verify(claimCenterClient).patchClaim(eq(id), eq(new ClaimPatch(null, null, null, "HUMAN_REVIEW")));
     }
 
     @Test

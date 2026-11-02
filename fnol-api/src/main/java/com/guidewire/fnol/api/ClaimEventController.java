@@ -53,8 +53,6 @@ class ClaimEventController {
     static final String EVENT_ID_HEADER = "X-Claims-Event-Id";
     static final String CLAIM_SUBMITTED = "claim.submitted";
     static final String CLAIM_DECIDED = "claim.decided";
-    /** Claims-system status while a person reviews; the AI never moves a claim further on its own. */
-    static final String IN_REVIEW = "DRAFT_PENDING_REVIEW";
 
     private final byte[] secret;
     private final ClaimCenterClient claimCenter;
@@ -291,7 +289,7 @@ class ClaimEventController {
     /** The claim stays in review with an activity telling the adjuster what happened. Best effort. */
     private void flagForAdjuster(String claimId, String workQueue, String what) {
         try {
-            claimCenter.patchClaim(claimId, new ClaimPatch(IN_REVIEW, null, null, workQueue));
+            claimCenter.patchClaim(claimId, new ClaimPatch(null, null, null, workQueue));
             claimCenter.addActivity(claimId, new CcActivity(null, "Review needed: AI analysis did not complete", what,
                     "high", LocalDate.now().plusDays(1), null, null, null));
         } catch (RuntimeException e) {

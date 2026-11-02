@@ -1,3 +1,5 @@
+import { apiClient } from '../services/apiClient';
+import { session } from '../services/session';
 import React, { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
@@ -26,7 +28,7 @@ function storeOpenClaim(claimId: string | null) {
  * when an adjuster opens a claim (from a queue or the search box), stays while they move around, is replaced by
  * the next claim they open, and disappears when they close it. Reporting a claim does not open one.
  */
-export function AppHeader() {
+export function AppHeader({ onSignedOut }: { onSignedOut: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState('');
@@ -53,6 +55,13 @@ export function AppHeader() {
       navigate(`/claim/${encodeURIComponent(id)}`);
       setSearch('');
     }
+  };
+
+  const who = session.get();
+  const signOut = async () => {
+    await apiClient.logout().catch(() => undefined);
+    session.clear();
+    onSignedOut();
   };
 
   return (
@@ -82,9 +91,10 @@ export function AppHeader() {
         />
         <button type="submit">Go</button>
       </form>
-      <div className="header-user" title="Signed-in adjuster (prototype: shared adjuster token)">
-        <span className="avatar" aria-hidden="true">A</span>
-        Adjuster
+      <div className="header-user" title={`Signed in as ${who?.username} (${who?.role?.toLowerCase()})`}>
+        <span className="avatar" aria-hidden="true">{(who?.displayName ?? '?').charAt(0)}</span>
+        {who?.displayName}
+        <button type="button" className="header-signout" onClick={signOut}>Sign out</button>
       </div>
     </header>
   );

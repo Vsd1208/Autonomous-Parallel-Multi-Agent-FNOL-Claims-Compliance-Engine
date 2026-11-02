@@ -326,6 +326,9 @@ export interface AdjusterReviewRequest {
   /** The repair cost before the deductible; teaches the repair-cost model when it rests on evidence. */
   finalRepairCost?: number;
   repairCostSource?: RepairCostSource;
+  /** How long the decision took, and how useful the advisory was: evidence from signed-in people. */
+  handlingSeconds?: number;
+  advisoryRating?: number;
 }
 
 /** INVOICE, BODY_SHOP_ESTIMATE and INSPECTION are evidence (learned from); ADJUSTER_JUDGEMENT is kept, not learned. */
@@ -388,6 +391,7 @@ export interface CcNote {
 
 export interface CcClaim {
   claimId: string;
+  claimNumber?: string | null;
   status: string;
   policyNumber: string;
   reserve: number | null;
@@ -400,6 +404,7 @@ export interface CcClaim {
 
 /** GET /ai/metrics: AI governance figures. */
 export interface AiMetrics {
+  adjusterEvidence?: { decisionsTimed: number; medianHandlingSeconds: number | null; ratings: number; meanAdvisoryRating: number | null };
   claims: { filed: number; withAiAnalysis: number; straightThroughEligible: number; sentToAdjuster: number };
   flags: Record<string, number>;
   leakage: { claimsAskingAboveEstimate: number; amountNotReserved: number };

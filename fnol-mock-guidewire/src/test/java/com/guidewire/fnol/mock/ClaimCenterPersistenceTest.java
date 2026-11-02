@@ -30,16 +30,16 @@ class ClaimCenterPersistenceTest {
 
         ClaimCenterController first = new ClaimCenterController(new ClaimCenterStore(new JdbcTemplate(db), mapper), new ClaimEventOutbox(new JdbcTemplate(db), mapper), 1);
         String id = first.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 8, 16), "CA",
-                new BigDecimal("4200"), new BigDecimal("4830"), "DRAFT_PENDING_REVIEW")).claimId();
+                new BigDecimal("4200"), new BigDecimal("4830"), "OPEN")).claimId();
         first.attach(id, new ClaimAttachment("ai-assessment.json", "application/json", Map.of("severity", "LOW")));
-        first.update(id, new ClaimUpdateRequest("PENDING_INFORMATION", "need photos", "NEEDS_MORE_INFO",
+        first.update(id, new ClaimUpdateRequest("OPEN", "need photos", "NEEDS_MORE_INFO",
                 "ADJ-001", null));
 
         // A new controller on the same database is what the service sees after a restart.
         ClaimCenterController restarted = new ClaimCenterController(new ClaimCenterStore(new JdbcTemplate(db), mapper), new ClaimEventOutbox(new JdbcTemplate(db), mapper), 1);
 
         Claim reloaded = restarted.get(id);
-        assertThat(reloaded.status()).isEqualTo("PENDING_INFORMATION");
+        assertThat(reloaded.status()).isEqualTo("OPEN");
         assertThat(reloaded.notes()).isEqualTo("need photos");
         assertThat(reloaded.reviewActions()).extracting(ClaimReviewAction::action).containsExactly("NEEDS_MORE_INFO");
         assertThat(reloaded.attachments()).extracting(ClaimAttachment::name).containsExactly("ai-assessment.json");
@@ -52,7 +52,7 @@ class ClaimCenterPersistenceTest {
         assertThat(approved.reviewActions()).hasSize(2);
 
         String next = restarted.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 8, 17), "CA",
-                new BigDecimal("100"), new BigDecimal("115"), "DRAFT_PENDING_REVIEW")).claimId();
+                new BigDecimal("100"), new BigDecimal("115"), "OPEN")).claimId();
         assertThat(next).isEqualTo("CLM-2026-000002");
     }
 
@@ -68,16 +68,15 @@ class ClaimCenterPersistenceTest {
     void exposuresActivitiesAndNotesFollowTheDecision() throws Exception {
         ClaimCenterController cc = controller();
         String id = cc.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 8, 16), "CA",
-                new BigDecimal("4200"), new BigDecimal("3200"), "DRAFT_PENDING_REVIEW")).claimId();
-        CcExposure exposure = cc.addExposure(id, new CcExposure(null, "VehicleDamage", "COLLISION",
-                new BigDecimal("3200"), "claimcost", null));
+                new BigDecimal("4200"), new BigDecimal("3200"), "OPEN")).claimId();
+        CcExposure exposure = cc.addExposure(id, new CcExposure(null, "VehicleDamage", "COLLISION", new BigDecimal("3200"), "claimcost", null, "VehicleIncident", "Avery Johnson"));
         cc.addActivity(id, new CcActivity(null, "Review AI flag: claimed exceeds ai estimate", "why", "high",
                 LocalDate.of(2026, 9, 1), "FNOL adjuster queue", null, null));
         cc.addNote(id, new CcNote(null, "AI advisory", "AI advisory: escalate to human", "body", null));
         assertThat(exposure.exposureId()).startsWith("EXP-");
         assertThat(exposure.status()).isEqualTo("open");
 
-        cc.update(id, new ClaimUpdateRequest("PENDING_INFORMATION", "need photos", "NEEDS_MORE_INFO", "ADJ-001", null));
+        cc.update(id, new ClaimUpdateRequest("OPEN", "need photos", "NEEDS_MORE_INFO", "ADJ-001", null));
         assertThat(cc.activities(id)).extracting(CcActivity::status).containsExactly("open");
 
         Claim approved = cc.update(id, new ClaimUpdateRequest("OPEN", null, "APPROVED_BY_ADJUSTER", "ADJ-001",
@@ -92,9 +91,9 @@ class ClaimCenterPersistenceTest {
 
         // A denial zeroes and closes the exposure.
         String denied = cc.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 8, 18), "CA",
-                new BigDecimal("4200"), new BigDecimal("3200"), "DRAFT_PENDING_REVIEW")).claimId();
-        cc.addExposure(denied, new CcExposure(null, "VehicleDamage", "COLLISION", new BigDecimal("3200"), null, null));
-        assertThat(cc.update(denied, new ClaimUpdateRequest("DENIED", "no cover", "REJECTED_BY_ADJUSTER", "ADJ-001", null))
+                new BigDecimal("4200"), new BigDecimal("3200"), "OPEN")).claimId();
+        cc.addExposure(denied, new CcExposure(null, "VehicleDamage", "COLLISION", new BigDecimal("3200"), null, null, "VehicleIncident", "Avery Johnson"));
+        assertThat(cc.update(denied, new ClaimUpdateRequest("CLOSED", "no cover", "REJECTED_BY_ADJUSTER", "ADJ-001", null))
                 .exposures()).singleElement().satisfies(e -> {
                     assertThat(e.reserve()).isEqualByComparingTo("0");
                     assertThat(e.status()).isEqualTo("closed");

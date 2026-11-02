@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { session } from '../services/session';
 import { apiClient } from '../services/apiClient';
 import { DashboardClaim, Inspection, Inspector } from '../types';
 import { Button, DetailView, ListView, MessageBar, Panel, StatusChip, dateTime, humanize, money } from './ui';
@@ -22,7 +23,7 @@ export function AssignInspection({ claim, onChanged }: { claim: DashboardClaim; 
   const [inspectorId, setInspectorId] = useState('');
   const [type, setType] = useState('FIELD');
   const [reason, setReason] = useState('');
-  const [adjusterId, setAdjusterId] = useState('ADJ-001');
+  const adjusterId = session.id();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -76,7 +77,7 @@ export function AssignInspection({ claim, onChanged }: { claim: DashboardClaim; 
         </label>
         <label className="field">
           <span className="field-label">Assigned by<span className="required"> *</span></span>
-          <input value={adjusterId} onChange={(e) => setAdjusterId(e.target.value)} />
+          <input value={adjusterId} readOnly disabled />
         </label>
         <label className="field wide">
           <span className="field-label">What should the inspector confirm?<span className="required"> *</span></span>
@@ -92,7 +93,22 @@ export function AssignInspection({ claim, onChanged }: { claim: DashboardClaim; 
 }
 
 /** The inspector's report on an open assignment (prototype: entered in the same workspace). */
-export function InspectionReportForm({ claimId, inspection, onChanged }: {
+/** Only the assigned inspector can file the report: whoever decides the claim must not also write its evidence. */
+export function InspectionReportForm(props: {
+  claimId: string; inspection: Inspection; onChanged: () => void;
+}) {
+  if (session.id() !== props.inspection.inspectorId) {
+    return (
+      <Panel title="Waiting for the inspector's report">
+        <p className="muted">Assigned to {props.inspection.inspectorName} ({props.inspection.inspectorId}). They sign in with
+          their own account to file it.</p>
+      </Panel>
+    );
+  }
+  return <ReportForm {...props} />;
+}
+
+function ReportForm({ claimId, inspection, onChanged }: {
   claimId: string; inspection: Inspection; onChanged: () => void;
 }) {
   const [amount, setAmount] = useState('');

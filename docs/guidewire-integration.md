@@ -24,7 +24,9 @@ The engine is built as an **extension of the claims system, not a replacement fo
 - If the engine is down, claims are still filed, listed under **Awaiting AI Analysis**, and analysed when it returns.
   If the claims system is down, a decision is refused (503) and nothing is recorded anywhere.
 
-The AI recommends; it never pays or decides.
+The AI recommends; it never pays or decides. **The human gate:** a filed claim is open, as on ClaimCenter, but the AI
+posts no reserve. Its figure is a recommendation, in an activity and a note, and only a person's decision puts a reserve on
+the exposure. The one exception is STP with advisory review turned off, an explicit business decision (ADR-009).
 
 ## How each piece maps to Guidewire Cloud
 
@@ -43,24 +45,26 @@ behaviour can differ between releases; a real adapter must be built from the ten
 | `POST .../claims/{id}/activities` | `POST /claim/v1/claims/{claimId}/activities` appears in the documentation [6] | Documented; payload not checked |
 | `POST .../claims/{id}/exposures` | `POST /claims/{claimId}/exposures` is documented, and an exposure **requires a coverage, claimant and incident** [7] | Path documented. **The mock is looser**: it needs no claimant or incident |
 | `POST .../claims/{id}/notes` | The guide has a "Creating claim notes" topic; the path was not confirmed [8] | **Not verified** |
-| `PATCH .../claims/{id}` for routing, estimate and reserve | `PATCH /claims/{claimId}` is documented for drafts [1]. Reserves live on exposures; a work-queue field does not exist as such | **Differs**, see below |
+| `PATCH .../claims/{id}` for the AI's estimate and work queue | `PATCH /claims/{claimId}` is documented for drafts [1]. On a real open claim these would need another home | **Differs**; the AI writes no reserve and no lifecycle status here |
+| Draft, open and closed; a draft number, then an open number | Documented: a submitted draft becomes open with an open claim number, and can then only be closed [1][2] | **Modelled to match**. The id stays the same throughout; in the mock it equals the open number |
+| Reserve set by a person's decision, on the exposure | Reserves live on exposures. ClaimCenter's own authority rules for reserves were not on the pages read | Design choice; **authority limits not modelled** |
+| An exposure needs a coverage, incident and claimant | Documented [7] | **Modelled to match**. The names (`VehicleIncident`, `FixedPropertyIncident`) are simple labels here, not linked incident records; **not verified** |
 | `workQueue` field on the claim | Not a ClaimCenter field. The natural equivalents are assignment and activities in a group's queue, or a data-model extension | **This project's design**; to be decided with an implementer |
 | Duplicate check when a loss is reported | ClaimCenter's own duplicate search is not described on the pages read | **Modelled on the idea; not verified** |
 | Adjuster workspace (React) | A Jutro-based experience, or only an AI panel inside ClaimCenter, where adjusters already work | Nothing built |
-| Static bearer token on calls | Guidewire Cloud APIs use OAuth2 tokens | Seam only; token fetching not built |
+| OAuth2 client credentials on calls | Guidewire Cloud APIs use OAuth2 tokens | Implemented in the prepared adapter; the mock takes a static token. The real request format is **not verified** |
+| Payload shape in the adapter (`data.attributes`, `policyNumber`, `lossDate`, `id`, `claimNumber`) | The public pages read confirm the paths and that a draft returns an id and a number, not this shape | **Assumed**, from the project's reading of how the Cloud API presents resources; check first |
 
 ### Where a real deployment would differ most
 
 These are the differences an implementer should weigh first. None is hidden by the mock's naming.
 
-1. **A submitted claim is an open claim.** On success the draft becomes open and gets an open claim number, and claim
-   setup rules run. It cannot be cancelled afterwards, only closed [2]. The mock instead keeps a separate
-   `SUBMITTED` / `DRAFT_PENDING_REVIEW` state after submit, so the rule here that "a claim stays a draft until a person
-   decides" **cannot carry over literally**. On a real tenant the claim would open at submit, and the human gate would be
-   enforced differently: the AI only writes recommendations and activities, and an adjuster's authority governs reserves
-   and payments. Which ClaimCenter controls to use for that is an open design question.
-2. **The claim number changes.** A draft has a draft number and an open claim gets an open number [1][2]. The mock keeps
-   one number throughout. A real adapter must key on the claim's `id`, and show the claimant the open number.
+1. **Authority over reserves.** A submitted claim is open and can only be closed afterwards [2], and the mock now works
+   this way, so the AI cannot hold a claim back from opening. The human gate is that it posts no reserve and only a person's
+   decision does. On a real tenant, adjuster authority limits and approvals would govern that posting; those are not modelled
+   here, and how they apply must be confirmed with an implementer.
+2. **Review stage.** Here `workQueue` says where a claim stands in review (human review, awaiting inspection and so on). It
+   is a design choice to keep the workspace's queues, not a ClaimCenter field; real work would be assignment and activities.
 3. **Submission can fail validation** and leave the claim a draft [2]; in the base configuration it also needs a
    reporter [2]. The mock checks only the policy number and loss date, so the portal would need to handle this case.
 4. **There is no single "decided" event.** `claim.decided` bundles things ClaimCenter represents separately: reserve
@@ -76,8 +80,8 @@ The usual in-core route is event messaging with Gosu rules and custom message tr
 integration logic require Gosu changes [3]. Guidewire's public material presents App Events and Integration Gateway as
 the way to move that logic out of InsuranceSuite [3][5], and the engine already runs outside it, so it needs no Gosu in
 the core for this flow. Gosu written here could not have been compiled or checked, so none is included rather than
-shipping code that looks finished. A data-model extension for a field like `workQueue` would be configuration inside the
-tenant; it is not built.
+shipping code that looks finished. A data-model extension for a field like `workQueue`, if one is kept, would be
+configuration inside the tenant; it is not built.
 
 ## What is real in this repository
 
@@ -102,13 +106,13 @@ record about 1 s later; with the engine stopped a claim was filed, then analysed
 | Method and path | Purpose |
 |---|---|
 | `POST /cc/rest/claim/v1/claims` | Report a loss as a draft; 409 `DUPLICATE_FNOL` naming the original if the same policy, loss date and state was already reported, and the original gets an activity |
-| `POST /cc/rest/claim/v1/claims/{id}/submit` | Draft to `SUBMITTED`, queues `claim.submitted`; 409 if not a draft |
+| `POST /cc/rest/claim/v1/claims/{id}/submit` | Draft to `OPEN` with its open number, queues `claim.submitted`; 409 if not a draft |
 | `GET /cc/rest/claim/v1/claims/{id}/fnol` | The report as filed |
 | `PATCH /cc/rest/claim/v1/claims/{id}` | The extension records routing, estimate, reserve and work queue; empty fields are left alone |
 | `GET /cc/rest/claim/v1/claims?workQueue=A,B&page=&size=` | Work queue listing, oldest first |
 | `PUT /cc/claims/{id}` | Status and notes. An adjuster decision queues `claim.decided`; a denied or closed claim refuses another status (409) |
 | `GET /cc/events?claimId=&undelivered=` | Operations view of the outbox |
-| `.../{id}/exposures`, `/activities`, `/notes`, `/documents`; `/cc/claims/{id}/attachments` | What the engine writes on the claim |
+| `.../{id}/exposures`, `/activities`, `/notes`, `/documents`; `/cc/claims/{id}/attachments` | What the engine writes on the claim. An exposure without a coverage, incident or claimant is refused (400) |
 
 **Events** are posted to `claims.events.subscribers` with `X-Claims-Event-Id` and
 `X-Claims-Signature: sha256=<hex HMAC of the exact body>`. Field names follow CloudEvents:
@@ -139,14 +143,15 @@ available in claims-system mode, for partner channels and the demo's comparison 
 
 | ClaimCenter object | What the engine puts there |
 |---|---|
-| Claim | AI estimate and recommended reserve; routing as the work queue |
-| Exposure | One for the matched coverage (e.g. `VehicleDamage` / COLLISION, `Dwelling` / DWELLING) carrying the reserve line (cost type `claimcost`). ClaimCenter holds reserves on exposures, not on the claim |
-| Activity | One per AI review flag, or "Confirm AI advisory" for an STP-eligible claim; due by the statutory acknowledgement date; urgent when severity is HIGH |
+| Claim | AI estimate; routing as the work queue. **No reserve** |
+| Exposure | One for the matched coverage (e.g. `VehicleDamage` / COLLISION, `Dwelling` / DWELLING) with its incident and claimant, and **an empty reserve** (cost type `claimcost`). ClaimCenter holds reserves on exposures, not on the claim |
+| Activity | "Review recommended reserve", stating the AI's figure; one per AI review flag, or "Confirm AI advisory" for an STP-eligible claim; due by the statutory acknowledgement date; urgent when severity is HIGH |
 | Note | The AI advisory, ending "advisory only: the adjuster decides". The claimant's description is not copied |
 | Documents | The WHY panel, the evidence list and the acknowledgement letter |
 
-When the adjuster decides, the claim's update completes the open review activities and sets the exposure reserve to the
-final figure, or zeroes and closes it on a denial. Interim steps (requesting photos, assigning an inspector) leave the
+When the adjuster decides, the claim's update completes the open review activities. An approval posts the reserve: their
+figure, or the recommendation they approved. A denial closes the claim, and zeroes and closes the exposure. The work queue,
+not the status, says where a claim stands in review. Interim steps (requesting photos, assigning an inspector) leave the
 activities open and move the work queue.
 
 ## Seeded data and failure switches
@@ -195,14 +200,17 @@ assertions describe the engine's needs, not Guidewire's wire format.
 
 ## Path to production
 
-**Nothing below is built.** It needs a sandbox tenant, which this project does not have.
+**It needs a sandbox tenant, which this project does not have:** [the request to send and the first-day steps](guidewire-sandbox-request.md).
 
-1. **Decide the human gate** on an open claim (difference 1 above). This comes first: the governance rule depends on it.
+**Prepared, never run on a tenant:** `GuidewireCloudClaimCenterClient` (profile `guidewire-cloud-claims`) does OAuth2, draft, submit, activities and notes, tested only against a stub of what it assumes; anything without a known mapping refuses instead of guessing. `tools/guidewire-check/check_sandbox.py` reports what a real tenant says to each assumption. The steps below are not built.
+
+1. **Confirm the human gate** against the tenant's authority rules for reserves (difference 1 above). It comes first: the
+   governance rule depends on it.
 2. **Subscribe** to the real App Events by webhook, and replace `ClaimEventController`'s parsing with the real event
    format and authentication, reading the claim graph with the same redaction.
 3. **Adapters.** `GuidewirePolicyCenterClient` and `GuidewireClaimCenterClient` under the `guidewire` profile, mapping
-   these calls to the tenant's Cloud API, with incidents and claimants for exposures.
-4. **Authentication.** OAuth2 client credentials with token caching, replacing the static bearer token.
+   these calls to the tenant's Cloud API, creating real incident records for exposures.
+4. **Authentication.** Confirm the prepared OAuth2 flow against the tenant, and sign adjusters in through its identity provider.
 5. **Map routing and decisions** to assignment, activities and ClaimCenter's own events, with a home for cost evidence.
 6. **Adjuster experience.** Move the AI panel into ClaimCenter (Jutro), retiring the separate workspace's queue.
 7. **Contract tests** against the sandbox, with field mappings checked against the tenant's API definitions.

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { queueLabel } from './Desktop';
 import { PageTitle } from '../components/Shell';
 import { Button, DetailView, MessageBar, Panel, Toolbar, channelLabel, money } from '../components/ui';
-import { demoScenarios, recentDate } from '../demoScenarios';
+import { Scenario, demoScenarios, recentDate } from '../demoScenarios';
 import { AUTO_ANGLES, HOME_ANGLES, anglesFor } from '../photoAngles';
 import { HOME_SET_FILES, SET_FILES, homeSampleSets, sampleSets, vehicleSampleSets } from '../sampleSets';
 import { readPhoto } from '../utils/photos';
@@ -63,24 +63,14 @@ export default function NewClaimWizard() {
   const set = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm({ ...form, [e.target.name]: e.target.value });
 
+  /** A prepared claim: its own policy and claimant on a real photo set. */
   const loadScenario = (name: string) => {
     const scenario = demoScenarios.find((s) => s.name === name);
-    if (!scenario) return;
-    setForm({ ...scenario.data, incidentDate: recentDate() });
-    // Demo: a mock reference per standard angle (the keywords in the name drive the mock vision provider).
-    const demo: Record<string, Photo> = {};
-    anglesFor(scenario.data.policyNumber).filter((a) => a.required).forEach((a) => {
-      const uri = scenario.evidenceUri.replace(/\.jpg$/, `-${a.key.toLowerCase().replace('_', '-')}.jpg`);
-      demo[a.key] = { uri, name: uri.replace('mock://photo/', ''), preview: '' };
-    });
-    setPhotos(demo);
-    setPhotosUnavailable(false);
-    setError('');
-    setStepError('');
+    if (scenario) loadSampleSet(scenario.photoSet, scenario);
   };
 
   /** Loads a real photo set (every side of one damaged car) as a claimant would upload it. */
-  const loadSampleSet = async (folder: string) => {
+  const loadSampleSet = async (folder: string, scenario?: Scenario) => {
     const set = sampleSets.find((s) => s.folder === folder);
     if (!set) return;
     setLoadingSet(true);
@@ -101,9 +91,9 @@ export default function NewClaimWizard() {
         const uri = await readPhoto(new File([blob], name, { type: blob.type || 'image/jpeg' }));
         loaded[a.key] = { uri, name: `${set.folder}/${name}`, preview: uri };
       }
-      const base = (home && demoScenarios.find((s) => s.data.policyNumber.startsWith('POL-HOME'))) || demoScenarios[0];
+      const base = scenario ?? ((home && demoScenarios.find((s) => s.data.policyNumber.startsWith('POL-HOME'))) || demoScenarios[0]);
       setForm({ ...base.data, incidentDate: recentDate(), description: set.description,
-        claimedAmount: set.claimedAmount });
+        claimedAmount: set.claimedAmount, ...scenario?.overrides });
       setPhotos(loaded);
       setPhotosUnavailable(false);
       setStep(2);
@@ -388,7 +378,7 @@ export default function NewClaimWizard() {
               </div>
             </Panel>
             <MessageBar tone="info" title="What happens on Finish">
-              The AI analyses the claim and pre-populates a draft in ClaimCenter. It recommends; an adjuster decides.
+              The claim opens in ClaimCenter and the AI analyses it. It recommends a reserve; only an adjuster's decision posts one.
               If the amount claimed is within what the photos support, the claimed amount (less the deductible) is
               the recommended reserve; if it is higher, the claim goes to an adjuster to request more photos or investigate.
             </MessageBar>
@@ -412,7 +402,7 @@ function Submitted({ claim, onAnother, onDesktop }: { claim: Submitted; onAnothe
     <>
       <PageTitle title="Claim submitted" />
       <MessageBar tone="success" title={`Claim ${claim.claimId} has been received`}>
-        Keep this number for any contact about the claim. {claim.status === 'SUBMITTED'
+        Keep this number for any contact about the claim. {claim.status === 'OPEN'
           ? <>It is filed in the claims system. The AI analysis runs now and the claim reaches an adjuster queue within
             seconds; an adjuster will review it and get in touch.</>
           : queue

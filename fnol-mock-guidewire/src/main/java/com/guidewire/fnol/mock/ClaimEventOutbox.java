@@ -31,9 +31,11 @@ class ClaimEventOutbox {
     static final String CLAIM_SUBMITTED = "claim.submitted";
     static final String CLAIM_DECIDED = "claim.decided";
     static final String SOURCE = "claims-system";
-    /** Statuses: DRAFT (being reported), SUBMITTED (reported, AI analysis pending), then the extension's routing. */
+    /** A claim is a draft while being reported and open once submitted; a person's decision can close it. */
     static final String DRAFT = "DRAFT";
-    static final String SUBMITTED = "SUBMITTED";
+    static final String OPEN = "OPEN";
+    /** The work queue of an open claim until its AI analysis is on the record. */
+    static final String ANALYSIS_PENDING = "ANALYSIS_PENDING";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -48,9 +50,9 @@ class ClaimEventOutbox {
     void createDraft(String claimId, FNOLPayload fnol) {
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.update("""
-                INSERT INTO claimcenter.claims (claim_id, status, policy_number, incident_date, state, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                claimId, DRAFT, fnol.policyNumber(), fnol.incidentDate() == null ? null : Date.valueOf(fnol.incidentDate()),
+                INSERT INTO claimcenter.claims (claim_id, claim_number, status, policy_number, incident_date, state, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                claimId, draftNumber(claimId), DRAFT, fnol.policyNumber(), fnol.incidentDate() == null ? null : Date.valueOf(fnol.incidentDate()),
                 fnol.state(), now, now);
         jdbc.update("INSERT INTO claimcenter.fnol_reports (claim_id, payload, created_at) VALUES (?, ?, ?)",
                 claimId, json(fnol), now);
@@ -68,21 +70,27 @@ class ClaimEventOutbox {
                 .stream().findFirst();
     }
 
+    /** A draft has a draft number; submitting gives it its open claim number. The id stays the same throughout. */
+    static String draftNumber(String claimId) {
+        return "DRAFT-" + claimId.substring(claimId.lastIndexOf('-') + 1);
+    }
+
     Optional<FNOLPayload> fnol(String claimId) {
         return jdbc.query("SELECT payload FROM claimcenter.fnol_reports WHERE claim_id = ?",
                 (rs, i) -> read(rs.getString("payload"), FNOLPayload.class), claimId).stream().findFirst();
     }
 
     /**
-     * Submits a draft: status SUBMITTED and a claim.submitted event, together. False when the claim is not a draft
+     * Submits a draft: it becomes an open claim with its open number and a claim.submitted event, together. A claim
+     * cannot go back to draft afterwards, only be closed. False when the claim is not a draft
      * (already submitted, or created another way).
      */
     @Transactional
     boolean submit(String claimId) {
         int changed = jdbc.update("""
-                UPDATE claimcenter.claims SET status = ?, work_queue = ?, updated_at = ?
+                UPDATE claimcenter.claims SET status = ?, claim_number = ?, work_queue = ?, updated_at = ?
                 WHERE claim_id = ? AND status = ?""",
-                SUBMITTED, ClaimCenterStore.queueFor(SUBMITTED), Timestamp.from(Instant.now()), claimId, DRAFT);
+                OPEN, claimId, ANALYSIS_PENDING, Timestamp.from(Instant.now()), claimId, DRAFT);
         if (changed == 0) {
             return false;
         }

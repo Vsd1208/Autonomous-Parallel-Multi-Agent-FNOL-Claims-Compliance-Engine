@@ -77,6 +77,14 @@ public class AiFeedbackEntity {
     @Column(length = 64)
     public String adjusterId;
 
+    /** Seconds between opening the claim and deciding, as the workspace reported it. Signed-in people only. */
+    @Column(name = "handling_seconds")
+    public Integer handlingSeconds;
+
+    /** How useful the adjuster found the AI advisory, 1-5. Optional; signed-in people only. */
+    @Column(name = "advisory_rating")
+    public Integer advisoryRating;
+
     @Column(nullable = false)
     public Instant decidedAt;
 }

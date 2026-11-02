@@ -142,6 +142,44 @@ class ClaimsSystemDecisionTest {
     }
 
     @Test
+    @DisplayName("Only a person's decision posts a reserve: approving posts the recommendation, or their figure; other decisions post nothing")
+    void onlyADecisionPostsTheReserve() throws Exception {
+        String approved = "CLM-2026-0D0020";
+        analysed(approved, "HUMAN_REVIEW");
+        when(claimCenter.recordDecision(eq(approved), any())).thenReturn(filedWithAction(approved, now()));
+        review(approved, "{\"decision\":\"APPROVED_BY_ADJUSTER\",\"adjusterId\":\"ADJ-001\"}").andExpect(status().isOk());
+        ArgumentCaptor<ClaimUpdateRequest> sent = ArgumentCaptor.forClass(ClaimUpdateRequest.class);
+        verify(claimCenter).recordDecision(eq(approved), sent.capture());
+        assertThat(sent.getValue().status()).isEqualTo("OPEN");
+        assertThat(sent.getValue().adjustedReserve()).isEqualByComparingTo("3200");   // the recommendation they approved
+
+        String changed = "CLM-2026-0D0021";
+        analysed(changed, "HUMAN_REVIEW");
+        when(claimCenter.recordDecision(eq(changed), any())).thenReturn(filedWithAction(changed, now()));
+        review(changed, """
+                {"decision":"APPROVED_BY_ADJUSTER","adjusterId":"ADJ-001","adjustedReserve":2500,"overrideReason":"invoice"}""")
+                .andExpect(status().isOk());
+        verify(claimCenter).recordDecision(eq(changed), sent.capture());
+        assertThat(sent.getValue().adjustedReserve()).isEqualByComparingTo("2500");
+
+        String denied = "CLM-2026-0D0022";
+        analysed(denied, "HUMAN_REVIEW");
+        when(claimCenter.recordDecision(eq(denied), any())).thenReturn(filedWithAction(denied, now()));
+        review(denied, "{\"decision\":\"REJECTED_BY_ADJUSTER\",\"adjusterId\":\"ADJ-001\"}").andExpect(status().isOk());
+        verify(claimCenter).recordDecision(eq(denied), sent.capture());
+        assertThat(sent.getValue().status()).isEqualTo("CLOSED");
+        assertThat(sent.getValue().adjustedReserve()).isNull();
+
+        String asked = "CLM-2026-0D0023";
+        analysed(asked, "HUMAN_REVIEW");
+        when(claimCenter.recordDecision(eq(asked), any())).thenReturn(filedWithAction(asked, now()));
+        review(asked, "{\"decision\":\"NEEDS_MORE_INFO\",\"adjusterId\":\"ADJ-001\"}").andExpect(status().isOk());
+        verify(claimCenter).recordDecision(eq(asked), sent.capture());
+        assertThat(sent.getValue().status()).isEqualTo("OPEN");
+        assertThat(sent.getValue().adjustedReserve()).isNull();
+    }
+
+    @Test
     @DisplayName("If the claims system cannot take a decision nothing is recorded anywhere and the adjuster is told (503)")
     void claimsSystemDownRecordsNothing() throws Exception {
         String id = "CLM-2026-0D0002";
@@ -221,7 +259,7 @@ class ClaimsSystemDecisionTest {
     @DisplayName("A decision on a claim whose analysis has not finished is delivered again later (503), not lost")
     void decisionBeforeAnalysisIsRetried() throws Exception {
         String id = "CLM-2026-0D0007";
-        when(claimCenter.getClaim(id)).thenReturn(new Claim(id, "SUBMITTED", POLICY, LocalDate.now(), "CA", null, null,
+        when(claimCenter.getClaim(id)).thenReturn(new Claim(id, "OPEN", POLICY, LocalDate.now(), "CA", null, null,
                 null, List.of(), List.of(), List.of(), List.of(), List.of(), "ANALYSIS_PENDING"));
         decidedEvent(id, "APPROVED_BY_ADJUSTER", now(), Map.of()).andExpect(status().isServiceUnavailable());
         assertThat(claims.existsById(id)).isFalse();
@@ -235,9 +273,8 @@ class ClaimsSystemDecisionTest {
         failed.failureReason = "Timed out";
         claims.save(failed);
         when(claimCenter.listWorkQueues(any(), eq(0), eq(2))).thenReturn(new ClaimQueuePage(List.of(
-                new ClaimQueueEntry("CLM-2026-0D0008", "DRAFT_PENDING_REVIEW", "HUMAN_REVIEW", POLICY,
-                        new BigDecimal("3200"), Instant.now()),
-                new ClaimQueueEntry("CLM-2026-0D0010", "SUBMITTED", "ANALYSIS_PENDING", POLICY, null, Instant.now())), 2));
+                new ClaimQueueEntry("CLM-2026-0D0008", "OPEN", "HUMAN_REVIEW", POLICY, null, Instant.now()),
+                new ClaimQueueEntry("CLM-2026-0D0010", "OPEN", "ANALYSIS_PENDING", POLICY, null, Instant.now())), 2));
 
         mockMvc.perform(get("/api/v1/fnol/queue").header("X-Adjuster-Token", TOKEN)
                         .param("status", "HUMAN_REVIEW,ANALYSIS_PENDING").param("page", "0").param("size", "2"))
@@ -246,6 +283,7 @@ class ClaimsSystemDecisionTest {
                 .andExpect(jsonPath("$.items.length()").value(2))
                 .andExpect(jsonPath("$.items[0].status").value("HUMAN_REVIEW"))
                 .andExpect(jsonPath("$.items[0].inputFlags").value("HIGH_CLAIM_FREQUENCY"))
+                .andExpect(jsonPath("$.items[0].reserve").value(3200))
                 .andExpect(jsonPath("$.items[1].status").value("ANALYSIS_PENDING"))
                 .andExpect(jsonPath("$.items[1].severityGate").doesNotExist());
 
@@ -280,7 +318,7 @@ class ClaimsSystemDecisionTest {
         assertThat(claims.findById(id).orElseThrow().status).isEqualTo("HUMAN_REVIEW");   // followed by the event, not by a read
 
         String pending = "CLM-2026-0D0013";
-        when(claimCenter.getClaim(pending)).thenReturn(new Claim(pending, "SUBMITTED", POLICY, LocalDate.now(), "CA", null,
+        when(claimCenter.getClaim(pending)).thenReturn(new Claim(pending, "OPEN", POLICY, LocalDate.now(), "CA", null,
                 null, null, List.of(), List.of(), List.of(), List.of(), List.of(), "ANALYSIS_PENDING"));
         mockMvc.perform(get("/api/v1/fnol/status/" + pending).header("X-Adjuster-Token", TOKEN))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ANALYSIS_PENDING"));
@@ -296,7 +334,7 @@ class ClaimsSystemDecisionTest {
     void decidingWithoutTheAi() throws Exception {
         String id = "CLM-2026-0D0014";
         Instant at = now();
-        when(claimCenter.getClaim(id)).thenReturn(new Claim(id, "DRAFT_PENDING_REVIEW", POLICY, LocalDate.now(), "CA", null,
+        when(claimCenter.getClaim(id)).thenReturn(new Claim(id, "OPEN", POLICY, LocalDate.now(), "CA", null,
                 null, null, List.of(), List.of(), List.of(), List.of(), List.of(), "HUMAN_REVIEW"));
         when(claimCenter.recordDecision(eq(id), any())).thenReturn(filedWithAction(id, at));
 

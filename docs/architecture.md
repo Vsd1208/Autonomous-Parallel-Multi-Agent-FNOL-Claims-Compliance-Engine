@@ -12,17 +12,18 @@ The claims system (mock ClaimCenter) owns the claim, the work queue and the deci
   Portal / phone intake  POST /portal/claims, POST /fnol/report
         |  InputGuardrail ............................................ 400, nothing filed
         v
-  Claims system: draft -> duplicate check (409) -> submit (claim number issued)
+  Claims system: draft (draft number) -> duplicate check (409) -> submit: OPEN (open claim number)
         |  outbox: claim.submitted, signed, delivered at least once
         v
   ClaimEventController (401 bad signature; repeats ignored) -> FNOLOrchestrator (below), on the existing claim
-        |  written back: estimate, reserve, exposure, activities, note, documents
+        |  written back: estimate, exposure with no reserve, activities (the recommended reserve), note, documents
         |  failure: claim stays in review with a high-priority activity; recorded and audited
         v
   Analysis record + audit saved -> only then the claim's work queue is set
 
   Adjuster: GET /fnol/queue (read from the claims system, with the AI's flags)
-     POST /fnol/{id}/review -> claims system first (503 if down, nothing recorded; 409 if finished)
+     POST /fnol/{id}/review -> claims system first (503 if down, nothing recorded; 409 if closed)
+        |  an approval posts the reserve: the adjuster's figure, or the recommendation they approved
         |  outbox: claim.decided (also for a decision made directly in the claims system)
         v
   ClaimDecisionRecorder: analysis record, audit chain, feedback loop; counted once by the decision's time
@@ -61,7 +62,7 @@ The claims system (mock ClaimCenter) owns the claim, the work queue and the deci
        ExplanationBuilder: 6 factors + severity (fnol.stp.*)  -> WHY panel
        Route: STP-eligible and no flags -> PENDING_ADVISORY_REVIEW (default) | STRAIGHT_THROUGH_PROCESSING
               otherwise                 -> HUMAN_REVIEW
-       ClaimCenter createClaim as DRAFT_PENDING_REVIEW (OPEN only for unreviewed STP)
+       ClaimCenter createClaim as OPEN, with no reserve (posted only for unreviewed STP, ADR-009)
                    + attach WHY panel and evidence list (best effort)
        AuditTrailAgent: 7 hashed records (sanitized inputs only)
                               |
@@ -79,7 +80,7 @@ The claims system (mock ClaimCenter) owns the claim, the work queue and the deci
      GET /fnol/queue  ->  console claim page  ->  POST /fnol/{id}/review
         decision (approve / reject / more info / investigation / close), optional adjusted reserve + reason
         state check (409 INVALID_STATE) -> conditional update -> AdjusterReview audit event
-        -> ClaimCenter PUT /cc/claims/{id}: OPEN | DENIED | PENDING_INFORMATION | UNDER_INVESTIGATION | CLOSED,
+        -> ClaimCenter PUT /cc/claims/{id}: OPEN, or CLOSED on a denial or closure; approval posts the reserve;
            tracked as a review action (failure => cc_sync_status=FAILED, review still succeeds)
      GET /fnol/{id}/audit (chainValid)  ·  GET /fnol/{id}/audit/pdf  ·  GET /fnol/{id}/explanation
 ```

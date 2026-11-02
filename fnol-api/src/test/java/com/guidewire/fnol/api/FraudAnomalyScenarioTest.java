@@ -57,7 +57,7 @@ class FraudAnomalyScenarioTest {
                 new Coverage("COLLISION", new BigDecimal("50000"), new BigDecimal("1000"))));
         when(policyCenter.getPolicyClaimHistory(eq(POLICY))).thenReturn(List.of());
         when(claimCenter.createClaim(any())).thenAnswer(inv ->
-                new ClaimCreateResponse("CLM-FA-%06d".formatted(IDS.incrementAndGet()), "DRAFT_PENDING_REVIEW"));
+                new ClaimCreateResponse("CLM-FA-%06d".formatted(IDS.incrementAndGet()), "OPEN"));
     }
 
     private JsonNode run(String scenarioFile, int daysAgo) throws Exception {
