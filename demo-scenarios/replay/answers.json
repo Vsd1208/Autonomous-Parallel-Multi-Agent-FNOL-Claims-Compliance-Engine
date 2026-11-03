@@ -1,0 +1,2602 @@
+[
+ {
+  "sha256": "a0069bf6fe01f7c18fc5a168d70fbb4e801d398d6402966a61ab32d94e77ac62",
+  "photo": "photos/a0069bf6fe01f7c1.jpg",
+  "image": "Car damages 102.jpg",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.95,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.9,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.225,
+    "REAR_BUMPER": 0.0057,
+    "SIDE_PANEL": 0.7672,
+    "WINDSHIELD": 0.0021
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "06342bb9811d3ffaa903be87189c63ed91d30a6ecc552c90e35135f8d50085b3",
+  "photo": "photos/06342bb9811d3ffa.jpg",
+  "image": "Car damages 1065.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.3,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.3,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.4,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.3377,
+    "REAR_BUMPER": 0.049,
+    "SIDE_PANEL": 0.6068,
+    "WINDSHIELD": 0.0065
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "47be2464c5e7dd29aa1d1a6dbacd0f25b91d20e9f7be821c7bb219a23716b018",
+  "photo": "photos/47be2464c5e7dd29.jpg",
+  "image": "Car damages 107.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 800,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0012,
+    "REAR_BUMPER": 0.9133,
+    "SIDE_PANEL": 0.0853,
+    "WINDSHIELD": 0.0002
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "fe01d3b9f0715ba8ec25c2b41088aabff1ae3d363d5597599f1db7cc11e0104f",
+  "photo": "photos/fe01d3b9f0715ba8.jpg",
+  "image": "Car damages 1073.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1200,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0011,
+    "REAR_BUMPER": 0.9924,
+    "SIDE_PANEL": 0.0063,
+    "WINDSHIELD": 0.0001
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "3252e79f2678088be202e95a4a5417dd38a5ec62accffe616a19773151026bcc",
+  "photo": "photos/3252e79f2678088b.jpg",
+  "image": "Car damages 1078.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0026,
+    "REAR_BUMPER": 0.0396,
+    "SIDE_PANEL": 0.9572,
+    "WINDSHIELD": 0.0007
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "8a93a7ae1285a1aed4c754f26774248f09e8153cdbabf0b16aeb1146abe904f4",
+  "photo": "photos/8a93a7ae1285a1ae.jpg",
+  "image": "Car damages 1079.jpg",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.9,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.3907,
+    "REAR_BUMPER": 0.0011,
+    "SIDE_PANEL": 0.607,
+    "WINDSHIELD": 0.0012
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "0cdef0fab86c33d626be809390c31563481389d67ffe4e71a55662c8c1b8a5e9",
+  "photo": "photos/0cdef0fab86c33d6.jpg",
+  "image": "Car damages 1080.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.9,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0006,
+    "REAR_BUMPER": 0.0038,
+    "SIDE_PANEL": 0.9955,
+    "WINDSHIELD": 0.0001
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "445bd242c3b3316c2a97cb61ed55af044863d0c7af1d03dff5e636fab92392ba",
+  "photo": "photos/445bd242c3b3316c.jpg",
+  "image": "Car damages 1084.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.7,
+    "REAR_BUMPER": 0.05,
+    "WINDSHIELD": 0.05,
+    "SIDE_PANEL": 0.1,
+    "ROOF": 0.05,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.4973,
+    "REAR_BUMPER": 0.0176,
+    "SIDE_PANEL": 0.4546,
+    "WINDSHIELD": 0.0306
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "5b219e0afe92cea9ed14accb540d4e95dd22c26943217f4852c48c5cbd66386a",
+  "photo": "photos/5b219e0afe92cea9.jpg",
+  "image": "Car damages 1088.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.3,
+    "REAR_BUMPER": 0.2,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.2,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.3,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.9649,
+    "REAR_BUMPER": 0.003,
+    "SIDE_PANEL": 0.0205,
+    "WINDSHIELD": 0.0117
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "c2bfc72331267850ed99e9bc94335f96167232cfa640153393f49dc57a89f54b",
+  "photo": "photos/c2bfc72331267850.jpg",
+  "image": "Car damages 109.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "UNKNOWN",
+   "severity": "MINOR",
+   "estimatedDamage": 0,
+   "confidence": 0.7,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.0,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.0,
+    "UNKNOWN": 1.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.005,
+    "REAR_BUMPER": 0.5499,
+    "SIDE_PANEL": 0.4449,
+    "WINDSHIELD": 0.0002
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "8d1e760cd8852854ffdd48efe54389238348a6557692d2e8d11090ee585b30ce",
+  "photo": "photos/8d1e760cd8852854.jpg",
+  "image": "Car damages 1091.jpg",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.3,
+    "REAR_BUMPER": 0.05,
+    "WINDSHIELD": 0.05,
+    "SIDE_PANEL": 0.2,
+    "ROOF": 0.05,
+    "MULTIPLE": 0.35,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.4849,
+    "REAR_BUMPER": 0.0048,
+    "SIDE_PANEL": 0.5067,
+    "WINDSHIELD": 0.0036
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "c918b2fb09ae9637737b0c748d8a23c97bfbe22cd13d85444f9f785e493032e1",
+  "photo": "photos/c918b2fb09ae9637.jpg",
+  "image": "Car damages 1092.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.9,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.8104,
+    "REAR_BUMPER": 0.0205,
+    "SIDE_PANEL": 0.1552,
+    "WINDSHIELD": 0.014
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "0e44ca435d01022dfc88ff5a717cbe0b84f3d4c114c034b0bc72d2eaad0c9380",
+  "photo": "photos/0e44ca435d01022d.jpg",
+  "image": "Car damages 1143.jpg",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.1,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.5,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.8743,
+    "REAR_BUMPER": 0.0036,
+    "SIDE_PANEL": 0.1198,
+    "WINDSHIELD": 0.0023
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "480c425b39f92845b2a8d385ae3fc09229059aa8008e837f6536c9bf346f6550",
+  "photo": "photos/480c425b39f92845.jpg",
+  "image": "Car damages 1146.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "WINDSHIELD",
+   "severity": "MINOR",
+   "estimatedDamage": 1000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.9,
+    "SIDE_PANEL": 0.0,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.7167,
+    "REAR_BUMPER": 0.0047,
+    "SIDE_PANEL": 0.2146,
+    "WINDSHIELD": 0.064
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL",
+    "WINDSHIELD"
+   ],
+   "primaryZone": "WINDSHIELD"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "e0755905a8d3a4c2808852b1554d2fb5a6444ac507903bd3d0484e1d4518ec97",
+  "photo": "photos/e0755905a8d3a4c2.jpg",
+  "image": "Car damages 1147.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 2500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.95,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.0,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.9097,
+    "REAR_BUMPER": 0.065,
+    "SIDE_PANEL": 0.0132,
+    "WINDSHIELD": 0.0121
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "ed65fc3773f71c5694812e898efe8c98b361826cc61b64860aa2daa298df4a17",
+  "photo": "photos/ed65fc3773f71c56.jpg",
+  "image": "Car damages 1149.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.8,
+    "REAR_BUMPER": 0.05,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.05
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.6831,
+    "REAR_BUMPER": 0.0139,
+    "SIDE_PANEL": 0.253,
+    "WINDSHIELD": 0.0499
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "dd71b42818c23216247024a61a0c3e33edacc213c2d67f71cccc09da4da84223",
+  "photo": "photos/dd71b42818c23216.jpg",
+  "image": "Car damages 1150.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.8,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.0,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.1
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.9408,
+    "REAR_BUMPER": 0.0028,
+    "SIDE_PANEL": 0.0475,
+    "WINDSHIELD": 0.0089
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "f96863ea0a92c0ced0a993e1ae3dfaf6ff2098d07c1a67dbd73c35191a78c02a",
+  "photo": "photos/f96863ea0a92c0ce.jpg",
+  "image": "Car damages 1153.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.8,
+    "REAR_BUMPER": 0.05,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.1,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0018,
+    "REAR_BUMPER": 0.8358,
+    "SIDE_PANEL": 0.162,
+    "WINDSHIELD": 0.0003
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "a153f1125d3434eab2f93b12185890f3669a7bcb2334bcbda841ec2bbb9b9d0e",
+  "photo": "photos/a153f1125d3434ea.jpg",
+  "image": "Car damages 1154.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.85,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0674,
+    "REAR_BUMPER": 0.004,
+    "SIDE_PANEL": 0.913,
+    "WINDSHIELD": 0.0156
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "ed431ab602c1cbbdad81e6c7488aaa08e4644eea81bf0818962ca16e8a9abf18",
+  "photo": "photos/ed431ab602c1cbbd.jpg",
+  "image": "Car damages 1163.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.3,
+    "WINDSHIELD": 0.05,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.05,
+    "MULTIPLE": 0.15,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0077,
+    "REAR_BUMPER": 0.6643,
+    "SIDE_PANEL": 0.3254,
+    "WINDSHIELD": 0.0026
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "0399d60e41c08186795afd1f5d4ccb4dbbd4ca663d58c9028cd5680bd048c1e3",
+  "photo": "photos/0399d60e41c08186.jpg",
+  "image": "Car damages 1177.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.3,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.2,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.5,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.9343,
+    "REAR_BUMPER": 0.0019,
+    "SIDE_PANEL": 0.0528,
+    "WINDSHIELD": 0.011
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "6359e3819a8d4a209e05bbab809877883698eec89ba504ba59aecda572e0a75a",
+  "photo": "photos/6359e3819a8d4a20.jpg",
+  "image": "Car damages 1273.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 4500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.2,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.4,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0045,
+    "REAR_BUMPER": 0.5941,
+    "SIDE_PANEL": 0.4011,
+    "WINDSHIELD": 0.0003
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "59601deb63c8132a6c7d20c61de555a638a4af4771a65b621d3cab726a63a590",
+  "photo": "photos/59601deb63c8132a.jpg",
+  "image": "Car damages 128.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.8,
+    "REAR_BUMPER": 0.05,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.1,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0228,
+    "REAR_BUMPER": 0.0038,
+    "SIDE_PANEL": 0.9694,
+    "WINDSHIELD": 0.004
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "0aa0d4bdcb923f64c2cee3f081f4ec38994e87115d901f6bbb7681c6c164daa1",
+  "photo": "photos/0aa0d4bdcb923f64.jpg",
+  "image": "Car damages 1288.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0022,
+    "REAR_BUMPER": 0.9172,
+    "SIDE_PANEL": 0.0798,
+    "WINDSHIELD": 0.0008
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "ad3dfe074e62be3469393f8a06156f684710b7c811f04fbe79a7a6d2e5255034",
+  "photo": "photos/ad3dfe074e62be34.jpg",
+  "image": "Car damages 131.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0237,
+    "REAR_BUMPER": 0.9709,
+    "SIDE_PANEL": 0.0046,
+    "WINDSHIELD": 0.0008
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "bf03dea5060c01d2be0de23ee67c99cb188abbf3f51d2651557c05499c3b473c",
+  "photo": "photos/bf03dea5060c01d2.jpg",
+  "image": "Car damages 1333.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.9,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.9198,
+    "REAR_BUMPER": 0.0357,
+    "SIDE_PANEL": 0.0075,
+    "WINDSHIELD": 0.037
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "95514ca8cf32cb7af3833ac50c713480864586aed40c76db55c5a70e9643f313",
+  "photo": "photos/95514ca8cf32cb7a.jpg",
+  "image": "Car damages 1336.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.75,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.2,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.4986,
+    "REAR_BUMPER": 0.0029,
+    "SIDE_PANEL": 0.4842,
+    "WINDSHIELD": 0.0143
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "6941403515db5eb57b3e5e9cded7731769c927138ada43b0f7d25ac8b2872c31",
+  "photo": "photos/6941403515db5eb5.jpg",
+  "image": "Car damages 1342.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1200,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0027,
+    "REAR_BUMPER": 0.4982,
+    "SIDE_PANEL": 0.4963,
+    "WINDSHIELD": 0.0027
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "e32f7f043fd0f769833badefc2bbda759525e13fb5d37ceaee1dc0db70a0ddf7",
+  "photo": "photos/e32f7f043fd0f769.jpg",
+  "image": "Car damages 137.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0107,
+    "REAR_BUMPER": 0.9745,
+    "SIDE_PANEL": 0.0114,
+    "WINDSHIELD": 0.0035
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "d7c21ca02247d7ab74a7be4d19770a84829ec8e3d9087975dfdfb5e465df9a46",
+  "photo": "photos/d7c21ca02247d7ab.jpg",
+  "image": "Car damages 139.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.05,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.8,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0076,
+    "REAR_BUMPER": 0.0006,
+    "SIDE_PANEL": 0.9909,
+    "WINDSHIELD": 0.0009
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "50a199d3f7978ac3c79ab545fcd9d824015041322995e3eda0e49f5379c59a4e",
+  "photo": "photos/50a199d3f7978ac3.jpg",
+  "image": "Car damages 158.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.8,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.15,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0088,
+    "REAR_BUMPER": 0.7689,
+    "SIDE_PANEL": 0.2219,
+    "WINDSHIELD": 0.0004
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "a990b0f31198103fe3ed59d1faed2072fdb3d21b57a4f5b666857938d815ffb6",
+  "photo": "photos/a990b0f31198103f.jpg",
+  "image": "Car damages 175.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.9,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.974,
+    "REAR_BUMPER": 0.0165,
+    "SIDE_PANEL": 0.0025,
+    "WINDSHIELD": 0.007
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "1a296e3163e9a9ac71661791bd7962d95b7ba0fcb46c959e408840e19535bf3a",
+  "photo": "photos/1a296e3163e9a9ac.jpg",
+  "image": "Car damages 225.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 7500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.3,
+    "REAR_BUMPER": 0.2,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.2,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.3,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.858,
+    "REAR_BUMPER": 0.0129,
+    "SIDE_PANEL": 0.0923,
+    "WINDSHIELD": 0.0368
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "72b8f2da3bb92f12b613176d821d54db05205f5089571e002f641e92ed4ff035",
+  "photo": "photos/72b8f2da3bb92f12.jpg",
+  "image": "Car damages 237.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.95,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.9,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.08,
+    "UNKNOWN": 0.02
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0173,
+    "REAR_BUMPER": 0.0011,
+    "SIDE_PANEL": 0.9794,
+    "WINDSHIELD": 0.0022
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "ec3c9136e73cf3a7bea69a41c176389617f8a9dd3853b6b2a1ea24bca21ed1cd",
+  "photo": "photos/ec3c9136e73cf3a7.jpg",
+  "image": "Car damages 245.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "MODERATE",
+   "estimatedDamage": 4500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.9,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0104,
+    "REAR_BUMPER": 0.0594,
+    "SIDE_PANEL": 0.9279,
+    "WINDSHIELD": 0.0023
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "2e8c2e467bfceedf7879bef1cf0b1cd410663ae911ad272c7e4b7a264a4e476d",
+  "photo": "photos/2e8c2e467bfceedf.jpg",
+  "image": "Car damages 250.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.2,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.3,
+    "SIDE_PANEL": 0.2,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.3,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.6655,
+    "REAR_BUMPER": 0.009,
+    "SIDE_PANEL": 0.0154,
+    "WINDSHIELD": 0.3101
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "WINDSHIELD"
+   ],
+   "primaryZone": "WINDSHIELD"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "cf3bc5f4f083d09bf975a1f8c41f25a18df2e63ef0379baecd26543ec7b21ffa",
+  "photo": "photos/cf3bc5f4f083d09b.jpg",
+  "image": "Car damages 251.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 6500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.7,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.1,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.2,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.8658,
+    "REAR_BUMPER": 0.0013,
+    "SIDE_PANEL": 0.11,
+    "WINDSHIELD": 0.0229
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "e897baef1163770e8afac2c99244930717109ba7674c8d8b06c7ad5bcdc60779",
+  "photo": "photos/e897baef1163770e.jpg",
+  "image": "Car damages 252.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 4500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.1,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.5,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0433,
+    "REAR_BUMPER": 0.0039,
+    "SIDE_PANEL": 0.9465,
+    "WINDSHIELD": 0.0063
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "314f7041f88d1c70324354fef48d2bee8479f8437c346554f5119aff316e3e16",
+  "photo": "photos/314f7041f88d1c70.jpg",
+  "image": "Car damages 253.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 2500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.4,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.2,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0136,
+    "REAR_BUMPER": 0.5907,
+    "SIDE_PANEL": 0.3945,
+    "WINDSHIELD": 0.0012
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "196db10486ae167fc951edc7a8967ca708566fc22e29a7c91614b03f24309c3e",
+  "photo": "photos/196db10486ae167f.jpg",
+  "image": "Car damages 269.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.3,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.3,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.9143,
+    "REAR_BUMPER": 0.0026,
+    "SIDE_PANEL": 0.0721,
+    "WINDSHIELD": 0.0109
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "c3f84f7b9941757be7fb034167393c32ac9c3a2aee1b84964d7eac2338381498",
+  "photo": "photos/c3f84f7b9941757b.jpg",
+  "image": "Car damages 270.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0056,
+    "REAR_BUMPER": 0.8479,
+    "SIDE_PANEL": 0.1454,
+    "WINDSHIELD": 0.0011
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "cb9d046ec3d3ee6572474900270e3660c2742e27223425b57c96abb642e988f4",
+  "photo": "photos/cb9d046ec3d3ee65.jpg",
+  "image": "Car damages 280.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "MODERATE",
+   "estimatedDamage": 2500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.1,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.8,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0193,
+    "REAR_BUMPER": 0.9499,
+    "SIDE_PANEL": 0.0303,
+    "WINDSHIELD": 0.0004
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "ef0481b42afbfb3a34ff73ae73aec05d07868e917f5db76cc30889314bbda927",
+  "photo": "photos/ef0481b42afbfb3a.jpg",
+  "image": "Car damages 286.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 2500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.9,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.7983,
+    "REAR_BUMPER": 0.022,
+    "SIDE_PANEL": 0.1611,
+    "WINDSHIELD": 0.0186
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "2ad13b6ce4c576e60e2320779d83e4e8267275f4f22bc5b97ae932bc3a4fabe1",
+  "photo": "photos/2ad13b6ce4c576e6.jpg",
+  "image": "Car damages 287.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "WINDSHIELD",
+   "severity": "MODERATE",
+   "estimatedDamage": 2500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.85,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.8308,
+    "REAR_BUMPER": 0.0035,
+    "SIDE_PANEL": 0.1154,
+    "WINDSHIELD": 0.0503
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "WINDSHIELD"
+   ],
+   "primaryZone": "WINDSHIELD"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "6b160a5b71db951b6d09e1e09bc089cc0fe273179121636f5e5445a53147e74b",
+  "photo": "photos/6b160a5b71db951b.jpg",
+  "image": "Car damages 297.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.25,
+    "WINDSHIELD": 0.05,
+    "SIDE_PANEL": 0.35,
+    "ROOF": 0.05,
+    "MULTIPLE": 0.25,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.011,
+    "REAR_BUMPER": 0.8917,
+    "SIDE_PANEL": 0.0964,
+    "WINDSHIELD": 0.0009
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "457a446302ebed6ec90ef8e08c1d9e050c5471a48148bef2f5df04981fa4e08c",
+  "photo": "photos/457a446302ebed6e.jpg",
+  "image": "Car damages 305.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.05,
+    "WINDSHIELD": 0.3,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.05,
+    "MULTIPLE": 0.15,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0752,
+    "REAR_BUMPER": 0.0029,
+    "SIDE_PANEL": 0.9035,
+    "WINDSHIELD": 0.0185
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "WINDSHIELD"
+   ],
+   "primaryZone": "WINDSHIELD"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "bc850dcbb1624d919fc1ce6064b09ac92c61302fe32bc8bdbba953799e913388",
+  "photo": "photos/bc850dcbb1624d91.jpg",
+  "image": "Car damages 307.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "WINDSHIELD",
+   "severity": "MODERATE",
+   "estimatedDamage": 2500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.8,
+    "SIDE_PANEL": 0.1,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0236,
+    "REAR_BUMPER": 0.005,
+    "SIDE_PANEL": 0.095,
+    "WINDSHIELD": 0.8764
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "WINDSHIELD"
+   ],
+   "primaryZone": "WINDSHIELD"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "925de3245d140c5a1c1db0d747bc7f195c4df50b409977962edb9ea40f461455",
+  "photo": "photos/925de3245d140c5a.jpg",
+  "image": "Car damages 316.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "WINDSHIELD",
+   "severity": "MODERATE",
+   "estimatedDamage": 2500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.9,
+    "SIDE_PANEL": 0.0,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.011,
+    "REAR_BUMPER": 0.0469,
+    "SIDE_PANEL": 0.0304,
+    "WINDSHIELD": 0.9118
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "WINDSHIELD"
+   ],
+   "primaryZone": "WINDSHIELD"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "d8fcb9f2a8aa9f6ea4532ed76e88394570b04900962cad693aff91d510dccfd3",
+  "photo": "photos/d8fcb9f2a8aa9f6e.jpg",
+  "image": "Car damages 645.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 2500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.015,
+    "REAR_BUMPER": 0.9733,
+    "SIDE_PANEL": 0.0116,
+    "WINDSHIELD": 0.0002
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "7c10e039951586cc88d60b8f9dafe01b8988fc14f0985e4b9823d761a09a018d",
+  "photo": "photos/7c10e039951586cc.jpg",
+  "image": "Car damages 647.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0031,
+    "REAR_BUMPER": 0.6549,
+    "SIDE_PANEL": 0.3416,
+    "WINDSHIELD": 0.0004
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "d43355265a81c1996d6ccda00a39c39ecaf0ed99b74361f53da9b22cf413fe02",
+  "photo": "photos/d43355265a81c199.jpg",
+  "image": "Car damages 689.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.3,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.3,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.6594,
+    "REAR_BUMPER": 0.0096,
+    "SIDE_PANEL": 0.3014,
+    "WINDSHIELD": 0.0296
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "f8e48d2fadb69bd1ae439123e98c561d6da8bb4660d17e670dc64f60cdd66405",
+  "photo": "photos/f8e48d2fadb69bd1.jpg",
+  "image": "Car damages 692.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0035,
+    "REAR_BUMPER": 0.9718,
+    "SIDE_PANEL": 0.0246,
+    "WINDSHIELD": 0.0001
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "f7bffb3271d556bba6f3d991830dc66a52a1e9ab81914d52c650fab12ba8f57a",
+  "photo": "photos/f7bffb3271d556bb.jpg",
+  "image": "Car damages 693.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.8,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.1,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.9449,
+    "REAR_BUMPER": 0.0047,
+    "SIDE_PANEL": 0.0467,
+    "WINDSHIELD": 0.0037
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "3c68b7619a0b386a1d92111f6d33f8418ca659c6293f6cdb3ad7ad940ba4b6a9",
+  "photo": "photos/3c68b7619a0b386a.jpg",
+  "image": "Car damages 707.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.1,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.05,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.45,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.6507,
+    "REAR_BUMPER": 0.0052,
+    "SIDE_PANEL": 0.3419,
+    "WINDSHIELD": 0.0022
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "8ab3efc2686be1914d5bd4a39b04b168af013b9f259dcce04fa67fd941132de5",
+  "photo": "photos/8ab3efc2686be191.jpg",
+  "image": "Car damages 715.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.3,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.3,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.8031,
+    "REAR_BUMPER": 0.0108,
+    "SIDE_PANEL": 0.1804,
+    "WINDSHIELD": 0.0057
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "SIDE_PANEL",
+    "WINDSHIELD"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "f55e2eadc7548f270fcd4cb28987c223f2df7d5e78389ddcd09d72dda8c286c2",
+  "photo": "photos/f55e2eadc7548f27.jpg",
+  "image": "Car damages 762.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 6500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.4,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.2,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.4,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0035,
+    "REAR_BUMPER": 0.7294,
+    "SIDE_PANEL": 0.2666,
+    "WINDSHIELD": 0.0004
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "1d3a2b098a22de44c8a4a7e34b6970de12680c7154eecc17692a6ef7175bdae7",
+  "photo": "photos/1d3a2b098a22de44.jpg",
+  "image": "Car damages 764.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.1,
+    "REAR_BUMPER": 0.1,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.4,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0115,
+    "REAR_BUMPER": 0.8371,
+    "SIDE_PANEL": 0.1509,
+    "WINDSHIELD": 0.0004
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "c699553be7772600378906f567e8031aee079fb1fd6c09bdb5b362f0a14bf583",
+  "photo": "photos/c699553be7772600.jpg",
+  "image": "Car damages 766.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.1,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.2,
+    "SIDE_PANEL": 0.3,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.4,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.5511,
+    "REAR_BUMPER": 0.0045,
+    "SIDE_PANEL": 0.4293,
+    "WINDSHIELD": 0.0152
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL",
+    "WINDSHIELD"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "dfa28f071a751bf9b2812f700a81ed3b946fd8613669849bf863e1a7e5b48366",
+  "photo": "photos/dfa28f071a751bf9.jpg",
+  "image": "Car damages 776.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.2,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.4,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.4,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.3432,
+    "REAR_BUMPER": 0.0021,
+    "SIDE_PANEL": 0.6504,
+    "WINDSHIELD": 0.0043
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "1ef1f246767eda939eebd43d965b017586a64a1a3df948abea61df1c2f754fda",
+  "photo": "photos/1ef1f246767eda93.jpg",
+  "image": "Car damages 779.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "FRONT_BUMPER",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.7,
+    "REAR_BUMPER": 0.05,
+    "WINDSHIELD": 0.05,
+    "SIDE_PANEL": 0.1,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.9277,
+    "REAR_BUMPER": 0.0075,
+    "SIDE_PANEL": 0.0636,
+    "WINDSHIELD": 0.0012
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "ff6a959879ee92273fe8822513c70054fad58c8c7fea1e62d0bb01b77aee0f6c",
+  "photo": "photos/ff6a959879ee9227.jpg",
+  "image": "Car damages 854.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.85,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.1,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.7029,
+    "REAR_BUMPER": 0.0103,
+    "SIDE_PANEL": 0.2659,
+    "WINDSHIELD": 0.0209
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "c7087e870ad2bdfa51fe1fbb4f9d3930365fe73692fb2230d98d7449b3c244e4",
+  "photo": "photos/c7087e870ad2bdfa.jpg",
+  "image": "Car damages 860.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "REAR_BUMPER",
+   "severity": "MINOR",
+   "estimatedDamage": 1500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.9,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.05,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.05,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0033,
+    "REAR_BUMPER": 0.8228,
+    "SIDE_PANEL": 0.1736,
+    "WINDSHIELD": 0.0003
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "8ad89761d62d6fdf694aed1cbc82ddaaa7e2f43785854fcbae235389095c2fae",
+  "photo": "photos/8ad89761d62d6fdf.jpg",
+  "image": "Car damages 870.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.85,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.08,
+    "UNKNOWN": 0.02
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0193,
+    "REAR_BUMPER": 0.001,
+    "SIDE_PANEL": 0.9748,
+    "WINDSHIELD": 0.005
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "FRONT_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "FRONT_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "d9db1b6d33fe028d61b7e6152b9bb3f2516640cc27f010af611385d53b23d7a9",
+  "photo": "photos/d9db1b6d33fe028d.jpg",
+  "image": "Car damages 879.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "SIDE_PANEL",
+   "severity": "SEVERE",
+   "estimatedDamage": 12000,
+   "confidence": 0.95,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.0,
+    "WINDSHIELD": 0.0,
+    "SIDE_PANEL": 0.9,
+    "ROOF": 0.0,
+    "MULTIPLE": 0.08,
+    "UNKNOWN": 0.02
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.0014,
+    "REAR_BUMPER": 0.687,
+    "SIDE_PANEL": 0.3109,
+    "WINDSHIELD": 0.0006
+   },
+   "extentBand": "LARGE"
+  },
+  "label": {
+   "zones": [
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "50247a474a7a25243d2108ad5c4f6cd695d72ee6085c44433fb42635f14945e5",
+  "photo": "photos/50247a474a7a2524.jpg",
+  "image": "Car damages 883.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "SEVERE",
+   "estimatedDamage": 15000,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.0,
+    "REAR_BUMPER": 0.1,
+    "WINDSHIELD": 0.05,
+    "SIDE_PANEL": 0.3,
+    "ROOF": 0.25,
+    "MULTIPLE": 0.3,
+    "UNKNOWN": 0.0
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.001,
+    "REAR_BUMPER": 0.7259,
+    "SIDE_PANEL": 0.2726,
+    "WINDSHIELD": 0.0005
+   },
+   "extentBand": "SMALL"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER",
+    "SIDE_PANEL"
+   ],
+   "primaryZone": "SIDE_PANEL"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ },
+ {
+  "sha256": "478f36aafe611c7d8598bd906ef9a3adb5e4834172527e7a4e9507c4ea240543",
+  "photo": "photos/478f36aafe611c7d.jpg",
+  "image": "Car damages 900.png",
+  "gemini": {
+   "photoSubject": "VEHICLE",
+   "damageType": "MULTIPLE",
+   "severity": "MODERATE",
+   "estimatedDamage": 3500,
+   "confidence": 0.9,
+   "photoQuality": "CLEAR",
+   "damageTypeProbabilities": {
+    "FRONT_BUMPER": 0.05,
+    "REAR_BUMPER": 0.25,
+    "WINDSHIELD": 0.05,
+    "SIDE_PANEL": 0.2,
+    "ROOF": 0.05,
+    "MULTIPLE": 0.35,
+    "UNKNOWN": 0.05
+   }
+  },
+  "secondOpinion": {
+   "probabilities": {
+    "FRONT_BUMPER": 0.045,
+    "REAR_BUMPER": 0.6975,
+    "SIDE_PANEL": 0.2474,
+    "WINDSHIELD": 0.0101
+   },
+   "extentBand": "MEDIUM"
+  },
+  "label": {
+   "zones": [
+    "REAR_BUMPER"
+   ],
+   "primaryZone": "REAR_BUMPER"
+  },
+  "licence": "CC0-1.0",
+  "source": "Humans in the Loop, Car Parts and Car Damages"
+ }
+]

@@ -224,3 +224,7 @@ quota with the car run). Burst-pipe water damage has no FEMA captions to label f
   answers would get through.
 
 The dataset has no repair costs, so the dollar estimate and severity are not evaluated.
+
+## Replay set
+
+`python -P export_replay.py --run v3-subject` writes the recorded answers, downscaled CC0 photos and sample scenarios for lite mode: [demo-scenarios/replay](../../demo-scenarios/replay/README.md).

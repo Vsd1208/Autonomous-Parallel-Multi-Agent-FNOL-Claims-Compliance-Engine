@@ -1,5 +1,7 @@
 package com.guidewire.fnol.api;
 
+import com.guidewire.fnol.agents.ReplayAnswers;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Component;
 class LiteMode {
 
     private final boolean enabled;
+    private ReplayAnswers replay;
 
     LiteMode(@Value("${fnol.lite-mode:false}") boolean enabled,
              @Value("${gemini.vision.enabled:true}") boolean geminiEnabled) {
@@ -21,12 +24,25 @@ class LiteMode {
         this.enabled = enabled;
     }
 
+    @Autowired(required = false)
+    void setReplay(ReplayAnswers replay) {
+        this.replay = replay;
+    }
+
     boolean enabled() {
         return enabled;
     }
 
+    /** For the health endpoint; null unless recorded answers are being replayed. */
+    String vision() {
+        return replay == null ? null : replay.description();
+    }
+
     /** For the health endpoint. */
     String secondOpinion() {
+        if (replay != null) {
+            return "REPLAYING_RECORDED_ANSWERS";
+        }
         return enabled ? "NOT_AVAILABLE_IN_LITE_MODE" : "CONFIGURED";
     }
 }

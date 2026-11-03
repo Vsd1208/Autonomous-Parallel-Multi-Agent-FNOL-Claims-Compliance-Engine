@@ -165,8 +165,12 @@ public class FNOLController {
     @GetMapping("/health")
     Map<String, String> health() {
         // intake: CLAIMS_SYSTEM (losses are filed in the claims system, analysis follows its event) or DIRECT
-        return Map.of("status", "UP", "intake", reportsToClaimsSystem() ? ClaimsSystemIntake.CLAIMS_SYSTEM
-                : ClaimsSystemIntake.DIRECT, "secondOpinion", liteMode == null ? "CONFIGURED" : liteMode.secondOpinion());
+        Map<String, String> health = new LinkedHashMap<>(Map.of("status", "UP", "intake", reportsToClaimsSystem() ? ClaimsSystemIntake.CLAIMS_SYSTEM
+                : ClaimsSystemIntake.DIRECT, "secondOpinion", liteMode == null ? "CONFIGURED" : liteMode.secondOpinion()));
+        if (liteMode != null && liteMode.vision() != null) {
+            health.put("vision", liteMode.vision());
+        }
+        return health;
     }
 
     // ── Report a loss (agent taking a phone call, partner channel) ────────────

@@ -238,6 +238,39 @@ check_decisions() {
   fi
 }
 
+# Recorded model answers (lite mode): real photos through the real checks. A repeat run may also raise PHOTO_REUSED, so this checks
+# the vision checks and the replay note, not the final route.
+run_replay() {
+  echo "### Replay: recorded model answers"
+  for spec in "$DIR"/replay/scenario-*.json; do
+    local name; name=$(basename "$spec" .json)
+    echo "== $name"
+    local photo; photo=$(grep -o '"photo": *"[^"]*"' "$spec" | sed -E 's/.*"([^"]*)"$/\1/')
+    local uri; uri="data:image/jpeg;base64,$(base64 -w0 "$DIR/replay/$photo" 2>/dev/null || base64 "$DIR/replay/$photo" | tr -d '\n')"
+    local file; file=$(mktemp)
+    local code body d
+    for d in $(seq 1 28); do
+      printf '{"policyNumber":"POL-AUTO-112233","incidentDate":"%s","state":"CA","description":"Recorded photo.","claimantName":"Avery Johnson","evidenceUris":["%s","%s","%s","%s","%s"],"evidenceAngles":["FRONT","REAR","LEFT","RIGHT","CLOSE_UP"],"channel":"API","claimedAmount":3000}' \
+        "$(days_ago "$d")" "$uri" "$uri" "$uri" "$uri" "$uri" > "$file"
+      body=$(curl -s --max-time 40 -w $'\n%{http_code}' -X POST "$API_URL/api/v1/fnol/intake" \
+        -H "Content-Type: application/json" -H "X-Adjuster-Token: $ADJUSTER_TOKEN" -d @"$file")
+      code="${body##*$'\n'}"; body="${body%$'\n'*}"
+      [[ "$code" != "409" ]] && break
+    done
+    rm -f "$file"
+    check "$name" "HTTP" "200" "$code"
+    if grep -q 'replaying recorded model answers' <<<"$body"; then PASSES=$((PASSES + 1)); else FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] the claim does not say it is replayed"; fi
+    local flag; flag=$(expected "$spec" expectedGateFlag)
+    if [[ -n "$flag" ]]; then
+      has_flag "$name" gateFlags "$flag" "$body"
+    else
+      for flag in AMBIGUOUS_DAMAGE_TYPE MODEL_DISAGREEMENT; do
+        if grep -qE "\"gateFlags\":\[[^]]*\"$flag\"" <<<"$body"; then FAILURES=$((FAILURES + 1)); echo "  FAIL [$name] unexpected $flag"; else PASSES=$((PASSES + 1)); fi
+      done
+    fi
+  done
+}
+
 if ! curl -s --max-time 5 "$API_URL/api/v1/health" | grep -q UP; then
   echo "API at $API_URL is not up. Start it with: docker compose --env-file .env.demo up -d --build"
   exit 2
@@ -255,6 +288,11 @@ if [[ "$INTAKE" == "claims-system" || "$INTAKE" == "both" ]]; then
     echo "Claims-system pass skipped: the API reports direct intake (set CLAIMS_EVENT_SECRET on both services)."
     [[ "$INTAKE" == "claims-system" ]] && FAILURES=$((FAILURES + 1))
   fi
+fi
+
+if curl -s --max-time 5 "$API_URL/api/v1/health" | grep -q '"vision":"replaying'; then
+  echo
+  run_replay
 fi
 
 echo

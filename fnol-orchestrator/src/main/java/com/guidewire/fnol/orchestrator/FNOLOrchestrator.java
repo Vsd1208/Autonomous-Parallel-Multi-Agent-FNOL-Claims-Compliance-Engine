@@ -388,6 +388,13 @@ public class FNOLOrchestrator {
         this.liteMode = liteMode;
     }
 
+    private com.guidewire.fnol.agents.ReplayAnswers replay;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setReplay(com.guidewire.fnol.agents.ReplayAnswers replay) {
+        this.replay = replay;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setTrustScorer(TrustScorer trustScorer) {
         this.trustScorer = trustScorer;
@@ -766,7 +773,9 @@ public class FNOLOrchestrator {
         notes.add("Pre-population recommended for LOW-severity eligible claim types only.");
         notes.add("Coverage verified against synthetic line-of-business coverage rules.");
         notes.add("Subrogation score is deterministic and explained by contributing factors.");
-        if (liteMode) {
+        if (replay != null) {
+            notes.add("Vision: " + replay.description() + ", not live analysis. A photo outside the recorded set gets a placeholder and goes to a person.");
+        } else if (liteMode) {
             notes.add("Second opinion: not available in lite mode, so the model-disagreement check did not run.");
         }
         notes.add("Processing time: " + elapsedMs + "ms in total. Operational branch (photos, coverage, reserve) "

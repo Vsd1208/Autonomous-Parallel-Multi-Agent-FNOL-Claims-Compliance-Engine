@@ -80,7 +80,7 @@ export interface SecondOpinion {
   damageProbabilities: Record<string, number>;
   subjectProbabilities: Record<string, number>;
   /** Share of the photo covered by damage, banded SMALL / MEDIUM / LARGE (vehicle claims). Not a cost. */
-  extent?: { band: 'SMALL' | 'MEDIUM' | 'LARGE'; share: number } | null;
+  extent?: { band: 'SMALL' | 'MEDIUM' | 'LARGE'; share?: number | null } | null;
   /** Home claims: RESIDENTIAL / COMMERCIAL / OTHER_PROPERTY, trained on reviewed FEMA photos. */
   propertyTypeProbabilities?: Record<string, number> | null;
 }

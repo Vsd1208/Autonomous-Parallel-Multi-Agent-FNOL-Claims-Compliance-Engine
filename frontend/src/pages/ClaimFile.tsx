@@ -463,7 +463,7 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
             ['Damage type', humanize(d.damageType)],
             ['Severity', onPremise ? 'Not assessed' : humanize(d.severity)],
             ['Visible damage extent', extent
-              ? `${humanize(extent.band)} (about ${Math.round(extent.share * 100)}% of the photo; not a cost)` : null],
+              ? `${humanize(extent.band)}${extent.share != null ? ` (about ${Math.round(extent.share * 100)}% of the photo; not a cost)` : ' (not a cost)'}` : null],
             [onPremise ? 'Estimated damage' : aiEstimateLabel(claim.branchA?.reserve.breakdown), onPremise
               ? (cost ? `${money(d.estimatedDamage)} (from the repair-cost range below; confirm it)`
                 : `${money(d.estimatedDamage)} (placeholder: set it from the photos)`)

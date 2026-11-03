@@ -1,0 +1,14 @@
+{
+  "model": "gemini-2.5-flash",
+  "thinkingBudget": 0,
+  "promptSha256": "501b3308884a64f8",
+  "source": "Humans in the Loop, Car Parts and Car Damages (Hugging Face copy DrBimmer/car-parts-and-damage-dataset)",
+  "licence": "CC0-1.0",
+  "run": "v3-subject",
+  "photos": 66,
+  "geminiRecorded": "50 answers on 2026-10-30, 16 on 2026-10-31 (docs/metrics.md section 1)",
+  "secondOpinionRecorded": "2026-11-01, out of fold: the model that judged a photo was not trained on it (docs/metrics.md section 4)",
+  "recordedLabel": "recorded 30-31 Oct 2026",
+  "photoSize": "longest side 512 px, JPEG quality 75",
+  "note": "Recorded answers, not live analysis. A photo outside this set gets a placeholder and goes to a person."
+}

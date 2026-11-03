@@ -1,8 +1,9 @@
 # Quick review, with no model downloads and no vision-ml service:
 #   docker compose --env-file .env.lite -f docker-compose.yml -f docker-compose.lite.yml up -d --build
 #
-# Mock vision only. The second opinion and photo blurring live in vision-ml, so with it absent the engine refuses to start
-# if Gemini is enabled: lite mode can never send a photo to an external model unblurred.
+# Replays recorded model answers for the photos in demo-scenarios/replay; any other photo gets a placeholder and goes to a person.
+# Photo blurring lives in vision-ml, so with it absent the engine refuses to start if Gemini is enabled: lite mode can never send
+# a photo to an external model unblurred.
 services:
   vision-ml:
     # Only started when this profile is asked for, which lite mode never does.
@@ -14,6 +15,10 @@ services:
       GEMINI_VISION_ENABLED: "false"
       FNOL_SECOND_OPINION_URL: ""
       FNOL_REDACTION_URL: ""
+      FNOL_VISION_PROVIDER: replay
+      FNOL_REPLAY_DIR: /replay
+    volumes:
+      - ./demo-scenarios/replay:/replay:ro
     depends_on: !override
       postgres:
         condition: service_healthy
