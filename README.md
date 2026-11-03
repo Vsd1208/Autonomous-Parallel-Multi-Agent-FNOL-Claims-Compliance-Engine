@@ -166,6 +166,8 @@ insurer could turn on to let eligible claims skip the adjuster's confirmation.
 an LLM agent choosing its own actions: the pipeline's order is fixed in code. (In insurance an "agent" is also a person who
 sells or services policies; we say "insurance agent" for that.)
 
+**The one LLM-planned agent** is the drafting agent (`DraftingAgent`), **off by default** (`fnol.drafting-agent.enabled`) and outside the intake path. A model chooses which of five read-only tools to read and drafts the advisory note or acknowledgement letter, for a person to accept, edit or discard. What bounds it: no tool can write a decision, reserve, status or assignment; at most 6 tool calls and 8 seconds; only redacted text is sent; `DraftGuard` rejects personal data, a decision, payment or liability statement, and any date, amount or period the tools it read did not return; and any failure gives the template text instead. Nothing reaches the claims system until a person accepts it, and both steps are audited.
+
 | Uses machine learning | Deliberately rule-based, because the decision must be explainable and auditable |
 |---|---|
 | Gemini vision (`GeminiVisionProvider`) | Coverage (`PolicyValidatorAgent`) |
@@ -247,7 +249,7 @@ fnol-enrichment/      PolicyCenter/ClaimCenter clients, ClaimHistoryEnricher
 fnol-agents/          Agents, vision providers, EvidenceImageLoader, rule providers
 fnol-guardrails/      Input, output, PII and coverage guardrails
 fnol-orchestrator/    FNOLOrchestrator, IntakeReviewService, ExplanationBuilder, STP settings
-fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V22, PDF
+fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V23, PDF
 fnol-vision-ml/       On-premise vision service (Python): second opinion, property heads, face and plate blurring
 frontend/             React + Vite adjuster workspace (src/) and policyholder portal (portal/)
 tools/                vision-eval (Gemini evaluation, trust score, photo collection and review), second-opinion
@@ -380,6 +382,7 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_RESERVE_METHOD` | `AVERAGE_TABLE` | Initial reserve from the sourced table, or `AI_ESTIMATE` for the old formula ([ADR-015](docs/architecture-decisions.md)) |
 | `FNOL_RESERVE_AI_ADJUSTMENT_MAX` | `0.40` | How far the AI may move the table's base, when its reading holds up |
 | `FNOL_AUTHORITY_ADJUSTER` / `FNOL_AUTHORITY_SENIOR_ADJUSTER` | `10000` / `50000` | Reserve each role may post: synthetic prototype values. A supervisor has no limit |
+| `FNOL_DRAFTING_AGENT_ENABLED` | `false` | The drafting agent ([ADR-017](docs/architecture-decisions.md)); needs a Gemini key, and is never used in lite mode |
 | `FNOL_LITE_MODE` | `false` | Quick review without `vision-ml`; refuses to start with Gemini on. Set by `docker-compose.lite.yml` |
 | `FNOL_SECOND_OPINION_URL` | `http://vision-ml:8090` in Compose | On-premise vision service; empty turns the second opinion and on-premise vision off |
 | `FNOL_REDACTION_URL` / `FNOL_REDACTION_REQUIRED` | `http://vision-ml:8090` / `true` | Face and plate blurring before photos leave; when required and unavailable, no photo is sent |

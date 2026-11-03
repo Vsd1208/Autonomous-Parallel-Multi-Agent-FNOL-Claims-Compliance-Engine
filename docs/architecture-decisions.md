@@ -163,3 +163,12 @@
     - the reference figure when the table has no row, which a person must replace before approving;
     - `fnol.reserve.method=AI_ESTIMATE`, kept only so the methods can be compared;
     - the estimate written to the claim and the governance page's figures, shown and never used to route.
+
+---
+
+## ADR-017: One Bounded LLM Agent, for Drafting Text Only
+- **Status**: Accepted; **off by default** (`fnol.drafting-agent.enabled`)
+- **Context**: Every other "agent" here runs in a fixed order. Writing a clear note or letter is a task where a model choosing what to read helps, and where a mistake can be caught by a person before it matters.
+- **Decision**: A model plans its own read-only tool calls and drafts text. It runs on request from the claim file, not during intake, so it cannot slow or change routing. Its tools only return text computed beforehand. A deterministic guard checks the draft against the tools it read; any failure gives the template. Nothing reaches the claims system until a person accepts it, and a service credential cannot accept.
+- **Alternatives**: Calling the model during intake would make every claim depend on it. Letting it write to the claim directly would break the rule that only a person acts.
+- **Consequences**: A new table (V23), unused while off. Quality is **not measured**; the guard uses English patterns and can miss a rewording, so the person's review is the real control. The letter template used here holds no claimant name, since the engine stores none.

@@ -13,6 +13,11 @@ fnol:
     queue-size: ${FNOL_ORCHESTRATOR_QUEUE_SIZE:32}
   # Quick review with no vision service: mock vision only, and each claim says the second opinion did not run.
   lite-mode: ${FNOL_LITE_MODE:false}
+  # Drafts the advisory note and acknowledgement letter for a person to review. Off by default; outside the intake path.
+  drafting-agent:
+    enabled: ${FNOL_DRAFTING_AGENT_ENABLED:false}
+    max-tool-calls: ${FNOL_DRAFTING_AGENT_MAX_TOOL_CALLS:6}
+    max-seconds: ${FNOL_DRAFTING_AGENT_MAX_SECONDS:8}
   # replay: recorded model answers for the photos in demo-scenarios/replay, a placeholder for any other. Needs Gemini off.
   vision:
     provider: ${FNOL_VISION_PROVIDER:}

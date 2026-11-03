@@ -334,6 +334,8 @@ credential's are ignored.
 
 Only an approval posts a reserve: a figure sent with any other decision is recorded but not posted. Approving a claim flagged `RESERVE_TABLE_ENTRY_MISSING` without an `adjustedReserve` answers `400`, because a person must set that reserve. If the claims system cannot be told about a hold, the answer is `503` and nothing changes.
 
+With `fnol.drafting-agent.enabled` on (default off, otherwise these routes do not exist): `GET` and `POST /api/v1/fnol/{claimId}/drafts` (`{"kind":"ADVISORY_NOTE"}` or `"ACKNOWLEDGEMENT_LETTER"`), then `POST .../drafts/{draftId}/accept` (`{"text":...}`, a signed-in person only; `400` if the text holds raw personal data) or `.../discard`.
+
 A reserve above the person's authority answers `202` `{ "status": "PENDING_APPROVAL", "approvalId", "assignedTo", "amount", "yourLimit" }`, with nothing posted. `GET /fnol/{claimId}/reserve-approvals` lists them; `POST /fnol/{claimId}/reserve-approvals/{id}/decide` `{ "approve", "note" }` approves or declines, `403` for your own, without enough authority, or with a service credential.
 
 An approval is what posts the reserve on the exposure: `adjustedReserve`, or the AI's recommendation if none is given. A

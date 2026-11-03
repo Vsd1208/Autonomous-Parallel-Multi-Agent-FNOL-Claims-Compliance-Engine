@@ -15,6 +15,7 @@ services:
       GEMINI_VISION_ENABLED: "false"
       FNOL_SECOND_OPINION_URL: ""
       FNOL_REDACTION_URL: ""
+      FNOL_DRAFTING_AGENT_ENABLED: "false"
       FNOL_VISION_PROVIDER: replay
       FNOL_REPLAY_DIR: /replay
     volumes:

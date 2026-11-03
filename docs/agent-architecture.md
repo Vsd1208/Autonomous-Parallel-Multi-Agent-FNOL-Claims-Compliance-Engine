@@ -11,6 +11,8 @@ insurer could turn on to let eligible claims skip the adjuster's confirmation.
 an LLM agent choosing its own actions: the pipeline's order is fixed in code. (In insurance an "agent" is also a person who
 sells or services policies; we say "insurance agent" for that.)
 
+**The one LLM-planned agent** is the drafting agent (`DraftingAgent`), **off by default** (`fnol.drafting-agent.enabled`) and outside the intake path. A model chooses which of five read-only tools to read and drafts the advisory note or acknowledgement letter, for a person to accept, edit or discard. What bounds it: no tool can write a decision, reserve, status or assignment; at most 6 tool calls and 8 seconds; only redacted text is sent; `DraftGuard` rejects personal data, a decision, payment or liability statement, and any date, amount or period the tools it read did not return; and any failure gives the template text instead. Nothing reaches the claims system until a person accepts it, and both steps are audited.
+
 | Uses machine learning | Deliberately rule-based, because the decision must be explainable and auditable |
 |---|---|
 | Gemini vision (`GeminiVisionProvider`) | Coverage (`PolicyValidatorAgent`) |

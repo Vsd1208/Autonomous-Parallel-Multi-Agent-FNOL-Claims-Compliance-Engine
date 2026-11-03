@@ -465,3 +465,13 @@ export interface FairnessRow {
   straightThroughDisparity: number | null; straightThroughStatus: 'OK' | 'REVIEW' | 'TOO_FEW';
   approvalDisparity: number | null; approvalStatus: 'OK' | 'REVIEW' | 'TOO_FEW';
 }
+
+export interface ClaimDraft {
+  draftId: string;
+  claimId: string;
+  kind: 'ADVISORY_NOTE' | 'ACKNOWLEDGEMENT_LETTER';
+  status: 'DRAFT' | 'ACCEPTED' | 'DISCARDED';
+  body: string;
+  fromModel: boolean;
+  fallbackReason?: string | null;
+}

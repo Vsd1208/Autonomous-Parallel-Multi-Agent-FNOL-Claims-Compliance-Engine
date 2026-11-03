@@ -90,3 +90,11 @@ We don't know yet. No study has been run; [adjuster-study.md](adjuster-study.md)
 ### Is the fraud score any good?
 
 On synthetic data only, where it recovers patterns we put there: AUC 0.92 and 44.4% precision at a 5% referral budget ([metrics §7](metrics.md#7-fraud-anomaly-score-synthetic-data-only)). On real claims the performance is unknown. It only routes to a person and suggests a referral; it never denies.
+
+### What does replay show and not show?
+
+It shows real recorded output from Gemini and our second-opinion model going through the real trust score and checks, with no model or key: a confident wrong answer stopped by the second opinion, for instance. It does not show live analysis of new photos: any other photo gets a placeholder and goes to a person. The trust score's weights were fitted on these same answers, so a score shown in replay is in sample ([demo-scenarios/replay](../demo-scenarios/replay/README.md)).
+
+### What can the drafting agent never do?
+
+It cannot write a decision, reserve, status or assignment, because it has no tool that writes anything; asking for one falls back to the template. It never sees a photo or description text, and it is off by default. Nothing it drafts reaches the claims system until a person accepts it, and a service credential cannot accept. What we cannot promise is that its guard catches every rewording, as it uses English patterns, or that its drafts are good: **quality is not measured**. One live call confirmed the format. See [ADR-017](architecture-decisions.md).

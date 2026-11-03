@@ -93,6 +93,19 @@ output is written to the claim's tamper-evident audit chain.
 
 ---
 
+## 7. Drafting agent (off by default)
+
+| | |
+|---|---|
+| **Purpose** | Drafts the adjuster advisory note and the acknowledgement letter, for a person to accept, edit or discard. `fnol.drafting-agent.enabled`, default **false**; never in lite mode; outside the intake path |
+| **Type** | Gemini 2.5 Flash, text only, with function calling. The one LLM-planned component in this project |
+| **Inputs sent** | The task and rules, then whichever of five read-only tools the model asks for: claim summary, WHY panel, claim clock, coverage result, letter template. They hold no description text and no name. Never a photo |
+| **Bounds** | No tool writes anything. At most 6 tool calls and 8 seconds. Any error, timeout, missing key or guardrail rejection gives the template text, still as a draft |
+| **Guardrail** | `DraftGuard`: rejects raw personal data, a statement of a decision, payment or liability finding, and any date, amount or period not returned by a tool the model actually read. Prototype patterns in English: it can miss a rewording, which is why a person must accept every draft |
+| **Audit** | Hash of the inputs and of the output, with the tool calls listed; then the person's acceptance or discard, in the claim's hash chain |
+| **Measured** | **Quality not measured.** Tests use a mock model. One live call on 3 Nov 2026, with made-up facts, confirmed the request format: the model read 2 tools and its draft passed the guardrail. That is a format check, not an evaluation |
+| **Known limits** | A name typed into an edited draft cannot be detected. The accepted letter is filed on the claim, not sent |
+
 ## Mapping to AI governance expectations
 
 The NAIC Model Bulletin on the Use of Artificial Intelligence Systems by Insurers (adopted by many US states) expects

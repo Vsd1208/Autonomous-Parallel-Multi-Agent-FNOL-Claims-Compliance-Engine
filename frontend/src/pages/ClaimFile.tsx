@@ -11,7 +11,7 @@ import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionRe
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
 import { session } from '../services/session';
-import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion, ReserveApprovalView } from '../types';
+import { ClaimDraft, AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion, ReserveApprovalView } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 /** Inspectors report on inspections; only adjusters decide claims. */
@@ -724,6 +724,7 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
         </MessageBar>
       )}
       <AcknowledgementLetterPanel claimId={claim.claimId} />
+      <DraftsPanel claimId={claim.claimId} />
       <Panel title="Subrogation">
         <DetailView columns={2} rows={[
           ['Score', `${b.subrogation.score} / 100`],
@@ -742,6 +743,57 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
         )}
       </Panel>
     </>
+  );
+}
+
+/**
+ * Drafts from the drafting agent, for a person to accept, edit or discard. Shown only when fnol.drafting-agent.enabled is on:
+ * with it off the request fails and nothing appears.
+ */
+function DraftsPanel({ claimId }: { claimId: string }) {
+  const [drafts, setDrafts] = useState<ClaimDraft[] | null>(null);
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const load = () => apiClient.listDrafts(claimId).then(setDrafts).catch(() => setDrafts(null));
+  useEffect(() => { load(); }, [claimId]);
+  if (drafts == null) return null;
+  const act = async (work: () => Promise<unknown>) => {
+    setBusy(true);
+    setError('');
+    try {
+      await work();
+      await load();
+    } catch (err: any) {
+      setError(err.message || 'That did not work');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Panel title="AI drafts">
+      <p>
+        <Button disabled={busy} onClick={() => act(() => apiClient.createDraft(claimId, 'ADVISORY_NOTE'))}>Draft advisory note</Button>{' '}
+        <Button disabled={busy} onClick={() => act(() => apiClient.createDraft(claimId, 'ACKNOWLEDGEMENT_LETTER'))}>Draft letter</Button>
+      </p>
+      {error && <p className="muted" role="alert">{error}</p>}
+      {drafts.map((d) => (
+        <div key={d.draftId}>
+          <p><strong>{d.status === 'DRAFT' ? 'AI draft — review before sending' : humanize(d.status)}</strong>
+            {' '}<span className="muted">{humanize(d.kind)}{d.fromModel ? '' : ` (template: ${d.fallbackReason})`}</span></p>
+          {d.status === 'DRAFT' ? (
+            <>
+              <textarea aria-label="Draft text" rows={8} style={{ width: '100%' }} value={edits[d.draftId] ?? d.body}
+                onChange={(e) => setEdits((x) => ({ ...x, [d.draftId]: e.target.value }))} />
+              <p>
+                <Button variant="primary" disabled={busy} onClick={() => act(() => apiClient.acceptDraft(claimId, d.draftId, edits[d.draftId] ?? d.body))}>Accept</Button>{' '}
+                <Button disabled={busy} onClick={() => act(() => apiClient.discardDraft(claimId, d.draftId))}>Discard</Button>
+              </p>
+            </>
+          ) : <pre className="letter">{d.body}</pre>}
+        </div>
+      ))}
+    </Panel>
   );
 }
 
