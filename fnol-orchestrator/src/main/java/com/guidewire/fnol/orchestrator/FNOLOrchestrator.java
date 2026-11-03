@@ -225,13 +225,13 @@ public class FNOLOrchestrator {
         long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         try {
             futureA = executor.submit(() -> timed(operationalMs,
-                    () -> runOperationalAI(payload, policyRecord.policyType(), deadlineNanos)));
+                    () -> runOperationalAI(payload, policyRecord.policyType(), policyRecord.currency(), deadlineNanos)));
         } catch (RejectedExecutionException e) {
             throw capacityExceeded(payload, e);
         }
         try {
             futureB = executor.submit(() -> timed(legalMs,
-                    () -> runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete, noticeDate)));
+                    () -> runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete, noticeDate, policyRecord.jurisdiction())));
         } catch (RejectedExecutionException e) {
             futureA.cancel(true);
             throw capacityExceeded(payload, e);
@@ -426,7 +426,7 @@ public class FNOLOrchestrator {
     /** Time kept back from the overall deadline for Branch A's steps after the second opinion (cost range, reserve). */
     static final long BRANCH_A_FINISH_MS = 500;
 
-    private BranchAResult runOperationalAI(FNOLPayload payload, String lineOfBusiness, long deadlineNanos) {
+    private BranchAResult runOperationalAI(FNOLPayload payload, String lineOfBusiness, String currency, long deadlineNanos) {
         log.debug("[Branch A — Operational AI] Starting — policy={}", payload.policyNumber());
         // Step A0: ask the second-opinion model now, so it runs while Gemini works
         CompletableFuture<SecondOpinion> second = secondOpinion.start(payload, lineOfBusiness);
@@ -474,7 +474,9 @@ public class FNOLOrchestrator {
         // Step A7: what repairing this area usually costs at the visible extent the on-premise model saw (vehicle
         // claims). An on-premise reading has no estimate of its own, so it is priced from the range and the reserve
         // is recalculated; a Gemini estimate far outside the range is flagged at the gate.
-        RepairCostRange cost = "AUTO".equalsIgnoreCase(lineOfBusiness)
+        // The reserve table and the repair-cost ranges are in US dollars and nothing converts them, so another currency has neither.
+        boolean usDollars = currency == null || "USD".equals(currency);
+        RepairCostRange cost = usDollars && "AUTO".equalsIgnoreCase(lineOfBusiness)
                 ? repairCosts.range(damage.damageType(), opinion == null || opinion.extent() == null ? null
                         : opinion.extent().band())
                 : null;
@@ -483,7 +485,7 @@ public class FNOLOrchestrator {
             res = reserve.calculate(damage, coverage, payload.claimedAmount());
         }
         // Step A8: the initial reserve by the configured method. The AI may move the table's base only when its reading holds up.
-        res = reserve.reserve(damage, coverage, payload.claimedAmount(), lineOfBusiness,
+        res = reserve.reserve(damage, coverage, payload.claimedAmount(), usDollars ? lineOfBusiness : lineOfBusiness + " in " + currency,
                 reserveAdjustment(new BranchAResult(damage, coverage, res, opinion, cost), lineOfBusiness));
         return new BranchAResult(damage, coverage, res, opinion, cost);
     }
@@ -526,7 +528,7 @@ public class FNOLOrchestrator {
     //  fully independent of Branch A. The subrogation score is finalised at the gate,
     //  once Branch A's damage severity is known.
     // ─────────────────────────────────────────────────────────────────────────────────
-    private BranchBResult runLegalAI(FNOLPayload payload, String lineOfBusiness, boolean proofOfLossComplete, LocalDate noticeDate) {
+    private BranchBResult runLegalAI(FNOLPayload payload, String lineOfBusiness, boolean proofOfLossComplete, LocalDate noticeDate, String jurisdiction) {
         log.debug("[Branch B — Legal AI] Starting — policy={}", payload.policyNumber());
 
         // Step B1: PII redaction — SSN, DOB, MRN, name, phone, email masking before any persistence
@@ -535,7 +537,7 @@ public class FNOLOrchestrator {
         log.debug("[Branch B] PII redaction complete — detected={}", piiResult.piiDetected());
 
         // Step B2: State regulatory deadlines from the cited rule set (claim-regulations.json)
-        DeadlineResult deadlineResult = deadline.execute(payload, lineOfBusiness, proofOfLossComplete, noticeDate);
+        DeadlineResult deadlineResult = deadline.execute(payload, lineOfBusiness, proofOfLossComplete, noticeDate, jurisdiction);
         log.debug("[Branch B] Deadlines — state={}, acknowledgeBy={}, urgency={}",
                 deadlineResult.state(), deadlineResult.acknowledgeBy(), deadlineResult.urgencyFlag());
 
@@ -773,6 +775,10 @@ public class FNOLOrchestrator {
         notes.add("Pre-population recommended for LOW-severity eligible claim types only.");
         notes.add("Coverage verified against synthetic line-of-business coverage rules.");
         notes.add("Subrogation score is deterministic and explained by contributing factors.");
+        if (policyRecord.currency() != null && !"USD".equals(policyRecord.currency())) {
+            notes.add("CURRENCY: this policy is in " + policyRecord.currency() + ". The reserve table, repair-cost ranges, authority limits and the AI's "
+                    + "rough figure are in US dollars and nothing converts them, so a person sets the reserve.");
+        }
         if (replay != null) {
             notes.add("Vision: " + replay.description() + ", not live analysis. A photo outside the recorded set gets a placeholder and goes to a person.");
         } else if (liteMode) {
@@ -828,6 +834,11 @@ public class FNOLOrchestrator {
 
     /** One line stating the regulatory deadlines and the rules behind them. */
     static String deadlineNote(DeadlineResult d) {
+        if (d.milestones() != null && !d.milestones().isEmpty()) {
+            return "DEADLINES (" + d.state() + ", rules " + d.rulesVersion() + "): " + d.milestones().stream()
+                    .map(m -> m.action() + " by " + m.dueBy() + " (" + m.citation() + ")").collect(java.util.stream.Collectors.joining("; "))
+                    + ". " + d.disclaimer();
+        }
         if (d.acknowledgeBy() == null) {
             return "DEADLINES: " + d.disclaimer();
         }

@@ -98,3 +98,7 @@ It shows real recorded output from Gemini and our second-opinion model going thr
 ### What can the drafting agent never do?
 
 It cannot write a decision, reserve, status or assignment, because it has no tool that writes anything; asking for one falls back to the template. It never sees a photo or description text, and it is off by default. Nothing it drafts reaches the claims system until a person accepts it, and a service credential cannot accept. What we cannot promise is that its guard catches every rewording, as it uses English patterns, or that its drafts are good: **quality is not measured**. One live call confirmed the format. See [ADR-017](architecture-decisions.md).
+
+### How verified are the Indian rules?
+
+We opened and read the official text on irdai.gov.in: Master Circular IRDAI/PP&GR/CIR/MISC/117/9/2024 of 5 September 2024, Part C, V.4. Each rule cites its clause. That is all: **no lawyer has reviewed it**, and it is off by default. Our reading of the decision deadline is one a lawyer should confirm, "fifteen days" is assumed to be calendar days, and our search for later amendments was not exhaustive. Rupee amounts are not handled: a person sets the reserve on such a claim. See [legal-compliance.md](legal-compliance.md#india-off-by-default-fnolclaim-clockindiaenabled).

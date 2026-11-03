@@ -40,6 +40,28 @@ Sources consulted: [Cal. Code Regs. tit. 10 § 2695.5](https://www.law.cornell.e
 [Florida HB 837 summary (Greenberg Traurig)](https://www.gtlaw.com/en/insights/2023/4/tort-reform-overhauls-floridas-litigation-landscape),
 [Florida tort reform and subrogation (JD Supra)](https://production.jdsupra.com/legalnews/florida-s-tort-reform-and-its-impact-on-9867190).
 
+### India (off by default: `fnol.claim-clock.india.enabled`)
+
+**Prototype, not reviewed by a lawyer.** `claim-regulations-in.json`, applied by `IndianClaimClock` to a policy whose jurisdiction is `IN`. The rules are data, as for the US states, and India's steps differ, so they are milestones rather than forced into "acknowledge" and "decide". Compiled on 3 Nov 2026 from the official text, opened and read at [irdai.gov.in](https://irdai.gov.in/document-detail?documentId=5625747): Master Circular on Protection of Policyholders' Interests, 2024, Ref. IRDAI/PP&GR/CIR/MISC/117/9/2024, 5 September 2024, Part C (Retail General Insurance), item V.4. Its parent is regulation 22(1)(b) of the [2024 Regulations](https://irdai.gov.in/document-detail?documentId=4590885), which requires settlement within specified turnaround times.
+
+| Step | Starts from | Period | Clause | Verification |
+|---|---|---|---|---|
+| Allocate a surveyor, and tell the insured the appointment, role and duties | Claim reported | 24 hours | V.4, paras 2-3 | Regulation text |
+| Obtain the survey report (Rs 500 a day to the claimant if late) | Surveyor allocated | 15 days | V.4, para 4 | Regulation text |
+| Decide on the claim | Surveyor allocated | Outer limit 15 days; see below | V.4, para 5 | Regulation text |
+
+**How it is read, and what is assumed:**
+
+- Para 5 says within seven days of receiving the survey report, "or after expiry of fifteen days from allocation", whichever is earlier. At first notice the receipt date is unknown, so the date shown is the outer limit, and a report received earlier brings it forward. This code does not recompute it when a report arrives. A commentary we saw reads the clause more simply as seven days after the report, so a lawyer should confirm this reading.
+- "Fifteen days" is not stated as calendar or business days; calendar days are assumed. 24 hours is counted as one day, since the time of day is not tracked.
+- A survey is mandatory above Rs 50,000 for motor and Rs 1 lakh otherwise (para 1). The text does not say whether the 24 hours applies below that, so the steps are shown for any claim. Para 5 does not apply to property or building policies on a reinstatement value basis, which this code does not detect.
+- The circular's interest entitlement for late settlement (bank rate plus 2%, V.3) is not computed.
+- **Not added, because not found in the text read:** a fixed period to acknowledge a claim, and a recovery limit.
+- **Currency is not handled.** A policy in rupees has no reserve table row and no repair-cost range, and none is invented, so a person sets the reserve. Authority limits and the screens' dollar signs are not converted either.
+- A search for later amendments found none changing these periods, but it was not exhaustive, and the circular's cover page says "2025" in its English title. Whether anything newer applies is **not verified**.
+
+The demo policy `POL-AUTO-778899` is synthetic.
+
 ## 2. Unfair-discrimination testing
 
 AI Governance page, `GET /api/v1/ai/metrics` → `fairness`. By state, reporting channel and line of business:

@@ -1,0 +1,31 @@
+{
+  "scenario": "india_policy",
+  "description": "Synthetic Indian motor policy in INR. The reserve table holds no rupee values and none is invented, so a person sets the reserve. The Indian claim clock runs only with FNOL_CLAIM_CLOCK_INDIA_ENABLED=true; otherwise the claim says to set the deadlines by hand.",
+  "payload": {
+    "policyNumber": "POL-AUTO-778899",
+    "incidentDate": "2026-09-27",
+    "state": "MH",
+    "description": "Another car hit my front bumper at a junction.",
+    "claimantName": "Asha Kulkarni",
+    "evidenceUris": [
+      "mock://photo/normal-front-bumper-front.jpg",
+      "mock://photo/normal-front-bumper-rear.jpg",
+      "mock://photo/normal-front-bumper-left.jpg",
+      "mock://photo/normal-front-bumper-right.jpg",
+      "mock://photo/normal-front-bumper-close-up.jpg"
+    ],
+    "channel": "API",
+    "claimedAmount": 75000,
+    "evidenceAngles": [
+      "FRONT",
+      "REAR",
+      "LEFT",
+      "RIGHT",
+      "CLOSE_UP"
+    ]
+  },
+  "expectedStatus": 200,
+  "expectedClaimStatus": "HUMAN_REVIEW",
+  "expectedDecision": "ADVISORY_RECOMMENDED_ACTION",
+  "expectedGateFlag": "RESERVE_TABLE_ENTRY_MISSING"
+}

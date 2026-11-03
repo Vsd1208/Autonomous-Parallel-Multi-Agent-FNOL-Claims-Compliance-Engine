@@ -75,8 +75,15 @@ public final class Models {
             String insuredName,
             String state,
             String riskDescription,
-            List<Coverage> coverages
-    ) {}
+            List<Coverage> coverages,
+            String jurisdiction,        // which claim rules apply; null means US
+            String currency             // null means USD
+    ) {
+        public Policy(String policyNumber, String policyType, String status, LocalDate effectiveDate, LocalDate expirationDate,
+                      String insuredName, String state, String riskDescription, List<Coverage> coverages) {
+            this(policyNumber, policyType, status, effectiveDate, expirationDate, insuredName, state, riskDescription, coverages, null, null);
+        }
+    }
 
     public record ClaimHistory(
             String claimId,
@@ -364,6 +371,10 @@ public final class Models {
             BigDecimal redactionConfidence
     ) {}
 
+    /** One step of a claim clock: what is due, by when, from what, and on what authority. */
+    public record ClockMilestone(String action, LocalDate dueBy, String startsFrom, String period, String citation, String appliesWhen,
+                                 String verification) {}
+
     public record DeadlineResult(
             String state,
             LocalDate deadline,         // kept for existing clients; equals acknowledgeBy
@@ -377,8 +388,16 @@ public final class Models {
             String decisionNote,        // how decisionBy was set, or why there is none
             String rulesVersion,        // version of the rule set used (claim-regulations.json)
             LocalDate recoverBy,        // last day to start a recovery action against an at-fault party (subrogation)
-            String recoveryCitation
+            String recoveryCitation,
+            List<ClockMilestone> milestones   // steps a jurisdiction has beyond acknowledge and decide; empty for the US states
     ) {
+        public DeadlineResult(String state, LocalDate deadline, String ruleSource, String disclaimer, LocalDate acknowledgeBy, LocalDate decisionBy,
+                              String urgencyFlag, String acknowledgeCitation, String decisionCitation, String decisionNote, String rulesVersion,
+                              LocalDate recoverBy, String recoveryCitation) {
+            this(state, deadline, ruleSource, disclaimer, acknowledgeBy, decisionBy, urgencyFlag, acknowledgeCitation, decisionCitation,
+                    decisionNote, rulesVersion, recoverBy, recoveryCitation, List.of());
+        }
+
         public DeadlineResult(String state, LocalDate deadline, String ruleSource, String disclaimer,
                               LocalDate acknowledgeBy, LocalDate decisionBy, String urgencyFlag) {
             this(state, deadline, ruleSource, disclaimer, acknowledgeBy, decisionBy, urgencyFlag,

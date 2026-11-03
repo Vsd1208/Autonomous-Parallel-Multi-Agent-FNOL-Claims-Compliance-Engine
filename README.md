@@ -43,6 +43,7 @@ flowchart LR
 | Trust score (calibrated confidence) | **Real**, fitted and measured on 66 labelled Gemini answers | Gemini's own confidence does not separate right from wrong | `TrustScorer.java`, `tools/vision-eval/trust_score.py` |
 | Face and licence-plate blurring | **Real** (OpenCV, YuNet) | Photos leave for an external model | `fnol-vision-ml/redaction/` |
 | PII redaction in text | **Real**, rule-based | Personal data must not reach models or logs | `PiiRedactionAgent.java`, `PIIGuardrail.java` |
+| India claim clock (off by default) | **Real citations** to the official IRDAI text; a prototype not reviewed by a lawyer | Shows the rules are data, not code | `claim-regulations-in.json`, `IndianClaimClock.java`, [docs/legal-compliance.md](docs/legal-compliance.md) |
 | State claim clock (CA, NY, TX, FL, IL) | **Real citations**; a prototype not reviewed by a lawyer; 3 recovery limits unverified | Deadlines are what regulators examine | `claim-regulations.json`, `CitedDeadlineRuleProvider.java`, [docs/legal-compliance.md](docs/legal-compliance.md) |
 | Coverage rules, subrogation weights | **Simulated** (synthetic prototype values) | No insurer's real rules are available | `SyntheticCoverageRuleProvider.java`, `DeterministicSubrogationScorer.java` |
 | Event-driven extension (signed events from a transactional outbox, retries, write-back, decisions first in the claims system) | **Real code, tested and run**, against the mock claims system | How an AI engine should sit on a core system | `ClaimEventController.java`, `ClaimDecisionRecorder.java`, `ClaimEventOutbox.java` |
@@ -383,6 +384,7 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_RESERVE_AI_ADJUSTMENT_MAX` | `0.40` | How far the AI may move the table's base, when its reading holds up |
 | `FNOL_AUTHORITY_ADJUSTER` / `FNOL_AUTHORITY_SENIOR_ADJUSTER` | `10000` / `50000` | Reserve each role may post: synthetic prototype values. A supervisor has no limit |
 | `FNOL_DRAFTING_AGENT_ENABLED` | `false` | The drafting agent ([ADR-017](docs/architecture-decisions.md)); needs a Gemini key, and is never used in lite mode |
+| `FNOL_CLAIM_CLOCK_INDIA_ENABLED` | `false` | India's claim clock for a policy with jurisdiction `IN` (prototype, [not reviewed by a lawyer](docs/legal-compliance.md)) |
 | `FNOL_LITE_MODE` | `false` | Quick review without `vision-ml`; refuses to start with Gemini on. Set by `docker-compose.lite.yml` |
 | `FNOL_SECOND_OPINION_URL` | `http://vision-ml:8090` in Compose | On-premise vision service; empty turns the second opinion and on-premise vision off |
 | `FNOL_REDACTION_URL` / `FNOL_REDACTION_REQUIRED` | `http://vision-ml:8090` / `true` | Face and plate blurring before photos leave; when required and unavailable, no photo is sent |

@@ -108,6 +108,8 @@ export interface Deadline {
   /** Last day to start a recovery action against an at-fault party. */
   recoverBy?: string | null;
   recoveryCitation?: string | null;
+  /** Steps a jurisdiction has beyond acknowledge and decide (India). */
+  milestones?: { action: string; dueBy: string; citation: string; appliesWhen?: string | null }[] | null;
 }
 
 export interface Subrogation {

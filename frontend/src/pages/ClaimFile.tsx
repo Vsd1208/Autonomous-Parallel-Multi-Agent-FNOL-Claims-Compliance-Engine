@@ -711,6 +711,7 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
               : b.deadline.decisionNote ?? null],
             ['Recover from at-fault party by', b.deadline.recoverBy
               ? `${isoDate(b.deadline.recoverBy)} — ${b.deadline.recoveryCitation ?? ''}` : null],
+            ...(b.deadline.milestones ?? []).map((m): [string, string] => [m.action, `${isoDate(m.dueBy)} — ${m.citation}`]),
             ['Urgency', <StatusChip value={b.deadline.urgencyFlag} />],
             ['Rule set', b.deadline.rulesVersion ? `Cited rules, version ${b.deadline.rulesVersion}` : b.deadline.ruleSource],
           ]} />

@@ -14,6 +14,10 @@ fnol:
   # Quick review with no vision service: mock vision only, and each claim says the second opinion did not run.
   lite-mode: ${FNOL_LITE_MODE:false}
   # Drafts the advisory note and acknowledgement letter for a person to review. Off by default; outside the intake path.
+  # India's claim clock (claim-regulations-in.json), for a policy whose jurisdiction is IN. Off by default.
+  claim-clock:
+    india:
+      enabled: ${FNOL_CLAIM_CLOCK_INDIA_ENABLED:false}
   drafting-agent:
     enabled: ${FNOL_DRAFTING_AGENT_ENABLED:false}
     max-tool-calls: ${FNOL_DRAFTING_AGENT_MAX_TOOL_CALLS:6}
