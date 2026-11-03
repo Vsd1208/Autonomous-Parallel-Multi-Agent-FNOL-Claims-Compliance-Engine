@@ -163,6 +163,30 @@ class SegmentationAndAssignmentTest {
         assertThat(activity.getValue().assignedTo()).isEqualTo("SUP-1");
     }
 
+    @Test
+    @DisplayName("A group with nobody in it says so, rather than claiming the reserve is above everyone's authority")
+    void emptyGroupSaysSo() throws Exception {
+        String id = claim("HUMAN_REVIEW");
+        com.fasterxml.jackson.databind.JsonNode rules = new com.fasterxml.jackson.databind.ObjectMapper().readTree("""
+                {"rules":[{"segment":"EMPTY","why":"test"}],"groups":{"EMPTY":{"group":"Empty queue","roles":["NO_SUCH_ROLE"]}}}""");
+        new ClaimAssignmentService(new ClaimSegmenter(rules), usersRepository, claims, authority, auditService, auditAgent, claimCenter)
+                .assign(id, new ClaimSegmenter.Input("AUTO", "LOW", Set.of(), new BigDecimal("500")));
+        assertThat(claims.findById(id).orElseThrow().assignedTo).isNull();
+        ArgumentCaptor<CcActivity> activity = ArgumentCaptor.forClass(CcActivity.class);
+        verify(claimCenter).addActivity(eq(id), activity.capture());
+        assertThat(activity.getValue().subject()).isEqualTo("No one is available to take this claim");
+    }
+
+    @Test
+    @DisplayName("Assignment writes only its own columns: a decision made meanwhile is not overwritten")
+    void assignmentKeepsADecision() {
+        String id = claim("APPROVED_BY_ADJUSTER");
+        assignment.assign(id, new ClaimSegmenter.Input("AUTO", "LOW", Set.of(), new BigDecimal("3000")));
+        ClaimEntity c = claims.findById(id).orElseThrow();
+        assertThat(c.status).isEqualTo("APPROVED_BY_ADJUSTER");
+        assertThat(c.segment).isEqualTo("AUTO_FAST_TRACK");
+    }
+
     /** Rules with a group of adjusters only, so a large reserve is above everyone in it. */
     private void assignmentAboveEveryone(String id) {
         try {

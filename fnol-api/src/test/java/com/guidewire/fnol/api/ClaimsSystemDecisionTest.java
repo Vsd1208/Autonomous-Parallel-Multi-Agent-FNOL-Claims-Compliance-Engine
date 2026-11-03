@@ -107,6 +107,22 @@ class ClaimsSystemDecisionTest {
     }
 
     @Test
+    @DisplayName("A claim only the claims system holds, its analysis unfinished: the authority limit still applies and nothing is posted")
+    void authorityAppliesWithNoAnalysisRecord() throws Exception {
+        String id = "CLM-2026-0D0090";
+        when(claimCenter.getClaim(id)).thenReturn(new Claim(id, "OPEN", POLICY, LocalDate.now().minusDays(5), "CA", null, null, null,
+                List.of(), List.of(), List.of(), List.of(), List.of(), "HUMAN_REVIEW"));
+
+        review(id, """
+                {"decision":"APPROVED_BY_ADJUSTER","adjusterId":"ADJ-001","adjustedReserve":500000,"overrideReason":"no analysis"}""")
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
+
+        verify(claimCenter, never()).recordDecision(any(), any());
+        assertThat(claims.findById(id).orElseThrow().status).isEqualTo("PENDING_APPROVAL");
+    }
+
+    @Test
     @DisplayName("A decision goes to the claims system first with what the feedback loop needs; its later event changes nothing")
     void decisionIsRecordedInTheClaimsSystemFirst() throws Exception {
         String id = "CLM-2026-0D0001";

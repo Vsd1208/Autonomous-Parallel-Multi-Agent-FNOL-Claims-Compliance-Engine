@@ -111,7 +111,7 @@ public class ReserveApprovalService {
     /** A decline: nothing is posted, and the claim goes back to the person who asked. */
     void decline(ReserveApprovalEntity a, Actor actor, String note) {
         Instant now = Instant.now();
-        claims.moveStatus(a.claimId, Set.of(PENDING_APPROVAL), a.previousStatus, now);
+        release(a, now);
         close(a, DECLINED, actor, note, now);
         audit.append(a.claimId, List.of(auditAgent.record(a.claimId, "ReserveApprovalDeclined",
                 "approvalId=" + a.approvalId + ";amount=" + a.amount + ";noteSha256=" + AuditTrailAgent.sha256(Objects.toString(note, "")),
@@ -125,11 +125,18 @@ public class ReserveApprovalService {
     /** Approved: audited here, and the caller then applies the held decision through the normal path. */
     void approve(ReserveApprovalEntity a, Actor actor, String note) {
         Instant now = Instant.now();
-        claims.moveStatus(a.claimId, Set.of(PENDING_APPROVAL), a.previousStatus, now);
+        release(a, now);
         close(a, APPROVED, actor, note, now);
         audit.append(a.claimId, List.of(auditAgent.record(a.claimId, "ReserveApprovalGranted",
                 "approvalId=" + a.approvalId + ";requestedBy=" + a.requestedBy + ";amount=" + a.amount,
                 "decidedBy=" + actor.id() + ";role=" + actor.role(), APPROVED)), actor.id());
+    }
+
+    /** Conditional, so of two people deciding at once only one succeeds, and a claim decided elsewhere meanwhile is not touched. */
+    private void release(ReserveApprovalEntity a, Instant now) {
+        if (claims.moveStatus(a.claimId, Set.of(PENDING_APPROVAL), a.previousStatus, now) == 0) {
+            throw new InvalidStateException("Claim " + a.claimId + " is no longer waiting for this approval; refresh it");
+        }
     }
 
     private void close(ReserveApprovalEntity a, String status, Actor actor, String note, Instant now) {
@@ -147,14 +154,22 @@ public class ReserveApprovalService {
                 .map(u -> u.username).orElse(null);
     }
 
-    /** The claims system is told, best effort: a held decision posts nothing either way. */
+    /**
+     * The queues are read from the claims system, so a claim it does not know is held would never reach an approver. If it cannot be
+     * told, this is refused and rolled back, and the person tries again, as for any decision. The activity is only a reminder.
+     */
     private void sync(String claimId, String actor, String action, String notes, String queue, CcActivity activity) {
         if (claimId.startsWith("REJ-")) return;
         try {
             claimCenter.updateClaim(claimId, new ClaimUpdateRequest("OPEN", notes, action, actor, null, queue));
-            claimCenter.addActivity(claimId, activity);
         } catch (RuntimeException e) {
             log.warn("[Authority] Claims system not updated for {} ({}): {}", claimId, action, e.getMessage());
+            throw new ClaimsSystemUnavailableException();
+        }
+        try {
+            claimCenter.addActivity(claimId, activity);
+        } catch (RuntimeException e) {
+            log.warn("[Authority] Activity not created for {} ({}): {}", claimId, action, e.getMessage());
         }
     }
 }

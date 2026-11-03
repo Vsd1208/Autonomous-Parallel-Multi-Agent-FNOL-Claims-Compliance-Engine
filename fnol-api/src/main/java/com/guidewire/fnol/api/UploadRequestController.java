@@ -206,7 +206,7 @@ class UploadRequestController {
             }
         }
         ClaimEntity claim = claims.findById(r.claimId).orElseThrow();
-        if (!FNOLController.REVIEWABLE_STATUSES.contains(claim.status)) {
+        if (!FNOLController.REVIEWABLE_STATUSES.contains(claim.status) && !ReserveApprovalService.PENDING_APPROVAL.equals(claim.status)) {
             return ResponseEntity.status(410).body(Map.of("error", "CLAIM_CLOSED",
                     "message", "This claim has already been decided. Contact your claim handler."));
         }
@@ -224,7 +224,7 @@ class UploadRequestController {
         startDecisionClock(claim, now);
 
         audit(r.claimId, "SupplementaryEvidence", "requestId=" + r.requestId + ";angles=" + String.join(",", angles),
-                "photosStored=" + stored.size() + ";status=HUMAN_REVIEW", "RECEIVED", AuditService.SYSTEM_ACTOR);
+                "photosStored=" + stored.size() + ";status=" + claims.findById(r.claimId).orElseThrow().status, "RECEIVED", AuditService.SYSTEM_ACTOR);
         syncClaimCenter(r.claimId, "OPEN", "PHOTOS_RECEIVED", "CLAIMANT",
                 stored.size() + " photo(s) received from the claimant: " + String.join(", ", angles));
         log.info("[FNOL] Photo request {} used: {} photo(s) added to {}", r.requestId, stored.size(), r.claimId);

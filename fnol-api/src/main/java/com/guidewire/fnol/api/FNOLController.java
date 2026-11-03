@@ -151,10 +151,13 @@ public class FNOLController {
 
     /**
      * What a decision posts as the reserve. This is the only way the AI's recommendation reaches the money: an approval
-     * posts the adjuster's figure, or the recommendation they approved.
+     * posts the adjuster's figure, or the recommendation they approved. Any other decision posts nothing.
      */
     static BigDecimal reserveToPost(String decision, BigDecimal adjustedReserve, ClaimEntity claim) {
-        return adjustedReserve == null && "APPROVED_BY_ADJUSTER".equals(decision) ? claim.reserve : adjustedReserve;
+        if (!"APPROVED_BY_ADJUSTER".equals(decision)) {
+            return null;
+        }
+        return adjustedReserve == null ? claim.reserve : adjustedReserve;
     }
     static final Set<String> ADJUSTER_DECISIONS = CLAIMCENTER_STATUS.keySet();
 
@@ -546,11 +549,23 @@ public class FNOLController {
                 && (request.overrideReason() == null || request.overrideReason().isBlank())) {
             throw new IllegalArgumentException("overrideReason is required when adjustedReserve is set");
         }
+        // With no table row the recommendation is only the AI's figure, shown for reference: a person must set the reserve.
+        if ("APPROVED_BY_ADJUSTER".equals(decision) && request.adjustedReserve() == null) {
+            ClaimEntity flagged = claims.findById(claimId).orElse(null);
+            if (flagged != null && flagged.gateFlags != null
+                    && flagged.gateFlags.contains(GateConsistencyChecker.RESERVE_TABLE_ENTRY_MISSING)) {
+                throw new IllegalArgumentException("The initial-reserve table has no row for this claim: set the reserve yourself");
+            }
+        }
         if (checkAuthority && approvals != null) {
-            ClaimEntity current = claims.findById(claimId).orElse(null);
+            // Also a claim only the claims system holds, whose analysis did not finish: the limit applies to it just the same.
+            ClaimEntity current = recordForDecision(claimId).orElse(null);
             String role = Actor.current().map(Actor::role).orElse(ReserveAuthorityRoles.SERVICE);
             BigDecimal posted = current == null ? null : reserveToPost(decision, request.adjustedReserve(), current);
             if (current != null && REVIEWABLE_STATUSES.contains(current.status) && !authority.allows(role, posted)) {
+                if (reportsToClaimsSystem()) {
+                    claimsSystemIntake.saveForDecision(current);
+                }
                 ReserveApprovalEntity held = approvals.request(claimId, decision, posted, current.status, request, role, costSource);
                 Map<String, Object> answer = new LinkedHashMap<>();
                 answer.put("claimId", claimId);
@@ -610,6 +625,10 @@ public class FNOLController {
         ));
     }
 
+    private Optional<ClaimEntity> recordForDecision(String claimId) {
+        return claims.findById(claimId).or(() -> reportsToClaimsSystem() ? claimsSystemIntake.recordOf(claimId) : Optional.empty());
+    }
+
     /** Timing and usefulness count only from a signed-in person, so scripts and integrations cannot skew the evidence. */
     private void recordUsage(String claimId, AdjusterReviewRequest request) {
         if (governance != null && Actor.current().isPresent()) {
@@ -624,7 +643,7 @@ public class FNOLController {
      */
     private ResponseEntity<?> reviewInClaimsSystem(String claimId, String decision, String costSource,
                                                    AdjusterReviewRequest request) {
-        ClaimEntity claim = claims.findById(claimId).or(() -> claimsSystemIntake.recordOf(claimId)).orElse(null);
+        ClaimEntity claim = recordForDecision(claimId).orElse(null);
         if (claim == null) {
             return ResponseEntity.notFound().build();
         }

@@ -463,7 +463,7 @@ public class AiGovernanceService {
                 else if (!c.acknowledgedAt.atZone(ZoneOffset.UTC).toLocalDate().isAfter(c.acknowledgeDue)) onTime++;
                 else late++;
             }
-            boolean open = FNOLController.REVIEWABLE_STATUSES.contains(c.status);
+            boolean open = ClaimAssignmentService.OPEN_STATUSES.contains(c.status);
             if (open && c.decisionDue != null) {
                 if (today.isAfter(c.decisionDue)) overdue++;
                 else if (!today.plusDays(3).isBefore(c.decisionDue)) dueSoon++;

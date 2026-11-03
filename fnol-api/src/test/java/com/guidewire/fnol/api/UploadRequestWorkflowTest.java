@@ -146,6 +146,22 @@ class UploadRequestWorkflowTest {
                 .andExpect(status().isConflict());
     }
 
+    @Test
+    @DisplayName("While a decision waits for approval, the claimant's photos are still accepted, and the claim stays held")
+    void photosWhileHeld() throws Exception {
+        String claimId = saveClaim("HUMAN_REVIEW");
+        String token = tokenOf(json(post("/api/v1/fnol/" + claimId + "/upload-requests",
+                Map.of("requestedBy", "ADJ-001", "angles", List.of("FRONT"))), 200));
+        ClaimEntity held = claims.findById(claimId).orElseThrow();
+        held.status = "PENDING_APPROVAL";
+        claims.save(held);
+
+        mockMvc.perform(get("/api/v1/public/upload/" + token)).andExpect(status().isOk());
+        mockMvc.perform(publicPost(token, Map.of("evidenceUris", List.of(PNG), "evidenceAngles", List.of("FRONT"))))
+                .andExpect(status().isOk());
+        assertThat(claims.findById(claimId).orElseThrow().status).isEqualTo("PENDING_APPROVAL");
+    }
+
     private static String tokenOf(JsonNode created) {
         String url = created.path("uploadUrl").asText();
         return url.substring(url.lastIndexOf('/') + 1);

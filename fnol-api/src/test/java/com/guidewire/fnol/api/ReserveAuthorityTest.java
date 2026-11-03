@@ -43,6 +43,7 @@ class ReserveAuthorityTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ClaimRepository claims;
     @Autowired private AiFeedbackRepository feedback;
+    @Autowired private AiGovernanceService governance;
     @MockBean private ClaimCenterClient claimCenter;
 
     private String token(String user) throws Exception {
@@ -179,6 +180,70 @@ class ReserveAuthorityTest {
         verify(claimCenter, atLeastOnce()).addActivity(eq(id), any());
         verify(claimCenter, never()).recordDecision(any(), any());
         assertThat(chainValid(id)).isTrue();
+    }
+
+    @Test
+    @DisplayName("A claim decided elsewhere while held: a late approval or decline is refused and changes nothing")
+    void staleApprovalIsRefused() throws Exception {
+        String id = "CLM-2026-0B0020";
+        claim(id, "20000");
+        String approval = holdApproval(id, "ADJ-A");
+        ClaimEntity moved = claims.findById(id).orElseThrow();
+        moved.status = "APPROVED_BY_ADJUSTER";
+        claims.save(moved);
+
+        decide(id, approval, "SUP-1", false).andExpect(status().isConflict());
+        decide(id, approval, "SUP-1", true).andExpect(status().isConflict());
+        assertThat(claims.findById(id).orElseThrow().status).isEqualTo("APPROVED_BY_ADJUSTER");
+        assertThat(chainValid(id)).isTrue();
+    }
+
+    @Test
+    @DisplayName("If the claims system cannot be told about a hold, it is refused and nothing changes, so no claim is lost to approvers")
+    void holdNeedsTheClaimsSystem() throws Exception {
+        String id = "CLM-2026-0B0021";
+        claim(id, "20000");
+        org.mockito.Mockito.doThrow(new IllegalStateException("claims system down")).when(claimCenter).updateClaim(eq(id), any());
+        approve(id, "ADJ-A").andExpect(status().isServiceUnavailable());
+        assertThat(claims.findById(id).orElseThrow().status).isEqualTo("HUMAN_REVIEW");
+    }
+
+    @Test
+    @DisplayName("With no table row, approving needs the person's own figure: the AI's is for reference only")
+    void noTableRowNeedsAFigure() throws Exception {
+        String id = "CLM-2026-0B0022";
+        claim(id, "3000");
+        ClaimEntity flagged = claims.findById(id).orElseThrow();
+        flagged.gateFlags = "RESERVE_TABLE_ENTRY_MISSING";
+        claims.save(flagged);
+
+        approve(id, "ADJ-A").andExpect(status().isBadRequest());
+        assertThat(claims.findById(id).orElseThrow().status).isEqualTo("HUMAN_REVIEW");
+        mockMvc.perform(post("/api/v1/fnol/" + id + "/review").header("Authorization", token("ADJ-A")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"APPROVED_BY_ADJUSTER\",\"adjusterId\":\"ADJ-A\",\"adjustedReserve\":3000,\"overrideReason\":\"checked the photos\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("A figure entered on a denial is not posted, so it needs no authority")
+    void denialPostsNoFigure() throws Exception {
+        String id = "CLM-2026-0B0023";
+        claim(id, "3000");
+        mockMvc.perform(post("/api/v1/fnol/" + id + "/review").header("Authorization", token("ADJ-A")).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REJECTED_BY_ADJUSTER\",\"adjusterId\":\"ADJ-A\",\"adjustedReserve\":60000,\"overrideReason\":\"typed by mistake\"}"))
+                .andExpect(status().isOk());
+        ArgumentCaptor<ClaimUpdateRequest> sent = ArgumentCaptor.forClass(ClaimUpdateRequest.class);
+        verify(claimCenter).updateClaim(eq(id), sent.capture());
+        assertThat(sent.getValue().adjustedReserve()).isNull();
+    }
+
+    @Test
+    @DisplayName("A held claim still counts against its deadline")
+    void heldClaimCountsAsOverdue() {
+        ClaimEntity held = new ClaimEntity();
+        held.status = "PENDING_APPROVAL";
+        held.decisionDue = LocalDate.now().minusDays(2);
+        assertThat(governance.deadlineCompliance(java.util.List.of(held))).containsEntry("openDecisionsOverdue", 1L);
     }
 
     @Test

@@ -951,7 +951,8 @@ function Decision({ claim, inspections, docs, reload, onChanged, openedAt }: {
   const final = finalAmount.trim() === '' ? null : Number(finalAmount);
   const invalidAmount = final != null && !(final >= 0);
   const changed = final != null && recommended != null && final !== Number(recommended);
-  const reasonMissing = changed && !reason.trim();
+  const noTableRow = (claim.gateFlags ?? []).includes('RESERVE_TABLE_ENTRY_MISSING');
+  const reasonMissing = (changed || noTableRow) && !reason.trim();
 
   // A changed reserve implies a repair cost: reserve + deductible (unless the claimed amount or the limit capped it).
   // It is proposed for the adjuster to confirm, as their judgement until they name the evidence behind it.
@@ -982,7 +983,8 @@ function Decision({ claim, inspections, docs, reload, onChanged, openedAt }: {
     setSaved('');
     try {
       const differsFromAi = final != null && aiPayment != null && final !== Number(aiPayment);
-      const override = differsFromAi ? {
+      const setByAdjuster = final != null && noTableRow && decision === 'APPROVED_BY_ADJUSTER';
+      const override = differsFromAi || setByAdjuster ? {
         adjustedReserve: final!,
         overrideReason: reason.trim()
           || `Inspection by ${latest?.inspectorName}: accident-related damage ${money(latest?.accidentRelatedAmount)}`,
@@ -1069,7 +1071,7 @@ function Decision({ claim, inspections, docs, reload, onChanged, openedAt }: {
           </label>
           <label className="field wide">
             <span className="field-label">Reason for a different reserve{changed && <span className="required"> *</span>}</span>
-            <input value={reason} onChange={(e) => setReason(e.target.value)} disabled={!reviewable || !changed}
+            <input value={reason} onChange={(e) => setReason(e.target.value)} disabled={!reviewable || !(changed || noTableRow)}
               placeholder={changed ? `Why ${money(final)} instead of ${money(recommended)} (e.g. body shop invoice)` : 'Only needed if you change the amount'} />
           </label>
         </div>

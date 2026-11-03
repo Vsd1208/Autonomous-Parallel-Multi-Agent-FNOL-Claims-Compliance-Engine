@@ -76,38 +76,30 @@ public class ClaimAssignmentService {
         }
     }
 
-    /** One at a time, so two claims arriving together cannot both pick the same "least busy" person. */
-    synchronized void assign(String claimId, ClaimSegmenter.Input input) {
-        ClaimEntity claim = claims.findById(claimId).orElse(null);
-        if (claim == null) {
+    /** Who gets it and who else must know. */
+    private record Choice(String assignee, boolean noOneInGroup, boolean aboveGroup, String supervisor) {}
+
+    void assign(String claimId, ClaimSegmenter.Input input) {
+        if (!claims.existsById(claimId)) {
             return;
         }
         ClaimSegmenter.Segment segment = segmenter.segment(input);
-        List<AppUserEntity> members = users.findAll().stream()
-                .filter(u -> u.active && segment.roles().contains(u.role)).toList();
-        AppUserEntity assignee = members.stream()
-                .min(Comparator.comparingLong((AppUserEntity u) -> claims.countByAssignedToAndStatusIn(u.username, OPEN_STATUSES))
-                        .thenComparing(u -> lastAssigned(u.username))
-                        .thenComparing(u -> u.username))
-                .orElse(null);
         BigDecimal reserve = input.reserve();
-        boolean aboveGroup = members.stream().noneMatch(u -> authority.allows(u.role, reserve));
-        String supervisor = aboveGroup ? supervisorFor(reserve, assignee == null ? null : assignee.username) : null;
-
-        claim.segment = segment.segment();
-        claim.assignmentGroup = segment.group();
-        claim.assignedTo = assignee == null ? null : assignee.username;
-        claim.assignedAt = Instant.now();
-        claims.save(claim);
+        Choice choice = choose(claimId, segment, reserve);
+        String supervisor = choice.supervisor();
         audit.append(claimId, List.of(auditAgent.record(claimId, "SegmentationAndAssignment",
                 "line=" + input.line() + ";severity=" + input.severity() + ";flags=" + new java.util.TreeSet<>(input.flags()) + ";reserve=" + reserve,
-                "segment=" + segment.segment() + ";why=" + segment.why() + ";group=" + segment.group() + ";assignedTo=" + claim.assignedTo
-                        + ";routedToSupervisor=" + supervisor, claim.assignedTo == null ? "UNASSIGNED" : "ASSIGNED")), AuditService.SYSTEM_ACTOR);
+                "segment=" + segment.segment() + ";why=" + segment.why() + ";group=" + segment.group() + ";assignedTo=" + choice.assignee()
+                        + ";routedToSupervisor=" + supervisor, choice.assignee() == null ? "UNASSIGNED" : "ASSIGNED")), AuditService.SYSTEM_ACTOR);
 
         if (!claimId.startsWith("REJ-")) {
             try {
-                claimCenter.patchClaim(claimId, new ClaimPatch(null, null, null, null, segment.segment(), claim.assignedTo, segment.group()));
-                if (aboveGroup) {
+                claimCenter.patchClaim(claimId, new ClaimPatch(null, null, null, null, segment.segment(), choice.assignee(), segment.group()));
+                if (choice.noOneInGroup()) {
+                    claimCenter.addActivity(claimId, new CcActivity(null, "No one is available to take this claim",
+                            "Nobody active holds a role in " + segment.group() + ", so this claim is unassigned. Please assign it.",
+                            "high", LocalDate.now().plusDays(1), supervisor != null ? supervisor : "Supervisors", null, null));
+                } else if (choice.aboveGroup()) {
                     claimCenter.addActivity(claimId, new CcActivity(null, "Reserve above the assigned group's authority",
                             "The recommended reserve of $" + reserve + " is above the authority of everyone in " + segment.group()
                                     + ". Please take or support this claim.", "high", LocalDate.now().plusDays(1),
@@ -117,7 +109,27 @@ public class ClaimAssignmentService {
                 log.warn("[Assignment] Claims system not told about {}'s assignment: {}", claimId, e.getMessage());
             }
         }
-        log.info("[Assignment] {} -> {} ({}) assigned to {}", claimId, segment.segment(), segment.why(), claim.assignedTo);
+        log.info("[Assignment] {} -> {} ({}) assigned to {}", claimId, segment.segment(), segment.why(), choice.assignee());
+    }
+
+    /**
+     * One at a time, so two claims arriving together cannot both pick the same "least busy" person. Calls to the claims system stay
+     * outside this lock. Only the assignment columns are written, so a decision arriving meanwhile is not overwritten.
+     */
+    private synchronized Choice choose(String claimId, ClaimSegmenter.Segment segment, BigDecimal reserve) {
+        List<AppUserEntity> members = users.findAll().stream()
+                .filter(u -> u.active && segment.roles().contains(u.role)).toList();
+        AppUserEntity assignee = members.stream()
+                .min(Comparator.comparingLong((AppUserEntity u) -> claims.countByAssignedToAndStatusIn(u.username, OPEN_STATUSES))
+                        .thenComparing(u -> lastAssigned(u.username))
+                        .thenComparing(u -> u.username))
+                .orElse(null);
+        boolean noOneInGroup = members.isEmpty();
+        boolean aboveGroup = !noOneInGroup && members.stream().noneMatch(u -> authority.allows(u.role, reserve));
+        String username = assignee == null ? null : assignee.username;
+        String supervisor = noOneInGroup || aboveGroup ? supervisorFor(reserve, username) : null;
+        claims.assign(claimId, segment.segment(), segment.group(), username, Instant.now());
+        return new Choice(username, noOneInGroup, aboveGroup, supervisor);
     }
 
     private Instant lastAssigned(String username) {
