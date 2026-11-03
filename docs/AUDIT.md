@@ -135,7 +135,7 @@ was deleted or skipped.
 
 ## 6. Selection-final
 
-Five weaknesses reviewers noticed, on branch `selection-final`, 3 Nov 2026. Full results: `mvn -B clean verify` 400 passed, 0 failed, 0 skipped; `run-all.sh` 111 of 111 in lite mode and in full mode.
+Five weaknesses reviewers noticed, on branch `selection-final`, 3 Nov 2026. Full results: `mvn -B clean verify` 409 passed, 0 failed, 0 skipped; `run-all.sh` 111 of 111 in lite mode and in full mode.
 
 | Weakness | What changed | Evidence | What remains open |
 |---|---|---|---|
@@ -146,5 +146,18 @@ Five weaknesses reviewers noticed, on branch `selection-final`, 3 Nov 2026. Full
 | Unclear ownership | A guide to four areas with blank `Owner:` lines, and honest review answers | `docs/MODULE_GUIDE.md`, `docs/REVIEW_QA.md` | **The team must fill in owners and be able to explain each area.** No documentation can show that for them |
 
 Also measured or corrected: the trust score out of sample (AUC 0.79, Brier 0.113, calibration error 0.063) and the headline, which is 11 → 1 in sample and about 11 → 3 out of sample ([metrics §2-3](metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims)); stale fraud figures in two documents.
+
+**Defects found and fixed by a code review of this branch, 3 Nov 2026,** each with a regression test (`ReserveAuthorityTest`, `ClaimsSystemDecisionTest`, `SegmentationAndAssignmentTest`, `UploadRequestWorkflowTest`):
+
+- **Authority bypass:** a claim only the claims system held, its analysis unfinished, skipped the limit, so any adjuster could post any reserve on it.
+- Approving a claim with no table row posted the AI's figure, which the claim says is for reference only. A person must now set it.
+- A figure entered on a denial or information request was posted, and needed authority, unlike what these docs said. Only an approval posts now.
+- A late approval or decline on a claim that had moved still closed the approval and moved the claims system's queue. It is now refused.
+- A hold the claims system was not told about never reached an approver. It is now refused and can be retried.
+- Assignment saved the whole claim record, so it could overwrite a decision made meanwhile, and it held its lock during calls to the claims system.
+- A held claim dropped out of the deadline counts, and a claimant uploading requested photos was told it was already decided.
+- An empty assignment group raised a false "above authority" alert.
+
+Run against the code before these fixes, 8 of the 9 new tests fail. The ninth, `assignmentKeepsADecision`, passes on both, because a test with one thread cannot reproduce that race: the overwrite fix rests on reading the code, which now writes only the assignment columns.
 
 **Defect found and fixed during this work:** a claim analysed late, after an engine outage, started its regulatory clock on the day of analysis. It now runs from the time on the `claim.submitted` event (`ClaimEventController`, `ClaimEventExtensionTest.lateAnalysisKeepsTheNoticeDate`). Whether that time is the legal date of notice on a real tenant is not verified.

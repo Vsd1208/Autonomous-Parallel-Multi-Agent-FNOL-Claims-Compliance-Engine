@@ -76,7 +76,7 @@ All from small public datasets, not real claims. Every number, with its run, dat
 | Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated (median 2.7x the published range midpoint, see [metrics §8](docs/metrics.md#8-repair-cost-estimates)) | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
 | Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
 | Our own on-premise vision model: damaged area right, strict / lenient | **78% / 87%** out-of-fold on 734 car photos, each reviewed (CLIP alone 65% / 81%); property cause of loss **93%** and property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests; demo scenario checks | 400 passing; 111 passing in lite and in full mode | [metrics §6](docs/metrics.md#6-engineering) |
+| Backend tests; demo scenario checks | 409 passing; 111 passing in lite and in full mode | [metrics §6](docs/metrics.md#6-engineering) |
 
 ### Quick review (lite mode)
 
@@ -338,6 +338,10 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_STP_REQUIRE_ADVISORY_REVIEW` | `true` | STP-eligible claims wait for an adjuster |
 | `FNOL_STP_FRAUD_ANOMALY_ENABLED` | `true` | Fraud anomaly score on or off |
 | `FNOL_STP_FRAUD_ANOMALY_THRESHOLD` | empty (the fitted 6.74) | Score at which `FRAUD_ANOMALY` is raised |
+| `FNOL_RESERVE_METHOD` | `AVERAGE_TABLE` | Initial reserve from the sourced table, or `AI_ESTIMATE` for the old formula ([ADR-015](docs/architecture-decisions.md)) |
+| `FNOL_RESERVE_AI_ADJUSTMENT_MAX` | `0.40` | How far the AI may move the table's base, when its reading holds up |
+| `FNOL_AUTHORITY_ADJUSTER` / `FNOL_AUTHORITY_SENIOR_ADJUSTER` | `10000` / `50000` | Reserve each role may post: synthetic prototype values. A supervisor has no limit |
+| `FNOL_LITE_MODE` | `false` | Quick review without `vision-ml`; refuses to start with Gemini on. Set by `docker-compose.lite.yml` |
 | `FNOL_SECOND_OPINION_URL` | `http://vision-ml:8090` in Compose | On-premise vision service; empty turns the second opinion and on-premise vision off |
 | `FNOL_REDACTION_URL` / `FNOL_REDACTION_REQUIRED` | `http://vision-ml:8090` / `true` | Face and plate blurring before photos leave; when required and unavailable, no photo is sent |
 | `VISION_ML_THREADS` | `2` | CPU threads of the vision service |
@@ -388,7 +392,7 @@ What comes next and why: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - Guidewire is mocked, and the extension design is modelled from public documentation, not verified against a tenant. Reserve authority limits are modelled on ClaimCenter's concept, with synthetic amounts. All of it: [docs/guidewire-integration.md](docs/guidewire-integration.md).
 - If the claims system is down during a photo request or inspection step, its work queue for that claim stays out of date (the claim file shows the right status). Decisions are not affected: they stop, with a clear error.
-- Sign-in uses local accounts, not an insurer's identity provider, and there is no SIU or supervisor role ([ADR-014](docs/architecture-decisions.md)).
+- Sign-in uses local accounts, not an insurer's identity provider, and there is no SIU role ([ADR-014](docs/architecture-decisions.md)).
 - **No real adjuster has used this, and nothing here has run on a real Guidewire tenant.** The product measures handling time and usefulness, but the [results are empty](docs/adjuster-study.md), so no time saving is claimed. The [sandbox request and first-day steps](docs/guidewire-sandbox-request.md) are ready.
 - Claims with `cc_sync_status=FAILED` (direct intake, photo and inspection steps) are marked for retry, but no retry job exists yet.
 - Photos are uploaded in the console as inline data URIs (≤ 5 MB) or referenced by allow-listed URL; there is no separate document store.

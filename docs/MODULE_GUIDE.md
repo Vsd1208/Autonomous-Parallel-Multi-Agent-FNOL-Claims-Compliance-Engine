@@ -50,7 +50,7 @@ is turned off, and `HUMAN_REVIEW` otherwise.
 - A flag sends a claim to a person; it never blocks intake or denies anything
   ([GateConsistencyChecker.java:15-18](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/GateConsistencyChecker.java#L15-L18)).
 - A branch that times out or throws cancels the other and the intake is saved as a `REJ-...` claim in a queue
-  ([FNOLController.java:246-250](../fnol-api/src/main/java/com/guidewire/fnol/api/FNOLController.java#L246-L250)).
+  ([FNOLController.java:249-253](../fnol-api/src/main/java/com/guidewire/fnol/api/FNOLController.java#L249-L253)).
 - A missing second opinion does not stop a claim, but it also means `MODEL_DISAGREEMENT` did not run
   ([GateConsistencyChecker.java:140-144](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/GateConsistencyChecker.java#L140-L144)).
   **So this path is less safe than the others**: with advisory review off, a claim could pass without that check.
@@ -144,10 +144,10 @@ analysis arrives in someone's work rather than a shared pile. The amounts and ru
 |---|---|
 | Sign-in and roles | [AuthService.java:44-46](../fnol-api/src/main/java/com/guidewire/fnol/api/security/AuthService.java#L44-L46), [AdjusterTokenFilter.java](../fnol-api/src/main/java/com/guidewire/fnol/api/security/AdjusterTokenFilter.java) |
 | Limits per role | [ReserveAuthority.java:39](../fnol-api/src/main/java/com/guidewire/fnol/api/security/ReserveAuthority.java#L39) |
-| Decision, and the authority check | [FNOLController.java:533-566](../fnol-api/src/main/java/com/guidewire/fnol/api/FNOLController.java#L533-L566) |
+| Decision, and the authority check | [FNOLController.java:536-581](../fnol-api/src/main/java/com/guidewire/fnol/api/FNOLController.java#L536-L581) |
 | Held decisions | [ReserveApprovalService.java:59](../fnol-api/src/main/java/com/guidewire/fnol/api/ReserveApprovalService.java#L59), self-approval refused at [:102](../fnol-api/src/main/java/com/guidewire/fnol/api/ReserveApprovalService.java#L102) |
 | Segment rules | [segmentation-rules.json](../fnol-api/src/main/resources/segmentation-rules.json), [ClaimSegmenter.java:48](../fnol-api/src/main/java/com/guidewire/fnol/api/ClaimSegmenter.java#L48) |
-| Assignment | [ClaimAssignmentService.java:80](../fnol-api/src/main/java/com/guidewire/fnol/api/ClaimAssignmentService.java#L80) |
+| Assignment | [ClaimAssignmentService.java:82](../fnol-api/src/main/java/com/guidewire/fnol/api/ClaimAssignmentService.java#L82) |
 | Screens | [Desktop.tsx](../frontend/src/pages/Desktop.tsx) (queues), [ClaimFile.tsx:186](../frontend/src/pages/ClaimFile.tsx#L186) (approval banner) |
 | Tests | `ReserveAuthorityTest`, `SegmentationAndAssignmentTest`, `ClaimsSystemDecisionTest` |
 
@@ -166,10 +166,11 @@ person decides -> reserve within their limit? -- yes --> claims system first -> 
 - If assignment fails, the claim stays in its queue, unassigned; assignment never posts money or moves a claim
   ([ClaimAssignmentService.java:74-76](../fnol-api/src/main/java/com/guidewire/fnol/api/ClaimAssignmentService.java#L74-L76)).
 - If the claims system is down, a decision is refused (503) and nothing is recorded anywhere
-  ([FNOLController.java:625](../fnol-api/src/main/java/com/guidewire/fnol/api/FNOLController.java#L625)).
+  ([FNOLController.java:644](../fnol-api/src/main/java/com/guidewire/fnol/api/FNOLController.java#L644)).
 - A service credential can never approve, and nobody can approve their own reserve
   ([ReserveApprovalService.java:98-108](../fnol-api/src/main/java/com/guidewire/fnol/api/ReserveApprovalService.java#L98-L108)).
-- Refusing to decide costs nothing: only posting money needs authority.
+- Only an approval posts money, so only an approval needs authority. A figure entered on a denial or an information request is not posted.
+- The limit also applies to a claim only the claims system holds. A stale approval is refused (409), and a hold the claims system cannot be told about is refused (503).
 
 ### Likely questions
 
@@ -178,7 +179,7 @@ person decides -> reserve within their limit? -- yes --> claims system first -> 
    go away. See [guidewire-integration.md](guidewire-integration.md#reserve-authority-limits).
 2. **"What if nobody with authority is available?"** The approval waits, with an activity for the group `Supervisors`. It has no expiry or
    escalation yet, so it could wait forever; that is a known gap, as is reassigning by hand.
-3. **"Could assignment be gamed or scale badly?"** It is `synchronized` and counts each person's claims on every assignment, which is fine for a
+3. **"Could assignment be gamed or scale badly?"** The choice is `synchronized` (calls to the claims system stay outside the lock) and counts each person's claims on every assignment, which is fine for a
    demo and would not hold across several server instances. Skills, location and leave are not considered. The line of business
    is read from the policy number prefix
    ([ClaimAssignmentService.java:71](../fnol-api/src/main/java/com/guidewire/fnol/api/ClaimAssignmentService.java#L71)), which a real system

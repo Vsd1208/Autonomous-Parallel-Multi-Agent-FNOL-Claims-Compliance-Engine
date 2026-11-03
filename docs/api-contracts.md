@@ -67,7 +67,7 @@ People sign in; integrations and scripts send the service credential `X-Adjuster
   `requestedBy` or `inspectorId` in a request. An ended session answers `401`.
 
 ## `GET /api/v1/health`
-`200 {"status":"UP","intake":"CLAIMS_SYSTEM"}`. `intake` is `CLAIMS_SYSTEM` (losses are filed there and analysed from
+`200 {"status":"UP","intake":"CLAIMS_SYSTEM","secondOpinion":"CONFIGURED"}`. `secondOpinion` is `NOT_AVAILABLE_IN_LITE_MODE` in lite mode. `intake` is `CLAIMS_SYSTEM` (losses are filed there and analysed from
 its event) or `DIRECT` (no event secret set).
 
 ## `POST /api/v1/fnol/report` (token)
@@ -331,6 +331,8 @@ be reached, with nothing recorded anywhere, and `409 INVALID_STATE` if it refuse
 
 Optional `handlingSeconds` and `advisoryRating` (1-5) are stored for signed-in people only, as evidence for a study; a service
 credential's are ignored.
+
+Only an approval posts a reserve: a figure sent with any other decision is recorded but not posted. Approving a claim flagged `RESERVE_TABLE_ENTRY_MISSING` without an `adjustedReserve` answers `400`, because a person must set that reserve. If the claims system cannot be told about a hold, the answer is `503` and nothing changes.
 
 A reserve above the person's authority answers `202` `{ "status": "PENDING_APPROVAL", "approvalId", "assignedTo", "amount", "yourLimit" }`, with nothing posted. `GET /fnol/{claimId}/reserve-approvals` lists them; `POST /fnol/{claimId}/reserve-approvals/{id}/decide` `{ "approve", "note" }` approves or declines, `403` for your own, without enough authority, or with a service credential.
 
