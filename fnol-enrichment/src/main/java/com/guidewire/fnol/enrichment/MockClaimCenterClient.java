@@ -86,6 +86,12 @@ public class MockClaimCenterClient implements ClaimCenterClient {
     }
 
     @Override
+    public ClaimQueuePage listWorkQueues(Collection<String> workQueues, String segment, int page, int size) {
+        return rest.getForObject(baseUrl + "/cc/rest/claim/v1/claims?workQueue={q}&segment={g}&page={p}&size={s}",
+                ClaimQueuePage.class, String.join(",", workQueues), segment, page, size);
+    }
+
+    @Override
     public ClaimCreateResponse submitFnol(FNOLPayload fnol) {
         ClaimCreateResponse draft;
         try {

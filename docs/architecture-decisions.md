@@ -119,7 +119,19 @@
 - **Consequences**:
   - The engine keeps the recommendation in its analysis record; queues show it until a person posts a reserve.
   - A decision made directly in the claims system without a figure leaves the exposure's reserve empty: the engine does not fill it in.
-  - ClaimCenter's reserve authority limits are not modelled.
+  - ClaimCenter's reserve authority limits are modelled on the concept, not verified (guidewire-integration.md).
+
+---
+
+## ADR-015: Initial Reserve from Average Reserves, AI Adjustment Bounded
+- **Status**: Accepted
+- **Context**: The reserve was `min(claimed, AI estimate) − deductible`, so the number an insurer acts on rested on a dollar figure this project measured as unreliable: a median 2.7x the published range midpoint, with 86% of answers on five values ([metrics §8](metrics.md#8-repair-cost-estimates)). At first notice, insurers commonly set an initial reserve from average or formula reserves by coverage and severity, and adjust it as information arrives.
+- **Decision**: `fnol.reserve.method=AVERAGE_TABLE` (default) looks the base up in `initial-reserves.json` by line, coverage and severity. The AI may move it within `fnol.reserve.ai-adjustment-max` (default ±40%), only when the trust score passes and no vision flag is raised, and its figure is first held inside the published repair-cost range when there is one. The caps stay: never above the amount claimed, less the deductible, never below zero, at most the coverage limit. A missing row keeps the AI's figure for reference and raises `RESERVE_TABLE_ENTRY_MISSING`, which sends the claim to a person. `AI_ESTIMATE` keeps the old formula so the two can be compared.
+- **Table values**: Published figures come from the sources already cited in `repair-cost-ranges.json`; which figure stands for which band is our mapping. Comprehensive above minor and all of home have no source and are labelled synthetic prototype values. None of it is an insurer's average reserve.
+- **Consequences**:
+  - One stock dollar figure can no longer carry the reserve. Severity still comes from the vision label, whose accuracy is **not measured**, so the table moves the risk from a dollar figure to a severity band rather than removing it.
+  - `CLAIMED_EXCEEDS_AI_ESTIMATE` now compares the claim with what the reserve supports (the name is kept so stored flags stay valid).
+  - The severity gate (LOW, MEDIUM, HIGH) and the fraud score still read the AI's dollar figure; they are unchanged.
 
 ---
 
@@ -128,4 +140,4 @@
 - **Context**: A shared token sat in the workspace's browser bundle, and `adjusterId` was whatever the form said, so the audit chain recorded a name anyone could type.
 - **Decision**: People sign in with their own account (salted PBKDF2 passwords, hashed session tokens, 8-hour sessions, a lockout after 5 failures). Their identity replaces any name in a request. Roles separate duties: an inspector can read and file their own assigned report but cannot decide; an adjuster can decide but cannot file a report, so whoever decides does not also write the evidence that teaches the cost model. `X-Adjuster-Token` stays as the service credential for integrations and scripts, and is in no browser bundle.
 - **Alternatives**: OIDC is what an insurer would use, but needs an identity provider this project does not have. Spring Security was not needed for this small a surface.
-- **Consequences**: A local login, to be replaced by the insurer's identity provider. No SIU or supervisor role yet. A service-token caller still states its own actor name.
+- **Consequences**: A local login, to be replaced by the insurer's identity provider. No SIU role yet (supervisor and senior adjuster roles came with authority limits). A service-token caller still states its own actor name.

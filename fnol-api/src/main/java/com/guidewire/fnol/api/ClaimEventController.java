@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
@@ -65,6 +66,7 @@ class ClaimEventController {
     private final IdempotencyStore idempotency;
     private final ClaimsSystemIntake claimsSystem;
     private final ClaimDecisionRecorder decisions;
+    private final ClaimAssignmentService assignment;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(2, 4, 60, TimeUnit.SECONDS,
@@ -78,7 +80,7 @@ class ClaimEventController {
                          FNOLOrchestrator orchestrator, ClaimRepository claims, AuditService auditService,
                          FailedIntakeRecorder failedIntakes, DuplicateSubmissionRecorder duplicates,
                          EvidenceStore evidence, IdempotencyStore idempotency, ClaimsSystemIntake claimsSystem,
-                         ClaimDecisionRecorder decisions) {
+                         ClaimDecisionRecorder decisions, ClaimAssignmentService assignment) {
         this.secret = secret == null ? new byte[0] : secret.getBytes(StandardCharsets.UTF_8);
         this.claimCenter = claimCenter;
         this.orchestrator = orchestrator;
@@ -90,6 +92,7 @@ class ClaimEventController {
         this.idempotency = idempotency;
         this.claimsSystem = claimsSystem;
         this.decisions = decisions;
+        this.assignment = assignment;
     }
 
     @PreDestroy
@@ -125,10 +128,12 @@ class ClaimEventController {
         if (claims.existsById(claimId) || !inFlight.add(claimId)) {
             return ResponseEntity.accepted().body(Map.of("status", "duplicate", "claimId", claimId));
         }
+        // When the claims system received the claim: the regulatory clocks run from then, however late this runs.
+        LocalDate noticeDate = event.time() == null ? LocalDate.now() : LocalDate.ofInstant(event.time(), ZoneId.systemDefault());
         try {
             executor.execute(() -> {
                 try {
-                    analyse(claimId);
+                    analyse(claimId, noticeDate);
                 } finally {
                     inFlight.remove(claimId);
                 }
@@ -213,7 +218,7 @@ class ClaimEventController {
     }
 
     /** Reads the FNOL from the claims system, analyses it and writes the results back onto that claim. */
-    void analyse(String claimId) {
+    void analyse(String claimId, LocalDate noticeDate) {
         FNOLPayload fnol;
         try {
             fnol = claimCenter.getFnol(claimId);
@@ -236,7 +241,7 @@ class ClaimEventController {
         }
         FNOLResponse response;
         try {
-            response = orchestrator.process(fnol, claimId);
+            response = orchestrator.process(fnol, claimId, noticeDate);
         } catch (RuntimeException e) {
             idempotency.release(policy, date.toString(), fnol.state());
             String[] outcome = classify(e);
@@ -255,6 +260,7 @@ class ClaimEventController {
                     + "claim manually.");
             return;
         }
+        assignment.assign(response);
         // Only now does the claim leave Awaiting AI Analysis: its record is complete. If this fails the claim stays
         // listed there, showing its real status, and can be opened and decided.
         try {

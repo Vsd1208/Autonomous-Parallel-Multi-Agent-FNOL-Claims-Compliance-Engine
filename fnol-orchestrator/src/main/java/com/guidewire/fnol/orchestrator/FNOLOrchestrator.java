@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -176,6 +177,11 @@ public class FNOLOrchestrator {
      * @param existingClaimId the claims system's claim number, or null to create the claim (direct intake)
      */
     public FNOLResponse process(FNOLPayload payload, String existingClaimId) {
+        return process(payload, existingClaimId, LocalDate.now());
+    }
+
+    /** @param noticeDate the day the claim was received, which the regulatory clocks run from; it may be before today */
+    public FNOLResponse process(FNOLPayload payload, String existingClaimId, LocalDate noticeDate) {
 
         // ── Stage 1: Input validation ──────────────────────────────────────────────────
         input.validate(payload);
@@ -225,7 +231,7 @@ public class FNOLOrchestrator {
         }
         try {
             futureB = executor.submit(() -> timed(legalMs,
-                    () -> runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete)));
+                    () -> runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete, noticeDate)));
         } catch (RejectedExecutionException e) {
             futureA.cancel(true);
             throw capacityExceeded(payload, e);
@@ -374,6 +380,14 @@ public class FNOLOrchestrator {
         this.photoHistory = photoHistory;
     }
 
+    /** Quick-review mode with no vision service: each claim says the second opinion did not run. */
+    private boolean liteMode;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setLiteMode(@org.springframework.beans.factory.annotation.Value("${fnol.lite-mode:false}") boolean liteMode) {
+        this.liteMode = liteMode;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setTrustScorer(TrustScorer trustScorer) {
         this.trustScorer = trustScorer;
@@ -461,7 +475,36 @@ public class FNOLOrchestrator {
             damage = damage.withEstimate(cost.estimate(), severityFor(cost.estimate()));
             res = reserve.calculate(damage, coverage, payload.claimedAmount());
         }
+        // Step A8: the initial reserve by the configured method. The AI may move the table's base only when its reading holds up.
+        res = reserve.reserve(damage, coverage, payload.claimedAmount(), lineOfBusiness,
+                reserveAdjustment(new BranchAResult(damage, coverage, res, opinion, cost), lineOfBusiness));
         return new BranchAResult(damage, coverage, res, opinion, cost);
+    }
+
+    /**
+     * Whether the AI may move the base reserve: only when the trust score passes and no vision check objects. Its figure is
+     * then held inside the published repair-cost range when there is one, so one stock dollar figure cannot carry the reserve.
+     */
+    private ReserveCalculatorAgent.Adjustment reserveAdjustment(BranchAResult interim, String lineOfBusiness) {
+        DamageAssessment damage = interim.damageAssessment();
+        if (damage.confidence() == null || damage.confidence().compareTo(stp.getConfidence()) < 0) {
+            return ReserveCalculatorAgent.Adjustment.blocked("AI confidence " + damage.confidence() + " is below "
+                    + stp.getConfidence() + ", so the table's base stands");
+        }
+        List<String> objections = consistency.check(lineOfBusiness, interim).stream()
+                .filter(GateConsistencyChecker.VISION_FLAGS::contains).toList();
+        if (!objections.isEmpty()) {
+            return ReserveCalculatorAgent.Adjustment.blocked("A vision check objected (" + String.join(", ", objections)
+                    + "), so the table's base stands");
+        }
+        BigDecimal signal = damage.estimatedDamage();
+        RepairCostRange range = interim.repairCost();
+        if (range != null) {
+            signal = signal.max(range.low()).min(range.high());
+        }
+        return ReserveCalculatorAgent.Adjustment.allowed(signal, "AI confidence " + damage.confidence()
+                + " passed and no vision check objected; the AI's figure"
+                + (range == null ? "" : ", held inside the published repair-cost range,") + " moved the base");
     }
 
     /** The severity band that goes with an estimate (the bands GateConsistencyChecker checks). */
@@ -476,7 +519,7 @@ public class FNOLOrchestrator {
     //  fully independent of Branch A. The subrogation score is finalised at the gate,
     //  once Branch A's damage severity is known.
     // ─────────────────────────────────────────────────────────────────────────────────
-    private BranchBResult runLegalAI(FNOLPayload payload, String lineOfBusiness, boolean proofOfLossComplete) {
+    private BranchBResult runLegalAI(FNOLPayload payload, String lineOfBusiness, boolean proofOfLossComplete, LocalDate noticeDate) {
         log.debug("[Branch B — Legal AI] Starting — policy={}", payload.policyNumber());
 
         // Step B1: PII redaction — SSN, DOB, MRN, name, phone, email masking before any persistence
@@ -485,7 +528,7 @@ public class FNOLOrchestrator {
         log.debug("[Branch B] PII redaction complete — detected={}", piiResult.piiDetected());
 
         // Step B2: State regulatory deadlines from the cited rule set (claim-regulations.json)
-        DeadlineResult deadlineResult = deadline.execute(payload, lineOfBusiness, proofOfLossComplete);
+        DeadlineResult deadlineResult = deadline.execute(payload, lineOfBusiness, proofOfLossComplete, noticeDate);
         log.debug("[Branch B] Deadlines — state={}, acknowledgeBy={}, urgency={}",
                 deadlineResult.state(), deadlineResult.acknowledgeBy(), deadlineResult.urgencyFlag());
 
@@ -571,7 +614,7 @@ public class FNOLOrchestrator {
         // recommends: no reserve is posted until a person decides. Only STP with no advisory review (a business
         // decision, ADR-009) posts its reserve without one.
         boolean unreviewedStp = "STRAIGHT_THROUGH_PROCESSING".equals(status);
-        java.math.BigDecimal postedReserve = unreviewedStp ? branchA.reserve().recommendedReserve() : null;
+        BigDecimal postedReserve = unreviewedStp ? branchA.reserve().recommendedReserve() : null;
         String claimId;
         if (existingClaimId == null) {
             ClaimCreateResponse created = cc.createClaim(new ClaimCreateRequest(
@@ -635,9 +678,14 @@ public class FNOLOrchestrator {
                 case GateConsistencyChecker.RESERVE_EXCEEDS_COVERAGE_LIMIT ->
                         "the loss after the deductible is above the coverage limit; the reserve is capped at the limit.";
                 case GateConsistencyChecker.CLAIMED_EXCEEDS_AI_ESTIMATE ->
-                        "the claimant asks $" + branchA.reserve().claimedAmount() + " but the photos support $"
-                                + branchA.damageAssessment().estimatedDamage() + "; request more photos, send to "
-                                + "investigation, or approve at the AI estimate. Not approved automatically.";
+                        "the claimant asks $" + branchA.reserve().claimedAmount() + " but the reserve supports $"
+                                + (branchA.reserve().breakdown() != null ? branchA.reserve().breakdown().supportedAmount()
+                                        : branchA.damageAssessment().estimatedDamage())
+                                + "; request more photos, send to investigation, or approve at the recommended "
+                                + "reserve. Not approved automatically.";
+                case GateConsistencyChecker.RESERVE_TABLE_ENTRY_MISSING ->
+                        "the initial-reserve table has no row for " + branchA.reserve().breakdown().baseRow()
+                                + "; the AI's figure is shown only for reference. Set the reserve yourself.";
                 case GateConsistencyChecker.DAMAGE_TYPE_LINE_MISMATCH ->
                         "the damage type does not fit the policy's line of business; confirm the right policy and photos.";
                 case GateConsistencyChecker.PHOTO_SUBJECT_MISMATCH -> photoSubjectNote(
@@ -658,9 +706,11 @@ public class FNOLOrchestrator {
             });
         }
         ReserveResult r = branchA.reserve();
-        if (r.claimedAmount() != null && r.claimedAmount().compareTo(branchA.damageAssessment().estimatedDamage()) <= 0) {
-            notes.add("RESERVE: the claimant asks $" + r.claimedAmount() + ", within the AI estimate of $"
-                    + branchA.damageAssessment().estimatedDamage() + "; the claimed amount is used, less the $"
+        BigDecimal supportedByReserve = r.breakdown() != null ? r.breakdown().supportedAmount()
+                : branchA.damageAssessment().estimatedDamage();
+        if (r.claimedAmount() != null && r.claimedAmount().compareTo(supportedByReserve) <= 0) {
+            notes.add("RESERVE: the claimant asks $" + r.claimedAmount() + ", within the $" + supportedByReserve
+                    + " the reserve supports; the claimed amount is used, less the $"
                     + r.deductible() + " deductible = reserve $" + r.recommendedReserve() + ".");
         }
         notes.add(deadlineNote(branchB.deadline()));
@@ -710,6 +760,9 @@ public class FNOLOrchestrator {
         notes.add("Pre-population recommended for LOW-severity eligible claim types only.");
         notes.add("Coverage verified against synthetic line-of-business coverage rules.");
         notes.add("Subrogation score is deterministic and explained by contributing factors.");
+        if (liteMode) {
+            notes.add("Second opinion: not available in lite mode, so the model-disagreement check did not run.");
+        }
         notes.add("Processing time: " + elapsedMs + "ms in total. Operational branch (photos, coverage, reserve) "
                 + operationalMs + "ms and legal branch (PII, deadlines, subrogation) " + legalMs
                 + "ms ran in parallel, so the legal checks added no waiting.");
@@ -778,7 +831,7 @@ public class FNOLOrchestrator {
     }
 
     /** Another party may be liable: the subrogation score says so, or the description names them. */
-    static boolean recoveryLikely(SubrogationResult s) {
+    public static boolean recoveryLikely(SubrogationResult s) {
         return "INVESTIGATE".equals(s.recommendedAction())
                 || s.factors().getOrDefault("thirdPartyMention", 0) >= 35
                 || (s.thirdParty() != null && !s.thirdParty().isEmpty());

@@ -10,6 +10,8 @@ export function queueLabel(status?: string | null): string | undefined {
   return Object.values(VIEWS).find((v) => status && v.statuses.includes(status))?.label;
 }
 
+const SEGMENTS = ['AUTO_FAST_TRACK', 'AUTO_STANDARD', 'AUTO_COMPLEX', 'PROPERTY_STANDARD', 'PROPERTY_COMPLEX', 'SIU_REVIEW'];
+
 const VIEWS: Record<string, { label: string; statuses: string[]; hint: string }> = {
   decision: {
     label: 'Needs Decision',
@@ -20,6 +22,11 @@ const VIEWS: Record<string, { label: string; statuses: string[]; hint: string }>
     label: 'Advisory Confirmation',
     statuses: ['PENDING_ADVISORY_REVIEW'],
     hint: 'STP-eligible claims waiting for an adjuster to confirm the AI advisory.',
+  },
+  approval: {
+    label: 'Awaiting Approval',
+    statuses: ['PENDING_APPROVAL'],
+    hint: 'Decisions whose reserve is above the person\'s authority. Nothing is posted until someone with enough authority approves.',
   },
   analysing: {
     label: 'Awaiting AI Analysis',
@@ -49,11 +56,12 @@ export default function Desktop() {
   const { view = 'decision' } = useParams<{ view: string }>();
   const current = VIEWS[view] ?? VIEWS.decision;
   const [page, setPage] = useState(0);
+  const [segment, setSegment] = useState('');
   const [data, setData] = useState<QueuePage | null>(null);
   const [error, setError] = useState('');
   const [counts, setCounts] = useState<Record<string, number>>({});
 
-  useEffect(() => setPage(0), [view]);
+  useEffect(() => setPage(0), [view, segment]);
 
   // A count on every queue, so a claim never seems to disappear when it is not in the current one.
   useEffect(() => {
@@ -70,10 +78,10 @@ export default function Desktop() {
     setData(null);
     setError('');
     apiClient
-      .getQueue(current.statuses, page, 20)
+      .getQueue(current.statuses, page, 20, segment)
       .then(setData)
       .catch((err) => setError(err.message || 'Unable to load the queue'));
-  }, [current, page]);
+  }, [current, page, segment]);
 
   const sidebar = (
     <Sidebar
@@ -102,17 +110,24 @@ export default function Desktop() {
         title={`Claims (${data ? data.totalElements : '…'})`}
         flush
         actions={
-          data && data.totalPages > 1 ? (
-            <Toolbar>
+          <Toolbar>
+            <label className="field-inline">
+              <span className="muted">Segment </span>
+              <select value={segment} onChange={(e) => setSegment(e.target.value)} aria-label="Filter by segment">
+                <option value="">All</option>
+                {SEGMENTS.map((s) => <option key={s} value={s}>{humanize(s)}</option>)}
+              </select>
+            </label>
+            {data && data.totalPages > 1 && (<>
               <Button disabled={page === 0} onClick={() => setPage(page - 1)}>‹ Prev</Button>
               <span className="muted">Page {page + 1} of {data.totalPages}</span>
               <Button disabled={page + 1 >= data.totalPages} onClick={() => setPage(page + 1)}>Next ›</Button>
-            </Toolbar>
-          ) : undefined
+            </>)}
+          </Toolbar>
         }
       >
         <ListView
-          head={['Claim #', 'Status', 'Policy', 'Severity', 'Reserve', 'Flags / reason', 'Received']}
+          head={['Claim #', 'Status', 'Segment', 'Assigned to', 'Policy', 'Severity', 'Reserve', 'Flags / reason', 'Received']}
           empty={data ? 'No claims in this queue.' : 'Loading…'}
         >
           {data?.items.map((item) => {
@@ -121,6 +136,8 @@ export default function Desktop() {
               <tr key={item.claimId} className="clickable" onClick={() => navigate(`/claim/${item.claimId}`)}>
                 <td><a href={`/claim/${item.claimId}`} onClick={(e) => e.preventDefault()}>{item.claimId}</a></td>
                 <td><StatusChip value={item.status} /></td>
+                <td>{item.segment ? humanize(item.segment) : <span className="muted">—</span>}</td>
+                <td>{item.assignedTo ?? <span className="muted">Unassigned</span>}</td>
                 <td>{item.policyNumber}</td>
                 <td><StatusChip value={item.severityGate} /></td>
                 <td className="num">{money(item.reserve)}</td>

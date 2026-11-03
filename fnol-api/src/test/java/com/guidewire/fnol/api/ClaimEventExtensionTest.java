@@ -134,12 +134,12 @@ class ClaimEventExtensionTest {
         await(() -> claims.existsById(id));
 
         ArgumentCaptor<ClaimPatch> patch = ArgumentCaptor.forClass(ClaimPatch.class);
-        verify(claimCenterClient, timeout(5000).times(2)).patchClaim(eq(id), patch.capture());
+        verify(claimCenterClient, timeout(5000).times(3)).patchClaim(eq(id), patch.capture());
         assertThat(patch.getAllValues().get(0).status()).isNull();   // the claim is already open; the AI does not move it
         assertThat(patch.getAllValues().get(0).reserve()).isNull();  // the AI recommends; it posts no reserve
         assertThat(patch.getAllValues().get(0).estimatedDamage()).isNotNull();
         assertThat(patch.getAllValues().get(0).workQueue()).isNull();   // not on a desk until its record is saved
-        assertThat(patch.getAllValues().get(1).workQueue()).isEqualTo(claims.findById(id).orElseThrow().status);
+        assertThat(patch.getAllValues().get(2).workQueue()).isEqualTo(claims.findById(id).orElseThrow().status);
         assertThat(recordExistedWhenQueued.get()).as("the record existed when the claim reached a work queue").isTrue();
         verify(claimCenterClient, never()).createClaim(any());   // the claims system owns the claim
 
@@ -150,6 +150,24 @@ class ClaimEventExtensionTest {
         // At-least-once delivery: the same event again is acknowledged, not analysed twice.
         send(body, sign(body)).andExpect(status().isAccepted()).andExpect(jsonPath("$.status").value("duplicate"));
         verify(claimCenterClient, times(1)).getFnol(id);
+    }
+
+    @Test
+    @DisplayName("A claim analysed late, after an outage: the regulatory clock runs from when the claims system received it")
+    void lateAnalysisKeepsTheNoticeDate() throws Exception {
+        String id = "CLM-2026-0E0010";
+        activePolicy();
+        when(claimCenterClient.getFnol(id)).thenReturn(fnol(33));
+        Instant received = Instant.now().minus(java.time.Duration.ofDays(10));
+        String body = objectMapper.writeValueAsString(new ClaimEvent(UUID.randomUUID().toString(), "claim.submitted", "claims-system",
+                received, id, Map.of("claimId", id, "policyNumber", POLICY)));
+
+        send(body, sign(body)).andExpect(status().isAccepted());
+        await(() -> claims.existsById(id));
+
+        // California: acknowledge within 15 calendar days of notice, so 5 days are left, not 15.
+        LocalDate notice = LocalDate.ofInstant(received, java.time.ZoneId.systemDefault());
+        assertThat(claims.findById(id).orElseThrow().acknowledgeDue).isEqualTo(notice.plusDays(15));
     }
 
     @Test

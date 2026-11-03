@@ -1,4 +1,6 @@
-# AI-Powered Human-Governed FNOL Claims Intelligence Engine
+# Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine
+
+> Autonomous analysis, human decision: specialist agents assess every claim in parallel; a licensed adjuster makes every call.
 
 [![CI](https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
@@ -59,7 +61,7 @@ flowchart LR
 | Claim photos | **Real** public-domain photos (NHTSA crash tests, FEMA, CC0) | Realistic input without privacy issues | `demo-scenarios/sample-images/`, [CREDITS.md](CREDITS.md) |
 | Fraud signals | **Real** rules (duplicates, reused photos, claim frequency, early-policy losses, amount above estimate) applied to simulated data | Common fraud patterns an adjuster checks | `IntakeReviewService.java`, `GateConsistencyChecker.java`, `EvidenceStore.java` |
 | Fraud anomaly score | **Real** explainable scorer; **simulated** calibration (fitted on synthetic claims, accuracy on real claims unknown) | No labelled fraud data is public | `FraudAnomalyScorer.java`, `tools/fraud-eval/` |
-| Adjuster authentication | **Simulated**: one shared token | Prototype; real identity is out of scope | `AdjusterTokenFilter.java` |
+| Adjuster authentication | **Real** sign-in with roles, using local accounts (no insurer identity provider) | Decisions are recorded under who made them | `AuthService.java`, `AdjusterTokenFilter.java` |
 | Orchestration, persistence, audit chain | **Real** (Spring Boot, PostgreSQL, Flyway) | The production-shaped part of the system | `FNOLOrchestrator.java`, `AuditService.java` |
 
 ### Key results
@@ -69,16 +71,38 @@ All from small public datasets, not real claims. Every number, with its run, dat
 
 | Result | Value | Source |
 |---|---|---|
-| Wrong Gemini answers that could go straight through: confidence check only → all vision checks | **11 → 1** of 66 | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
-| Trust score calibration: how far its confidence is from how often Gemini is actually right (calibration error) | **0.067** with the current second-opinion model (Gemini's own confidence 0.090; 66 photos, partly in-sample) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
+| Wrong Gemini answers that could go straight through: confidence check only → all vision checks | **11 → 1** of 66 in sample, about **11 → 3** with the thresholds chosen out of sample | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
+| Trust score calibration: how far its confidence is from how often Gemini is actually right (calibration error) | **0.063** out of sample, range 0.030–0.153 (Gemini's own confidence 0.090; 66 photos; AUC 0.79 against 0.57) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
 | Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated (median 2.7x the published range midpoint, see [metrics §8](docs/metrics.md#8-repair-cost-estimates)) | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
 | Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
 | Our own on-premise vision model: damaged area right, strict / lenient | **78% / 87%** out-of-fold on 734 car photos, each reviewed (CLIP alone 65% / 81%); property cause of loss **93%** and property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests, build warnings | 340 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
+| Backend tests; demo scenario checks | 409 passing; 111 passing in lite and in full mode | [metrics §6](docs/metrics.md#6-engineering) |
 
-### Quick start (no API key needed)
+### Quick review (lite mode)
 
-Needs Docker and bash. The first build downloads PyTorch and the second-opinion model's two image encoders (CLIP and DINOv2 weights, about 0.9 GB); the built `vision-ml` image is 5.4 GB.
+The fastest way to run it: no API key, no model downloads and no `vision-ml` service. Needs Docker and bash.
+
+```bash
+git clone https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine.git && cd Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine
+docker compose --env-file .env.lite -f docker-compose.yml -f docker-compose.lite.yml up -d --build
+bash demo-scenarios/run-all.sh
+```
+
+**Measured on 3 Nov 2026, one laptop:** 116 s from build to healthy (78 s for `build --no-cache`, 38 s to start), then 75 s for `run-all.sh`, with **111 checks passed, 0 failed**. The base images were already on this machine and the connection was about 5 MB/s, so a first run also has to pull those images (Maven alone is 775 MB). On a very slow connection it takes far longer: at under 76 KB/s the same build had not finished after 39 minutes.
+
+**What is off in lite mode:**
+
+- Vision is mock: canned answers, no real photo analysis. To keep it that way, the engine refuses to start in lite mode with Gemini enabled, because photo blurring lives in `vision-ml`. No photo can reach an external model unblurred.
+- The second opinion is reported as "not available in lite mode", in `GET /api/v1/health` and in the claim's notes. So `MODEL_DISAGREEMENT` never fires, and the fraud score has no disagreement input.
+- There is no on-premise vision reading or visible damage extent.
+
+**No scenario expectation changed for lite mode:** the scenarios use mock vision in both modes, so all of them give the same results. They therefore do not exercise the vision checks; the figures for those come from the [evaluation](docs/metrics.md), not from these runs.
+
+Sign-in and addresses are the same as in the quick start below.
+
+### Quick start, full mode (no API key needed)
+
+Adds the `vision-ml` service: the second-opinion model and photo blurring. Needs Docker and bash. The first build downloads PyTorch and the second-opinion model's two image encoders (CLIP and DINOv2 weights, about 0.9 GB); the built `vision-ml` image is 5.4 GB.
 
 ```bash
 git clone https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine.git && cd Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine
@@ -86,11 +110,30 @@ docker compose --env-file .env.demo up -d --build
 bash demo-scenarios/run-all.sh
 ```
 
-Then open the adjuster workspace at http://localhost:5173 and the policyholder portal at http://localhost:5174. With `.env.demo`, sign in to the workspace as `ADJ-001` (adjuster) or `INS-101` (inspector), password `demo-password`. Without it, Compose's local-only password is `local-dev-password`.
+Then open the adjuster workspace at http://localhost:5173 and the policyholder portal at http://localhost:5174. With `.env.demo`, sign in to the workspace as `ADJ-001` (adjuster), `SEN-001` (senior adjuster), `SUP-001` (supervisor) or `INS-101` (inspector), password `demo-password`. Without it, Compose's local-only password is `local-dev-password`.
 More: [running locally](#running-locally), [the insurance terms explained](docs/DOMAIN.md), [roadmap and known
 limits](docs/ROADMAP.md).
 
 ---
+
+## What we mean by "autonomous" and "agent"
+
+**Autonomous** means the analysis pipeline runs end to end with no one driving it. It never means autonomous decisions:
+a licensed adjuster makes every call, the AI never pays, and with the default settings every claim gets a human decision.
+The one exception is an explicit business setting, off by default ([ADR-009](docs/architecture-decisions.md)), which an
+insurer could turn on to let eligible claims skip the adjuster's confirmation.
+
+**Agent** means a specialist component with one job, typed inputs and outputs, and its own audit record. It does not mean
+an LLM agent choosing its own actions: the pipeline's order is fixed in code. (In insurance an "agent" is also a person who
+sells or services policies; we say "insurance agent" for that.)
+
+| Uses machine learning | Deliberately rule-based, because the decision must be explainable and auditable |
+|---|---|
+| Gemini vision (`GeminiVisionProvider`) | Coverage (`PolicyValidatorAgent`) |
+| On-premise vision model, also the second opinion (`SecondOpinionAgent`, `OnPremiseVision`) | Claim clock (`StatutoryDeadlineAgent`) |
+| Trust score (`TrustScorer`) | PII redaction (`PiiRedactionAgent`) |
+| Fraud anomaly score (`FraudAnomalyScorer`; fitted statistics on synthetic claims, accuracy on real claims unknown) | Reserve (`ReserveCalculatorAgent`) |
+| | Subrogation (`SubrogationScorerAgent`) |
 
 ## Governance statement
 
@@ -165,7 +208,7 @@ fnol-enrichment/      PolicyCenter/ClaimCenter clients, ClaimHistoryEnricher
 fnol-agents/          Agents, vision providers, EvidenceImageLoader, rule providers
 fnol-guardrails/      Input, output, PII and coverage guardrails
 fnol-orchestrator/    FNOLOrchestrator, IntakeReviewService, ExplanationBuilder, STP settings
-fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V18, PDF
+fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V22, PDF
 fnol-vision-ml/       On-premise vision service (Python): second opinion, property heads, face and plate blurring
 frontend/             React + Vite adjuster workspace (src/) and policyholder portal (portal/)
 tools/                vision-eval (Gemini evaluation, trust score, photo collection and review), second-opinion
@@ -198,7 +241,7 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 |---|---|---|
 | POST | `/api/v1/auth/login` | Sign in; roles decide the rest. Also `/logout`, `/me` |
 | GET | `/api/v1/health` | Health check; `intake` says whether losses go to the claims system (`CLAIMS_SYSTEM`) or the direct path (`DIRECT`) |
-| POST 🔒 | `/api/v1/fnol/report` | Agent phone intake and partner channels: file the loss in the claims system; answers at once with the claim number |
+| POST 🔒 | `/api/v1/fnol/report` | Staff phone intake and partner channels: file the loss in the claims system; answers at once with the claim number |
 | POST | `/api/v1/events/claimcenter` | Signed claims-system events (`claim.submitted`, `claim.decided`); HMAC signature, no adjuster token |
 | POST | `/api/v1/portal/claims` | Policyholder reports a loss (channel WEB); returns a receipt without AI findings or reserve |
 | GET | `/api/v1/portal/claims/{claimId}?policyNumber=` | Policyholder tracks a claim: plain-language stage, dates, requested photos, acknowledgement letter |
@@ -218,6 +261,7 @@ Full contracts: [docs/api-contracts.md](docs/api-contracts.md). 🔒 = requires 
 | POST 🔒 | `/api/v1/fnol/{claimId}/inspections/{id}/cancel` | Withdraw an open assignment |
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit` | Audit events in chain order + `chainValid` |
 | GET 🔒 | `/api/v1/fnol/{claimId}/audit/pdf` | PDF audit report |
+| GET, POST 🔒 | `/api/v1/fnol/{claimId}/reserve-approvals`, `/{id}/decide` | A reserve above someone's authority waits here; another person with enough authority approves or declines it |
 | POST 🔒 | `/api/v1/fnol/{claimId}/review` | Record an adjuster decision (approve, reject, more info, investigation, close), optionally adjusting the reserve and recording the final repair cost and its evidence (`finalRepairCost`, `repairCostSource`) |
 | GET 🔒 | `/api/v1/fnol/queue?status=HUMAN_REVIEW&page=0&size=20` | Adjuster queue from the claims system, oldest first; `source` says if it fell back to the engine's records |
 | GET 🔒 | `/api/v1/ai/metrics` | AI governance: routing, flags, leakage, adjuster agreement, repair-cost accuracy, privacy, drift, fairness |
@@ -294,6 +338,10 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_STP_REQUIRE_ADVISORY_REVIEW` | `true` | STP-eligible claims wait for an adjuster |
 | `FNOL_STP_FRAUD_ANOMALY_ENABLED` | `true` | Fraud anomaly score on or off |
 | `FNOL_STP_FRAUD_ANOMALY_THRESHOLD` | empty (the fitted 6.74) | Score at which `FRAUD_ANOMALY` is raised |
+| `FNOL_RESERVE_METHOD` | `AVERAGE_TABLE` | Initial reserve from the sourced table, or `AI_ESTIMATE` for the old formula ([ADR-015](docs/architecture-decisions.md)) |
+| `FNOL_RESERVE_AI_ADJUSTMENT_MAX` | `0.40` | How far the AI may move the table's base, when its reading holds up |
+| `FNOL_AUTHORITY_ADJUSTER` / `FNOL_AUTHORITY_SENIOR_ADJUSTER` | `10000` / `50000` | Reserve each role may post: synthetic prototype values. A supervisor has no limit |
+| `FNOL_LITE_MODE` | `false` | Quick review without `vision-ml`; refuses to start with Gemini on. Set by `docker-compose.lite.yml` |
 | `FNOL_SECOND_OPINION_URL` | `http://vision-ml:8090` in Compose | On-premise vision service; empty turns the second opinion and on-premise vision off |
 | `FNOL_REDACTION_URL` / `FNOL_REDACTION_REQUIRED` | `http://vision-ml:8090` / `true` | Face and plate blurring before photos leave; when required and unavailable, no photo is sent |
 | `VISION_ML_THREADS` | `2` | CPU threads of the vision service |
@@ -342,9 +390,9 @@ no waiting (in one observed claim with Gemini: operational 3.9 s, legal about 1 
 
 What comes next and why: [docs/ROADMAP.md](docs/ROADMAP.md).
 
-- Guidewire is mocked, and the extension design is modelled from public documentation, not verified against a tenant. ClaimCenter's reserve authority limits are not modelled. All of it: [docs/guidewire-integration.md](docs/guidewire-integration.md).
+- Guidewire is mocked, and the extension design is modelled from public documentation, not verified against a tenant. Reserve authority limits are modelled on ClaimCenter's concept, with synthetic amounts. All of it: [docs/guidewire-integration.md](docs/guidewire-integration.md).
 - If the claims system is down during a photo request or inspection step, its work queue for that claim stays out of date (the claim file shows the right status). Decisions are not affected: they stop, with a clear error.
-- Sign-in uses local accounts, not an insurer's identity provider, and there is no SIU or supervisor role ([ADR-014](docs/architecture-decisions.md)).
+- Sign-in uses local accounts, not an insurer's identity provider, and there is no SIU role ([ADR-014](docs/architecture-decisions.md)).
 - **No real adjuster has used this, and nothing here has run on a real Guidewire tenant.** The product measures handling time and usefulness, but the [results are empty](docs/adjuster-study.md), so no time saving is claimed. The [sandbox request and first-day steps](docs/guidewire-sandbox-request.md) are ready.
 - Claims with `cc_sync_status=FAILED` (direct intake, photo and inspection steps) are marked for retry, but no retry job exists yet.
 - Photos are uploaded in the console as inline data URIs (≤ 5 MB) or referenced by allow-listed URL; there is no separate document store.

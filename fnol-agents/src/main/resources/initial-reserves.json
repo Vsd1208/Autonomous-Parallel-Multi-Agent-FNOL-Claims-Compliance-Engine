@@ -1,0 +1,37 @@
+{
+  "version": "2026-11-02",
+  "currency": "USD",
+  "basis": "Initial reserve before the deductible, by line of business, coverage and severity band. Figures marked PUBLISHED are quoted from the sources in repair-cost-ranges.json; which figure stands for which severity band is this project's mapping, an assumption. They are repair-cost figures, not any insurer's average reserves.",
+  "note": "Severity bands are the vision model's label; its accuracy is not measured (docs/metrics.md). To be replaced by the insurer's own average reserves.",
+  "synthetic": "synthetic prototype value — to be replaced by the insurer's own average reserves",
+  "reserves": {
+    "AUTO": {
+      "COLLISION": {
+        "MINOR": {"amount": 1698, "provenance": "PUBLISHED", "sources": ["AAA_ADAS_2023"],
+          "mapping": "AAA's average total repair estimate for a rear collision ($1,698)"},
+        "MODERATE": {"amount": 4818, "provenance": "PUBLISHED", "sources": ["CCC_2025"],
+          "mapping": "CCC's preliminary 2025 average total cost of repairs ($4,818), across all repairs"},
+        "SEVERE": {"amount": 11708, "provenance": "PUBLISHED", "sources": ["RDN_AAA_2023"],
+          "mapping": "the highest repair figure in the sources: AAA's minor front collision estimate ($11,708). The source calls this minor, so a truly severe loss or a total loss can cost far more"}
+      },
+      "COMPREHENSIVE": {
+        "MINOR": {"amount": 1440, "provenance": "PUBLISHED", "sources": ["RDN_AAA_2023"],
+          "mapping": "AAA's windshield replacement and calibration estimate ($1,439.78), rounded"},
+        "MODERATE": {"amount": 5000, "provenance": "SYNTHETIC"},
+        "SEVERE": {"amount": 12000, "provenance": "SYNTHETIC"}
+      }
+    },
+    "HOME": {
+      "DWELLING": {
+        "MINOR": {"amount": 1500, "provenance": "SYNTHETIC"},
+        "MODERATE": {"amount": 6000, "provenance": "SYNTHETIC"},
+        "SEVERE": {"amount": 25000, "provenance": "SYNTHETIC"}
+      },
+      "PERSONAL_PROPERTY": {
+        "MINOR": {"amount": 1000, "provenance": "SYNTHETIC"},
+        "MODERATE": {"amount": 4000, "provenance": "SYNTHETIC"},
+        "SEVERE": {"amount": 15000, "provenance": "SYNTHETIC"}
+      }
+    }
+  }
+}

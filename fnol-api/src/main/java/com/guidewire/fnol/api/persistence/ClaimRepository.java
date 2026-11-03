@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -52,6 +53,12 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, String> {
                                   @Param("overrideReason") String overrideReason,
                                   @Param("decidedAt") Instant decidedAt);
 
+    long countByAssignedToAndStatusIn(String assignedTo, Collection<String> statuses);
+
+    java.util.Optional<ClaimEntity> findFirstByAssignedToOrderByAssignedAtDesc(String assignedTo);
+
+    Page<ClaimEntity> findByStatusInAndSegmentOrderByCreatedAtAsc(Collection<String> statuses, String segment, Pageable pageable);
+
     /** Failed direct intakes (REJ-...): the claims system never held them, so its queues cannot list them. */
     java.util.List<ClaimEntity> findByStatusInAndClaimIdStartingWithOrderByCreatedAtAsc(Collection<String> statuses,
                                                                                          String prefix);
@@ -86,6 +93,18 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, String> {
      *
      * @return 1 if moved, 0 if the claim was not in one of {@code from}
      */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("""
+            update ClaimEntity c set c.segment = :segment, c.assignmentGroup = :assignmentGroup, c.assignedTo = :assignedTo, c.assignedAt = :at
+             where c.claimId = :claimId
+            """)
+    int assign(@Param("claimId") String claimId,
+               @Param("segment") String segment,
+               @Param("assignmentGroup") String assignmentGroup,
+               @Param("assignedTo") String assignedTo,
+               @Param("at") Instant at);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update ClaimEntity c set c.status = :to, c.updatedAt = :at

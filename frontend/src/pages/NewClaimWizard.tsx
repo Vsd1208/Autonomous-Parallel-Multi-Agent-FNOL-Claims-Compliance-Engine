@@ -42,7 +42,7 @@ function Field({ label, required, children, wide }: {
 }
 
 /**
- * New Claim wizard for internal intake (a claim taken by phone or from an agent): step list on the left,
+ * New Claim wizard for internal intake (a claim taken by phone by staff): step list on the left,
  * Back / Next / Finish toolbar, review page before submit. Policyholders report through the separate portal.
  */
 export default function NewClaimWizard() {
@@ -277,7 +277,7 @@ export default function NewClaimWizard() {
                 <select name="channel" value={form.channel} onChange={set}>
                   <option value="WEB">Web portal</option>
                   <option value="MOBILE">Mobile app</option>
-                  <option value="PHONE">Phone (entered by agent)</option>
+                  <option value="PHONE">Phone (entered by staff)</option>
                   <option value="API">API / partner</option>
                 </select>
               </Field>

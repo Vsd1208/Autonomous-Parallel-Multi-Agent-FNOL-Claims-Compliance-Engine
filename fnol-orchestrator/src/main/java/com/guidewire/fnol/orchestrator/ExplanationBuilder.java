@@ -64,7 +64,8 @@ public class ExplanationBuilder {
         factors.add(new ExplanationFactor("Reserve Amount",
                 "$" + reserve.recommendedReserve(),
                 status(reservePassed),
-                "Recommended reserve must be <= $" + stp.getReserveCeiling().toPlainString() + " for STP"));
+                "Recommended reserve must be <= $" + stp.getReserveCeiling().toPlainString() + " for STP"
+                        + reserveSteps(reserve.breakdown())));
 
         // Factor 5: Claim History
         boolean historyPassed = !"HIGH".equals(historyContext.claimFrequencyRisk());
@@ -102,6 +103,22 @@ public class ExplanationBuilder {
         }
 
         return new ExplanationObject(decision, summary, factors, recommendedAction, severityGate);
+    }
+
+    /** The calculation in words, for the WHY panel: the base and its source, the AI adjustment, then the caps. */
+    static String reserveSteps(ReserveBreakdown b) {
+        if (b == null) {
+            return "";
+        }
+        if (!"AVERAGE_TABLE".equals(b.method())) {
+            return ". " + b.adjustmentReason();
+        }
+        if (b.tableEntryMissing()) {
+            return ". " + b.adjustmentReason() + " (" + b.baseRow() + ")";
+        }
+        String caps = b.capsApplied().isEmpty() ? "" : ". " + String.join(". ", b.capsApplied());
+        return ". Base $" + b.baseReserve() + " from " + b.baseRow() + " (" + b.baseSource() + "). "
+                + b.adjustmentReason() + ": $" + b.supportedAmount() + caps;
     }
 
     /** LOW up to lowSeverityMax, MEDIUM up to mediumSeverityMax, otherwise HIGH (by estimated damage). */

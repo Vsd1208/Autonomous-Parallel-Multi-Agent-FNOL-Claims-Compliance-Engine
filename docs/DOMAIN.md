@@ -12,8 +12,8 @@ A claim moves through these stages. The engine covers the first four and support
 |---|---|---|
 | 1. First notice of loss (FNOL) | The policyholder (or an agent or call-centre colleague on their behalf) reports the loss: what, when, where, photos | Policyholder portal (`PortalController`, `frontend/portal`) or internal intake (`FNOLController.intake`, `frontend/src/pages/NewClaimWizard.tsx`); payload `Models.FNOLPayload` |
 | 2. Coverage verification | Is there a policy in force on the date of loss, and does a coverage on it apply to this kind of damage? | `PolicyValidatorAgent` with `CoverageRuleProvider` (`SyntheticCoverageRuleProvider`), policy data from `PolicyCenterClient` |
-| 3. Triage and assignment | How serious, how complex, any red flags? Simple claims can go "straight through"; others go to an adjuster's queue | `FNOLOrchestrator`, `IntakeReviewService`, `GateConsistencyChecker`, `ExplanationBuilder`; queue `GET /api/v1/fnol/queue` |
-| 4. Reserving | The insurer sets aside its best estimate of what the claim will cost | `ReserveCalculatorAgent`; the reserve sits on a ClaimCenter exposure (`MockClaimCenterClient`) |
+| 3. Triage and assignment | How serious, how complex, any red flags? Simple claims can go "straight through"; others go to an adjuster's queue | `ClaimSegmenter`, `ClaimAssignmentService`, `FNOLOrchestrator`, `IntakeReviewService`, `GateConsistencyChecker`, `ExplanationBuilder`; queue `GET /api/v1/fnol/queue` |
+| 4. Reserving | The insurer sets aside its best estimate of what the claim will cost, at first notice commonly from average reserves by coverage and severity | `ReserveCalculatorAgent` recommends it from `initial-reserves.json` (ADR-015); a person's decision posts it on a ClaimCenter exposure (ADR-013) |
 | 5. Investigation and evaluation | The adjuster checks the facts: more photos, an inspection or appraisal, a recorded statement, fraud referral | Photo requests (`UploadRequestController`), inspections (`InspectionController`), the WHY panel and AI notes |
 | 6. Decision and settlement | Accept (pay) or deny in writing, within the state's deadline | Adjuster decision `POST /fnol/{id}/review`; payment is out of scope |
 | 7. Recovery (subrogation) and closure | If someone else caused the loss, the insurer recovers from them or their insurer; the claim is closed | Subrogation flag and recovery-deadline activity (`SubrogationScorerAgent`); decision `CLOSED` |
@@ -27,7 +27,7 @@ A claim moves through these stages. The engine covers the first four and support
 | **Limit** | The most the insurer pays under a coverage | `Coverage.limit()`; the reserve is capped at it (`ReserveCalculatorAgent`), and `RESERVE_EXCEEDS_COVERAGE_LIMIT` flags a mismatch |
 | **Deductible** | The part of each loss the policyholder pays themselves | `Coverage.deductible()`; subtracted in the reserve |
 | **Exclusion** | Damage a policy does not cover. Standard homeowners policies exclude flood (it needs separate flood insurance) | `POSSIBLE_FLOOD_EXCLUSION` in `GateConsistencyChecker` sends the claim to an adjuster; it never denies |
-| **Reserve** | Money set aside for the expected cost of the claim; a liability on the insurer's books, not a payment | `ReserveCalculatorAgent`: `min(amount claimed, AI estimate) − deductible`, capped at the limit; the adjuster sets the final reserve |
+| **Reserve** | Money set aside for the expected cost of the claim; a liability on the insurer's books, not a payment | `ReserveCalculatorAgent`: a table row by line, coverage and severity, moved by the AI only within a band and only when its reading holds up; then `min(amount claimed, that) − deductible`, capped at the limit; the adjuster sets the final reserve |
 | **Exposure** | In ClaimCenter, one coverage × one claimant within a claim; reserves are held per exposure | `MockClaimCenterClient` creates one exposure per matched coverage |
 | **Severity** | How big the loss is | `StpProperties`: LOW ≤ $5,000, MEDIUM ≤ $20,000, HIGH above (always to a person) |
 | **Straight-through processing (STP)** | Handling a simple claim end to end without a person | Six factors in `ExplanationBuilder` plus no flags; by default even STP-eligible claims wait for an adjuster (`fnol.stp.require-advisory-review`, ADR-009) |
@@ -39,6 +39,8 @@ A claim moves through these stages. The engine covers the first four and support
 | **Attorney representation** | A represented claimant must be contacted through their lawyer | `ATTORNEY_REPRESENTED` in `IntakeReviewService` |
 | **SIU (special investigations unit)** | The insurer's fraud team; adjusters refer suspicious claims to it | Fraud red flags route to an adjuster (`PHOTO_REUSED`, `HIGH_CLAIM_FREQUENCY`, `INCIDENT_NEAR_POLICY_START`, duplicates), and `FraudAnomalyScorer` raises `FRAUD_ANOMALY` when several details are unusual together, with an SIU-referral suggestion; the decision to refer is the adjuster's |
 | **Inspection / appraisal** | A field, desk or body-shop inspection that sets the accident-related cost | `InspectionController`; earlier damage is excluded from the reserve |
+| **Segmentation, assignment** | Sorting a claim by line, severity and complexity, then giving it to a group's queue and a person in it | `ClaimSegmenter` with `segmentation-rules.json`, `ClaimAssignmentService`: the least busy person in the group |
+| **Authority limit** | The most a person may set or approve as a reserve | `ReserveAuthority`; a reserve above it waits for someone with enough (`ReserveApprovalService`). Amounts are synthetic |
 | **Adjuster** | The licensed person who investigates and decides the claim | Every decision path ends at `POST /fnol/{id}/review`; the AI never pays, denies or closes |
 
 ## 3. How a claim decision is made here
@@ -48,8 +50,9 @@ A claim moves through these stages. The engine covers the first four and support
    term, frequent recent claims, a reused photo or an attorney.
 2. **Is it covered?** `PolicyValidatorAgent` checks the policy is in force on the loss date and finds the coverage for
    the damage type.
-3. **How much?** The vision model estimates damage; the trust score says how far to believe it; the reserve takes the
-   lower of the claimed amount and the estimate, minus the deductible, within the limit.
+3. **How much?** The vision model rates severity; the initial reserve comes from a table by coverage and severity. The AI's
+   figure can move it within a band, only when the trust score passes and no vision check objects. The reserve then takes
+   the lower of that and the claimed amount, minus the deductible, within the limit.
 4. **What does the law require?** The legal branch removes personal data, computes the acknowledge-by and decide-by
    dates, scores the recovery chance and spots representation.
 5. **Does it all agree?** The gate cross-checks (severity against estimate, reserve against limit, damage against line
@@ -67,8 +70,8 @@ the [stakeholder interviews](STAKEHOLDER_INTERVIEW_TEMPLATE.md) are done.
 |---|---|---|---|
 | **Faster first recommendation** | Both branches finish within the orchestrator deadline of 10 s (configured, `FNOL_ORCHESTRATOR_TIMEOUT_SECONDS`), or the claim goes to a person. Gemini's own call took 4.4 s at the median and 34.4 s at p95 on the free tier, so in evaluation 30% of calls exceeded the app's 8 s read timeout. The legal branch runs in parallel, so it adds no waiting | [metrics.md §1](metrics.md#1-gemini-damage-assessment-vehicle) | A recommendation in seconds is useful only if adjusters act on it sooner; a paid Gemini tier is needed for consistent latency |
 | **Less manual triage** | On the 66 labelled photos, 39 (59%) could go straight through the vision checks with all checks on, 1 of them wrong. By default every claim still gets a human decision | [metrics.md §3](metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) | Real claims send five photos, not one; coverage, amount and intake checks remove more claims; the insurer chooses whether to switch on unreviewed straight-through processing |
-| **Less over-payment (leakage)** | The reserve never exceeds the AI estimate; the AI Governance page totals what claimants asked above the estimate on filed claims (`leakage.amountNotReserved`). Example: demo scenario 8 asks $9,000 against a $4,200 estimate; the reserve is $3,200 after the $1,000 deductible | `AiGovernanceService`, `demo-scenarios/scenario_8_claim_above_estimate.json` | Only a benefit where the estimate is right; repair-cost estimates are **not validated** ([metrics.md](metrics.md#not-measured)), so an adjuster must confirm |
-| **Focused fraud referrals** | On synthetic data, the anomaly score flags 5.2% of claims at 45% precision, against 16.4% at 15% precision for the existing fraud rules | [metrics.md §7](metrics.md#7-fraud-anomaly-score-synthetic-data-only) | Synthetic data only; real precision is unknown |
+| **Less over-payment (leakage)** | The reserve never exceeds what the table and bounded AI adjustment support; the AI Governance page totals what claimants asked above the estimate on filed claims (`leakage.amountNotReserved`). Example: demo scenario 8 asks $9,000 against a $4,200 estimate; the reserve is $3,200 after the $1,000 deductible | `AiGovernanceService`, `demo-scenarios/scenario_8_claim_above_estimate.json` | Only a benefit where the estimate is right; repair-cost estimates are **not validated** ([metrics.md](metrics.md#not-measured)), so an adjuster must confirm |
+| **Focused fraud referrals** | On synthetic data, the anomaly score flags 5.0% of claims at 44.4% precision, against 16.7% at 14.3% precision for the existing fraud rules | [metrics.md §7](metrics.md#7-fraud-anomaly-score-synthetic-data-only) | Synthetic data only; real precision is unknown |
 | **Fewer missed deadlines** | Acknowledge-by and decide-by dates from cited rules on every claim; the governance page reports acknowledgement on time | [legal-compliance.md](legal-compliance.md) | The rules need legal review; regulations change |
 | **Audit readiness** | Every step is in a SHA-256 hash-chained audit trail with a PDF report; model cards per AI component | `AuditService`, [model-cards.md](model-cards.md) | Value depends on the insurer's regulators and model-risk process |
 

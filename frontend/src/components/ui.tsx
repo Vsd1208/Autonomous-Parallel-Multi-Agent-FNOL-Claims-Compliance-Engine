@@ -84,6 +84,7 @@ const STATUS_TONE: Record<string, Tone | 'neutral'> = {
   INVESTIGATION_REQUIRED: 'warning',
   INSPECTION_ASSIGNED: 'info',
   ANALYSIS_PENDING: 'info',
+  PENDING_APPROVAL: 'warning',
   ASSIGNED: 'info',
   COMPLETED: 'success',
   CANCELLED: 'neutral',
@@ -116,7 +117,7 @@ export function StatusChip({ value }: { value?: string | null }) {
 }
 
 const CHANNELS: Record<string, string> = {
-  WEB: 'Web portal', MOBILE: 'Mobile app', PHONE: 'Phone (agent)', API: 'API / partner',
+  WEB: 'Web portal', MOBILE: 'Mobile app', PHONE: 'Phone (staff)', API: 'API / partner',
 };
 
 export function channelLabel(value?: string | null): string {

@@ -62,26 +62,32 @@ class ClaimCenterStore {
                     incident == null ? null : incident.toLocalDate(), rs.getString("state"),
                     rs.getBigDecimal("estimated_damage"), rs.getBigDecimal("reserve"), rs.getString("notes"),
                     List.of(), List.of(), List.of(), List.of(), List.of(), rs.getString("work_queue"),
-                    rs.getString("claim_number"));
+                    rs.getString("claim_number"), rs.getString("segment"), rs.getString("assigned_to"),
+                    rs.getString("assignment_group"));
         }, claimId);
         return rows.stream().findFirst().map(c -> new Claim(c.claimId(), c.status(), c.policyNumber(),
                 c.incidentDate(), c.state(), c.estimatedDamage(), c.reserve(), c.notes(),
                 attachments(claimId), reviewActions(claimId), exposures(claimId), activities(claimId), notes(claimId),
-                c.workQueue(), c.claimNumber()));
+                c.workQueue(), c.claimNumber(), c.segment(), c.assignedTo(), c.assignmentGroup()));
     }
 
     /** A page of the claims in these work queues, oldest first. */
-    ClaimQueuePage queue(Collection<String> queues, int page, int size) {
+    ClaimQueuePage queue(Collection<String> queues, String segment, int page, int size) {
         String in = String.join(",", Collections.nCopies(queues.size(), "?"));
-        Object[] args = queues.toArray();
-        long total = jdbc.queryForObject("SELECT COUNT(*) FROM claimcenter.claims WHERE work_queue IN (" + in + ")",
-                Long.class, args);
+        List<Object> params = new java.util.ArrayList<>(queues);
+        String where = "work_queue IN (" + in + ")";
+        if (segment != null && !segment.isBlank()) {
+            where += " AND segment = ?";
+            params.add(segment);
+        }
+        Object[] args = params.toArray();
+        long total = jdbc.queryForObject("SELECT COUNT(*) FROM claimcenter.claims WHERE " + where, Long.class, args);
         List<ClaimQueueEntry> items = jdbc.query("""
-                SELECT claim_id, status, work_queue, policy_number, reserve, created_at FROM claimcenter.claims
-                WHERE work_queue IN (%s) ORDER BY created_at, claim_id LIMIT %d OFFSET %d""".formatted(in, size, page * size),
+                SELECT claim_id, status, work_queue, policy_number, reserve, created_at, segment, assigned_to FROM claimcenter.claims
+                WHERE %s ORDER BY created_at, claim_id LIMIT %d OFFSET %d""".formatted(where, size, page * size),
                 (rs, i) -> new ClaimQueueEntry(rs.getString("claim_id"), rs.getString("status"),
                         rs.getString("work_queue"), rs.getString("policy_number"), rs.getBigDecimal("reserve"),
-                        rs.getTimestamp("created_at").toInstant()), args);
+                        rs.getTimestamp("created_at").toInstant(), rs.getString("segment"), rs.getString("assigned_to")), args);
         return new ClaimQueuePage(items, total);
     }
 

@@ -2,7 +2,7 @@
 
 ## Database Engine
 - **Target**: PostgreSQL 16 (docker-compose image `postgres:16-alpine`)
-- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V17; Hibernate runs with `ddl-auto: validate`
+- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V22; Hibernate runs with `ddl-auto: validate`
 - **ORM**: Spring Data JPA / Hibernate 6
 - **Tests**: H2 in PostgreSQL mode with `ddl-auto: create-drop` (Flyway disabled); the migrations are exercised by `docker compose up`
 
@@ -27,6 +27,11 @@
 | V15 | `V15__add_ai_feedback.sql` | `ai_feedback` table: each adjuster decision next to the AI's view (damage type, reserve, confidence, margin, second-opinion agreement, flags) |
 | V16 | `V16__add_regulatory_deadlines.sql` | `claims.acknowledge_due`, `decision_due`, `acknowledged_at` (regulatory claim clock) |
 | V17 | `V17__add_feedback_vision_source.sql` | `ai_feedback.vision_source` (model, prompt hash and thinking budget that produced the AI answer) |
+| V18 | `V18__add_feedback_repair_cost.sql` | Repair cost and what it rests on, next to each decision |
+| V19 | `V19__add_users_and_sessions.sql` | Sign-in accounts and hashed session tokens |
+| V20 | `V20__add_feedback_usage.sql` | `ai_feedback`: how long a decision took and how useful the advisory was |
+| V21 | `V21__add_reserve_approvals.sql` | `reserve_approvals`: decisions held above the person's authority |
+| V22 | `V22__add_claim_segment_and_assignment.sql` | `claims.segment`, `assignment_group`, `assigned_to`, `assigned_at` |
 
 ## `claims`
 

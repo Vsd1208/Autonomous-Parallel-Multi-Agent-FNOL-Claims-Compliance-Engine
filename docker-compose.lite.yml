@@ -1,0 +1,21 @@
+# Quick review, with no model downloads and no vision-ml service:
+#   docker compose --env-file .env.lite -f docker-compose.yml -f docker-compose.lite.yml up -d --build
+#
+# Mock vision only. The second opinion and photo blurring live in vision-ml, so with it absent the engine refuses to start
+# if Gemini is enabled: lite mode can never send a photo to an external model unblurred.
+services:
+  vision-ml:
+    # Only started when this profile is asked for, which lite mode never does.
+    profiles: ["full-only"]
+
+  fnol-api:
+    environment:
+      FNOL_LITE_MODE: "true"
+      GEMINI_VISION_ENABLED: "false"
+      FNOL_SECOND_OPINION_URL: ""
+      FNOL_REDACTION_URL: ""
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      mock-guidewire:
+        condition: service_healthy

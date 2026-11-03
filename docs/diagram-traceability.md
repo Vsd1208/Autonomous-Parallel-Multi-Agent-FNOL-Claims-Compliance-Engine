@@ -10,7 +10,7 @@ The project is an **FNOL** (first notice of loss) engine: it takes in the loss r
 
 | Topic term | Where it is implemented |
 |---|---|
-| Autonomous | STP path, components 14 and 15: a claim that passes every check is filed without a human (with the advisory-review switch off) |
+| Autonomous (the diagram's word for the STP path; in the rest of the docs it means the analysis runs by itself, never that the AI decides) | STP path, components 14 and 15: a claim that passes every check is filed without a human (with the advisory-review switch off) |
 | Parallel | Async dual-branch engine, component 4 |
 | Multi-Agent | Six agents in two branches, components 5–10, joined at the reconciliation gate, component 11 |
 | FNOL | Intake, enrichment and duplicate check, components 1–3 and 20 |

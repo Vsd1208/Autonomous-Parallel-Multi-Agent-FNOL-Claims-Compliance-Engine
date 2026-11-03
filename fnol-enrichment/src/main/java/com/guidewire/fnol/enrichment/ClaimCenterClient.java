@@ -47,6 +47,11 @@ public interface ClaimCenterClient {
         throw new UnsupportedOperationException("listWorkQueues is not supported by this ClaimCenter client");
     }
 
+    /** As {@link #listWorkQueues(Collection, int, int)}, within one segment. */
+    default ClaimQueuePage listWorkQueues(Collection<String> workQueues, String segment, int page, int size) {
+        throw new UnsupportedOperationException("listWorkQueues by segment is not supported by this ClaimCenter client");
+    }
+
     /**
      * Files an FNOL in the claims system: creates the draft claim and submits it (which emits claim.submitted).
      *

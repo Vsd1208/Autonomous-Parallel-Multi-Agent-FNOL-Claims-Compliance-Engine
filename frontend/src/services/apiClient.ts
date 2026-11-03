@@ -13,6 +13,7 @@ import {
   ExplanationObject,
   FormData,
   QueuePage,
+  ReserveApprovalView,
 } from '../types';
 
 import { Session, session } from './session';
@@ -61,6 +62,13 @@ async function request<T>(path: string, init: RequestInit = {}, adjuster = false
 export const apiClient = {
   login: (username: string, password: string) =>
     request<Session>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+
+  getReserveApprovals: (claimId: string) =>
+    request<ReserveApprovalView[]>(`/api/v1/fnol/${encodeURIComponent(claimId)}/reserve-approvals`, {}, true),
+
+  decideReserveApproval: (claimId: string, approvalId: string, approve: boolean, note: string) =>
+    request<{ status: string }>(`/api/v1/fnol/${encodeURIComponent(claimId)}/reserve-approvals/${encodeURIComponent(approvalId)}/decide`,
+      { method: 'POST', body: JSON.stringify({ approve, note }) }, true),
 
   logout: () => request<{ status: string }>('/api/v1/auth/logout', { method: 'POST' }, true),
 
@@ -123,9 +131,9 @@ export const apiClient = {
     return URL.createObjectURL(await response.blob());
   },
 
-  getQueue: (statuses: string[], page = 0, size = 20) =>
+  getQueue: (statuses: string[], page = 0, size = 20, segment = '') =>
     request<QueuePage>(
-      `/api/v1/fnol/queue?status=${encodeURIComponent(statuses.join(','))}&page=${page}&size=${size}`,
+      `/api/v1/fnol/queue?status=${encodeURIComponent(statuses.join(','))}&page=${page}&size=${size}${segment ? `&segment=${encodeURIComponent(segment)}` : ''}`,
       {},
       true
     ),

@@ -132,3 +132,32 @@ was deleted or skipped.
 - Review the claim-clock rules with someone qualified in insurance law.
 - Whether to keep the fraud score on by default before it is checked on real claims (it only routes; it can be turned
   off with `FNOL_STP_FRAUD_ANOMALY_ENABLED=false`).
+
+## 6. Selection-final
+
+Five weaknesses reviewers noticed, on branch `selection-final`, 3 Nov 2026. Full results: `mvn -B clean verify` 409 passed, 0 failed, 0 skipped; `run-all.sh` 111 of 111 in lite mode and in full mode.
+
+| Weakness | What changed | Evidence | What remains open |
+|---|---|---|---|
+| The name and the README contradicted each other | Registered name as the heading, "autonomous analysis, human decision", one definition of "autonomous" and "agent" | `README.md`, `docs/agent-architecture.md` | The diagram's word for the STP path differs, as noted in `docs/diagram-traceability.md` |
+| The reserve depended on an unreliable dollar estimate | The reserve starts from a sourced table, with a bounded AI adjustment that is blocked when vision is in doubt (ADR-015) | `initial-reserves.json`, `InitialReserveTest`, [metrics §8](metrics.md#8-repair-cost-estimates) | **Not closer to the published ranges** (median 3.57x against 2.69x). Several values are synthetic. The severity gate and fraud score still read the AI's dollars. True costs unmeasured |
+| No authority limits, segmentation or assignment | Limits by role, held approvals, no self-approval; rule-based segments, least busy person in the group | `ReserveAuthorityTest`, `SegmentationAndAssignmentTest`, `docs/guidewire-integration.md` | Modelled on the concepts, not verified against a tenant. Limits and rules are synthetic. No approval expiry, no manual reassignment, no SIU role |
+| Reviewers could not run it quickly | Lite mode with no vision service or model downloads | `docker-compose.lite.yml`, `LiteModeTest`, 116 s to healthy on one laptop with base images present | First-run time on a clean machine not measured. Mock vision only, so scenarios do not exercise the vision checks |
+| Unclear ownership | A guide to four areas with blank `Owner:` lines, and honest review answers | `docs/MODULE_GUIDE.md`, `docs/REVIEW_QA.md` | **The team must fill in owners and be able to explain each area.** No documentation can show that for them |
+
+Also measured or corrected: the trust score out of sample (AUC 0.79, Brier 0.113, calibration error 0.063) and the headline, which is 11 → 1 in sample and about 11 → 3 out of sample ([metrics §2-3](metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims)); stale fraud figures in two documents.
+
+**Defects found and fixed by a code review of this branch, 3 Nov 2026,** each with a regression test (`ReserveAuthorityTest`, `ClaimsSystemDecisionTest`, `SegmentationAndAssignmentTest`, `UploadRequestWorkflowTest`):
+
+- **Authority bypass:** a claim only the claims system held, its analysis unfinished, skipped the limit, so any adjuster could post any reserve on it.
+- Approving a claim with no table row posted the AI's figure, which the claim says is for reference only. A person must now set it.
+- A figure entered on a denial or information request was posted, and needed authority, unlike what these docs said. Only an approval posts now.
+- A late approval or decline on a claim that had moved still closed the approval and moved the claims system's queue. It is now refused.
+- A hold the claims system was not told about never reached an approver. It is now refused and can be retried.
+- Assignment saved the whole claim record, so it could overwrite a decision made meanwhile, and it held its lock during calls to the claims system.
+- A held claim dropped out of the deadline counts, and a claimant uploading requested photos was told it was already decided.
+- An empty assignment group raised a false "above authority" alert.
+
+Run against the code before these fixes, 8 of the 9 new tests fail. The ninth, `assignmentKeepsADecision`, passes on both, because a test with one thread cannot reproduce that race: the overwrite fix rests on reading the code, which now writes only the assignment columns.
+
+**Defect found and fixed during this work:** a claim analysed late, after an engine outage, started its regulatory clock on the day of analysis. It now runs from the time on the `claim.submitted` event (`ClaimEventController`, `ClaimEventExtensionTest.lateAnalysisKeepsTheNoticeDate`). Whether that time is the legal date of notice on a real tenant is not verified.

@@ -52,6 +52,15 @@ public class ClaimEntity {
   @Column(length = 500)
   public String failureReason;
 
+  /** Who handles it: the segment from the rules, the group's queue, and the person within it. */
+  public String segment;
+  @Column(name = "assignment_group")
+  public String assignmentGroup;
+  @Column(name = "assigned_to")
+  public String assignedTo;
+  @Column(name = "assigned_at")
+  public Instant assignedAt;
+
   /** LOW | MEDIUM | HIGH from the WHY panel. */
   @Column(length = 16)
   public String severityGate;

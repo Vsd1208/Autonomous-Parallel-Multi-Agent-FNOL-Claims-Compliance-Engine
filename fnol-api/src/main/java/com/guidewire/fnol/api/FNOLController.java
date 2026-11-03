@@ -22,7 +22,9 @@ import org.springframework.http.*;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import com.guidewire.fnol.api.persistence.ReserveApprovalEntity;
 import com.guidewire.fnol.api.security.Actor;
+import com.guidewire.fnol.api.security.ReserveAuthority;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
@@ -69,6 +71,36 @@ public class FNOLController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setDecisions(ClaimDecisionRecorder decisions) {
         this.decisions = decisions;
+    }
+
+    private LiteMode liteMode;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setLiteMode(LiteMode liteMode) {
+        this.liteMode = liteMode;
+    }
+
+    /** Sets the segment and who handles the claim; optional for the same reason. */
+    private ClaimAssignmentService assignment;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAssignment(ClaimAssignmentService assignment) {
+        this.assignment = assignment;
+    }
+
+    /** Holds a reserve above someone's authority for approval; optional for the same reason. */
+    private ReserveApprovalService approvals;
+    private ReserveAuthority authority;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setApprovals(ReserveApprovalService approvals, ReserveAuthority authority) {
+        this.approvals = approvals;
+        this.authority = authority;
+    }
+
+    /** No person, no role: a service credential gets the limit a role with no entry gets, the adjuster's. */
+    private static final class ReserveAuthorityRoles {
+        static final String SERVICE = "SERVICE";
     }
 
     /** True when new losses go to the claims system first and the analysis follows its event. */
@@ -119,10 +151,13 @@ public class FNOLController {
 
     /**
      * What a decision posts as the reserve. This is the only way the AI's recommendation reaches the money: an approval
-     * posts the adjuster's figure, or the recommendation they approved.
+     * posts the adjuster's figure, or the recommendation they approved. Any other decision posts nothing.
      */
     static BigDecimal reserveToPost(String decision, BigDecimal adjustedReserve, ClaimEntity claim) {
-        return adjustedReserve == null && "APPROVED_BY_ADJUSTER".equals(decision) ? claim.reserve : adjustedReserve;
+        if (!"APPROVED_BY_ADJUSTER".equals(decision)) {
+            return null;
+        }
+        return adjustedReserve == null ? claim.reserve : adjustedReserve;
     }
     static final Set<String> ADJUSTER_DECISIONS = CLAIMCENTER_STATUS.keySet();
 
@@ -131,7 +166,7 @@ public class FNOLController {
     Map<String, String> health() {
         // intake: CLAIMS_SYSTEM (losses are filed in the claims system, analysis follows its event) or DIRECT
         return Map.of("status", "UP", "intake", reportsToClaimsSystem() ? ClaimsSystemIntake.CLAIMS_SYSTEM
-                : ClaimsSystemIntake.DIRECT);
+                : ClaimsSystemIntake.DIRECT, "secondOpinion", liteMode == null ? "CONFIGURED" : liteMode.secondOpinion());
     }
 
     // ── Report a loss (agent taking a phone call, partner channel) ────────────
@@ -204,6 +239,9 @@ public class FNOLController {
         }
         // Keep the photos the AI assessed so the adjuster can see them (best effort, audited).
         evidence.store(claimId, payload);
+        if (assignment != null) {
+            assignment.assign(response);
+        }
         return response;
     }
 
@@ -362,7 +400,8 @@ public class FNOLController {
     @GetMapping("/fnol/queue")
     QueuePage queue(@RequestParam(name = "status", defaultValue = "HUMAN_REVIEW") String status,
                     @RequestParam(name = "page", defaultValue = "0") int page,
-                    @RequestParam(name = "size", defaultValue = "20") int size) {
+                    @RequestParam(name = "size", defaultValue = "20") int size,
+                    @RequestParam(name = "segment", required = false) String segment) {
         Set<String> statuses = new TreeSet<>();
         for (String s : status.split(",")) {
             if (!s.isBlank()) statuses.add(s.trim().toUpperCase(Locale.ROOT));
@@ -373,13 +412,15 @@ public class FNOLController {
         String source = QueuePage.ENGINE;
         if (reportsToClaimsSystem()) {
             try {
-                return queueFromClaimsSystem(statuses, page, size);
+                return queueFromClaimsSystem(statuses, segment, page, size);
             } catch (RuntimeException e) {
                 log.warn("[FNOL] Claims system unavailable; showing the queue from the analysis records: {}", e.getMessage());
                 source = QueuePage.CLAIMS_SYSTEM_UNAVAILABLE;
             }
         }
-        Page<ClaimEntity> result = claims.findByStatusInOrderByCreatedAtAsc(statuses, PageRequest.of(page, size));
+        Page<ClaimEntity> result = segment == null || segment.isBlank()
+                ? claims.findByStatusInOrderByCreatedAtAsc(statuses, PageRequest.of(page, size))
+                : claims.findByStatusInAndSegmentOrderByCreatedAtAsc(statuses, segment, PageRequest.of(page, size));
         return new QueuePage(result.getContent().stream().map(QueueItem::of).toList(),
                 page, size, result.getTotalElements(), result.getTotalPages(), source);
     }
@@ -389,8 +430,9 @@ public class FNOLController {
      * record. Includes claims with no analysis yet. Failed direct intakes (REJ-...), which the claims system never
      * held, follow its claims, so no claim disappears from a queue.
      */
-    private QueuePage queueFromClaimsSystem(Set<String> statuses, int page, int size) {
-        ClaimQueuePage filed = claimCenter.listWorkQueues(statuses, page, size);
+    private QueuePage queueFromClaimsSystem(Set<String> statuses, String segment, int page, int size) {
+        ClaimQueuePage filed = segment == null || segment.isBlank() ? claimCenter.listWorkQueues(statuses, page, size)
+                : claimCenter.listWorkQueues(statuses, segment, page, size);
         Map<String, ClaimEntity> analysed = new HashMap<>();
         claims.findAllById(filed.items().stream().map(ClaimQueueEntry::claimId).toList())
                 .forEach(c -> analysed.put(c.claimId, c));
@@ -403,9 +445,13 @@ public class FNOLController {
             items.add(new QueueItem(e.claimId(), status, e.policyNumber(),
                     e.reserve() != null || c == null ? e.reserve() : c.reserve,
                     c == null ? null : c.severityGate, c == null ? null : c.inputFlags,
-                    c == null ? null : c.gateFlags, c == null ? null : c.failureReason, e.createdAt()));
+                    c == null ? null : c.gateFlags, c == null ? null : c.failureReason, e.createdAt(),
+                    c != null && c.segment != null ? c.segment : e.segment(),
+                    c != null && c.assignedTo != null ? c.assignedTo : e.assignedTo()));
         }
-        List<ClaimEntity> unfiled = claims.findByStatusInAndClaimIdStartingWithOrderByCreatedAtAsc(statuses, "REJ-");
+        // Failed direct intakes have no segment, so a segment filter leaves them out; the unfiltered queue always has them.
+        List<ClaimEntity> unfiled = segment == null || segment.isBlank()
+                ? claims.findByStatusInAndClaimIdStartingWithOrderByCreatedAtAsc(statuses, "REJ-") : List.of();
         long skip = Math.max(0, (long) page * size - filed.total());
         unfiled.stream().skip(skip).limit(size - items.size()).map(QueueItem::of).forEach(items::add);
         long total = filed.total() + unfiled.size();
@@ -480,6 +526,14 @@ public class FNOLController {
         AdjusterReviewRequest request = new AdjusterReviewRequest(submitted.decision(), Actor.idOr(submitted.adjusterId()),
                 submitted.notes(), submitted.adjustedReserve(), submitted.overrideReason(), submitted.confirmedDamageType(),
                 submitted.finalRepairCost(), submitted.repairCostSource(), submitted.handlingSeconds(), submitted.advisoryRating());
+        return apply(claimId, request, true);
+    }
+
+    /**
+     * Records a decision. With {@code checkAuthority}, a reserve above the person's authority is held for approval instead;
+     * an approver's approval comes back here without the check.
+     */
+    ResponseEntity<?> apply(String claimId, AdjusterReviewRequest request, boolean checkAuthority) {
         String decision = request.decision().trim().toUpperCase(Locale.ROOT);
         if (!ADJUSTER_DECISIONS.contains(decision)) {
             throw new IllegalArgumentException("Unsupported adjuster decision: " + request.decision());
@@ -494,6 +548,34 @@ public class FNOLController {
         if (request.adjustedReserve() != null
                 && (request.overrideReason() == null || request.overrideReason().isBlank())) {
             throw new IllegalArgumentException("overrideReason is required when adjustedReserve is set");
+        }
+        // With no table row the recommendation is only the AI's figure, shown for reference: a person must set the reserve.
+        if ("APPROVED_BY_ADJUSTER".equals(decision) && request.adjustedReserve() == null) {
+            ClaimEntity flagged = claims.findById(claimId).orElse(null);
+            if (flagged != null && flagged.gateFlags != null
+                    && flagged.gateFlags.contains(GateConsistencyChecker.RESERVE_TABLE_ENTRY_MISSING)) {
+                throw new IllegalArgumentException("The initial-reserve table has no row for this claim: set the reserve yourself");
+            }
+        }
+        if (checkAuthority && approvals != null) {
+            // Also a claim only the claims system holds, whose analysis did not finish: the limit applies to it just the same.
+            ClaimEntity current = recordForDecision(claimId).orElse(null);
+            String role = Actor.current().map(Actor::role).orElse(ReserveAuthorityRoles.SERVICE);
+            BigDecimal posted = current == null ? null : reserveToPost(decision, request.adjustedReserve(), current);
+            if (current != null && REVIEWABLE_STATUSES.contains(current.status) && !authority.allows(role, posted)) {
+                if (reportsToClaimsSystem()) {
+                    claimsSystemIntake.saveForDecision(current);
+                }
+                ReserveApprovalEntity held = approvals.request(claimId, decision, posted, current.status, request, role, costSource);
+                Map<String, Object> answer = new LinkedHashMap<>();
+                answer.put("claimId", claimId);
+                answer.put("status", ReserveApprovalService.PENDING_APPROVAL);
+                answer.put("approvalId", held.approvalId);
+                answer.put("assignedTo", held.assignedTo);
+                answer.put("amount", posted);
+                answer.put("yourLimit", authority.limitOf(role));
+                return ResponseEntity.accepted().body(answer);
+            }
         }
         if (reportsToClaimsSystem() && !claimId.startsWith("REJ-")) {
             return reviewInClaimsSystem(claimId, decision, costSource, request);
@@ -543,6 +625,10 @@ public class FNOLController {
         ));
     }
 
+    private Optional<ClaimEntity> recordForDecision(String claimId) {
+        return claims.findById(claimId).or(() -> reportsToClaimsSystem() ? claimsSystemIntake.recordOf(claimId) : Optional.empty());
+    }
+
     /** Timing and usefulness count only from a signed-in person, so scripts and integrations cannot skew the evidence. */
     private void recordUsage(String claimId, AdjusterReviewRequest request) {
         if (governance != null && Actor.current().isPresent()) {
@@ -557,7 +643,7 @@ public class FNOLController {
      */
     private ResponseEntity<?> reviewInClaimsSystem(String claimId, String decision, String costSource,
                                                    AdjusterReviewRequest request) {
-        ClaimEntity claim = claims.findById(claimId).or(() -> claimsSystemIntake.recordOf(claimId)).orElse(null);
+        ClaimEntity claim = recordForDecision(claimId).orElse(null);
         if (claim == null) {
             return ResponseEntity.notFound().build();
         }
@@ -593,10 +679,11 @@ public class FNOLController {
 
 /** Adjuster queue entry (GET /api/v1/fnol/queue). */
 record QueueItem(String claimId, String status, String policyNumber, java.math.BigDecimal reserve,
-                 String severityGate, String inputFlags, String gateFlags, String failureReason, Instant createdAt) {
+                 String severityGate, String inputFlags, String gateFlags, String failureReason, Instant createdAt,
+                 String segment, String assignedTo) {
     static QueueItem of(ClaimEntity c) {
         return new QueueItem(c.claimId, c.status, c.policyNumber, c.reserve, c.severityGate,
-                c.inputFlags, c.gateFlags, c.failureReason, c.createdAt);
+                c.inputFlags, c.gateFlags, c.failureReason, c.createdAt, c.segment, c.assignedTo);
     }
 }
 

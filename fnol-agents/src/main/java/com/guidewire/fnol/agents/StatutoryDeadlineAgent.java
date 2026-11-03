@@ -24,9 +24,16 @@ public class StatutoryDeadlineAgent implements FNOLAgent<FNOLPayload, DeadlineRe
      * rule says, from a complete proof of loss (not yet started when {@code proofOfLossComplete} is false).
      */
     public DeadlineResult execute(FNOLPayload input, String lineOfBusiness, boolean proofOfLossComplete) {
-        LocalDate today = LocalDate.now();
-        return provider.deadline(input.state(), input.incidentDate(), lineOfBusiness, today,
-                proofOfLossComplete ? today : null);
+        return execute(input, lineOfBusiness, proofOfLossComplete, LocalDate.now());
+    }
+
+    /**
+     * As above, for a claim the insurer received on {@code noticeDate}, which may be before today: the clocks run from when the
+     * claim was received, not from when it was analysed (the engine may have been down in between).
+     */
+    public DeadlineResult execute(FNOLPayload input, String lineOfBusiness, boolean proofOfLossComplete, LocalDate noticeDate) {
+        return provider.deadline(input.state(), input.incidentDate(), lineOfBusiness, noticeDate,
+                proofOfLossComplete ? noticeDate : null);
     }
 
     /** The decision deadline once the proof of loss is complete on {@code completedOn} (e.g. requested photos arrived). */

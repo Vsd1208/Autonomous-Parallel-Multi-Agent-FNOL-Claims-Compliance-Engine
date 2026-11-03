@@ -100,9 +100,12 @@ class EvidenceDocumentsTest {
 
         JsonNode trail = getJson("/api/v1/fnol/" + claimId + "/audit");
         assertThat(trail.path("chainValid").asBoolean()).isTrue();
-        JsonNode last = trail.path("records").get(trail.path("records").size() - 1);
-        assertThat(last.path("agentName").asText()).isEqualTo("EvidenceStore");
-        assertThat(last.path("status").asText()).isEqualTo("STORED");
+        JsonNode stored = null;
+        for (JsonNode record : trail.path("records")) {
+            if ("EvidenceStore".equals(record.path("agentName").asText())) stored = record;
+        }
+        assertThat(stored).isNotNull();
+        assertThat(stored.path("status").asText()).isEqualTo("STORED");
     }
 
     @Test

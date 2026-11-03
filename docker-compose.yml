@@ -76,11 +76,15 @@ services:
       GEMINI_VISION_MODEL: "${GEMINI_VISION_MODEL:-gemini-2.5-flash}"
       FNOL_ORCHESTRATOR_TIMEOUT_SECONDS: "${FNOL_ORCHESTRATOR_TIMEOUT_SECONDS:-10}"
       FNOL_STP_REQUIRE_ADVISORY_REVIEW: "${FNOL_STP_REQUIRE_ADVISORY_REVIEW:-true}"
+      FNOL_RESERVE_METHOD: "${FNOL_RESERVE_METHOD:-AVERAGE_TABLE}"
+      FNOL_RESERVE_AI_ADJUSTMENT_MAX: "${FNOL_RESERVE_AI_ADJUSTMENT_MAX:-0.40}"
+      FNOL_AUTHORITY_ADJUSTER: "${FNOL_AUTHORITY_ADJUSTER:-10000}"
+      FNOL_AUTHORITY_SENIOR_ADJUSTER: "${FNOL_AUTHORITY_SENIOR_ADJUSTER:-50000}"
       # Empty token = adjuster endpoints (review, audit, explanation, queue) reject every request.
       FNOL_ADJUSTER_TOKEN: "${FNOL_ADJUSTER_TOKEN:-}"
       # People's sign-ins: id|ROLE|password|Display Name;... The default is for local runs only: anything beyond a laptop
       # demo must set its own. An inspector's id must be their roster id (INS-101, ...).
-      FNOL_USERS: "${FNOL_USERS:-ADJ-001|ADJUSTER|local-dev-password|Demo Adjuster;INS-101|INSPECTOR|local-dev-password|Inspector A;INS-102|INSPECTOR|local-dev-password|Inspector B;INS-201|INSPECTOR|local-dev-password|Inspector C;INS-301|INSPECTOR|local-dev-password|Partner Body Shop}"
+      FNOL_USERS: "${FNOL_USERS:-ADJ-001|ADJUSTER|local-dev-password|Demo Adjuster;ADJ-002|ADJUSTER|local-dev-password|Second Adjuster;SEN-001|SENIOR_ADJUSTER|local-dev-password|Demo Senior Adjuster;SUP-001|SUPERVISOR|local-dev-password|Demo Supervisor;INS-101|INSPECTOR|local-dev-password|Inspector A;INS-102|INSPECTOR|local-dev-password|Inspector B;INS-201|INSPECTOR|local-dev-password|Inspector C;INS-301|INSPECTOR|local-dev-password|Partner Body Shop}"
       # Adjuster workspace (5173) and policyholder portal (5174)
       FNOL_CORS_ALLOWED_ORIGINS: "${FNOL_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}"
       # One-time upload links sent to claimants open the portal

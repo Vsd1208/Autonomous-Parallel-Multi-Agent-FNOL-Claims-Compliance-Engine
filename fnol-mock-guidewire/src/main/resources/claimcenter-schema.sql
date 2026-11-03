@@ -134,3 +134,8 @@ UPDATE claimcenter.exposures SET reserve = NULL WHERE claim_id IN (
 UPDATE claimcenter.claims SET reserve = NULL WHERE work_queue <> 'STRAIGHT_THROUGH_PROCESSING'
     AND NOT EXISTS (SELECT 1 FROM claimcenter.review_actions a WHERE a.claim_id = claimcenter.claims.claim_id
                     AND a.action IN ('APPROVED_BY_ADJUSTER', 'REJECTED_BY_ADJUSTER', 'CLOSED'));
+
+-- Which segment a claim falls in, and the group and person it is assigned to.
+ALTER TABLE claimcenter.claims ADD COLUMN IF NOT EXISTS segment VARCHAR(40);
+ALTER TABLE claimcenter.claims ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(40);
+ALTER TABLE claimcenter.claims ADD COLUMN IF NOT EXISTS assignment_group VARCHAR(80);

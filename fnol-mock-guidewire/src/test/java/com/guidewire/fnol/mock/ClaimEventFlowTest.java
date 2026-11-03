@@ -215,22 +215,22 @@ class ClaimEventFlowTest {
                 null, List.of(), "WEB");
         String submitted = cc.reportLoss(other).claimId();
         cc.submit(submitted);
-        assertThat(cc.queue("ANALYSIS_PENDING", 0, 20).items()).extracting(ClaimQueueEntry::claimId).containsExactly(submitted);
-        assertThat(cc.queue("ANALYSIS_PENDING,HUMAN_REVIEW", 0, 20).items()).extracting(ClaimQueueEntry::claimId)
+        assertThat(cc.queue("ANALYSIS_PENDING", null, 0, 20).items()).extracting(ClaimQueueEntry::claimId).containsExactly(submitted);
+        assertThat(cc.queue("ANALYSIS_PENDING,HUMAN_REVIEW", null, 0, 20).items()).extracting(ClaimQueueEntry::claimId)
                 .doesNotContain(draft);
 
         cc.patch(submitted, new ClaimPatch("OPEN", null, new BigDecimal("800"), "PENDING_ADVISORY_REVIEW"));
-        assertThat(cc.queue("ANALYSIS_PENDING", 0, 20).total()).isZero();
-        ClaimQueueEntry entry = cc.queue("PENDING_ADVISORY_REVIEW", 0, 20).items().get(0);
+        assertThat(cc.queue("ANALYSIS_PENDING", null, 0, 20).total()).isZero();
+        ClaimQueueEntry entry = cc.queue("PENDING_ADVISORY_REVIEW", null, 0, 20).items().get(0);
         assertThat(entry.reserve()).isEqualByComparingTo("800");
 
         String created = cc.create(new ClaimCreateRequest("POL-AUTO-112233", LocalDate.of(2026, 10, 22), "CA",
                 new BigDecimal("100"), new BigDecimal("115"), "OPEN", "PENDING_ADVISORY_REVIEW")).claimId();
-        ClaimQueuePage first = cc.queue("PENDING_ADVISORY_REVIEW", 0, 1);
+        ClaimQueuePage first = cc.queue("PENDING_ADVISORY_REVIEW", null, 0, 1);
         assertThat(first.total()).isEqualTo(2);
         assertThat(first.items()).extracting(ClaimQueueEntry::claimId).containsExactly(submitted);
-        assertThat(cc.queue("PENDING_ADVISORY_REVIEW", 1, 1).items()).extracting(ClaimQueueEntry::claimId).containsExactly(created);
-        assertThatThrownBy(() -> cc.queue(" ", 0, 20)).isInstanceOf(ResponseStatusException.class);
+        assertThat(cc.queue("PENDING_ADVISORY_REVIEW", null, 1, 1).items()).extracting(ClaimQueueEntry::claimId).containsExactly(created);
+        assertThatThrownBy(() -> cc.queue(" ", null, 0, 20)).isInstanceOf(ResponseStatusException.class);
     }
 
     @Test
@@ -291,6 +291,21 @@ class ClaimEventFlowTest {
         assertThat(denied.workQueue()).isEqualTo("REJECTED_BY_ADJUSTER");
         assertThat(denied.exposures().get(0).reserve()).isEqualByComparingTo("0");
         assertThat(denied.exposures().get(0).status()).isEqualTo("closed");
+    }
+
+    @Test
+    @DisplayName("Segment and assignee are written onto the claim, and a queue can be filtered by segment")
+    void segmentAndAssignee() throws Exception {
+        start();
+        String id = cc.reportLoss(fnol()).claimId();
+        cc.submit(id);
+        Claim patched = cc.patch(id, new ClaimPatch(null, null, null, "HUMAN_REVIEW", "AUTO_STANDARD", "ADJ-001", "Auto claims queue"));
+        assertThat(patched.segment()).isEqualTo("AUTO_STANDARD");
+        assertThat(patched.assignedTo()).isEqualTo("ADJ-001");
+        assertThat(patched.assignmentGroup()).isEqualTo("Auto claims queue");
+        assertThat(cc.queue("HUMAN_REVIEW", "AUTO_STANDARD", 0, 20).items()).extracting(ClaimQueueEntry::assignedTo).containsExactly("ADJ-001");
+        assertThat(cc.queue("HUMAN_REVIEW", "AUTO_COMPLEX", 0, 20).total()).isZero();
+        assertThat(cc.queue("HUMAN_REVIEW", null, 0, 20).total()).isEqualTo(1);
     }
 
     @Test

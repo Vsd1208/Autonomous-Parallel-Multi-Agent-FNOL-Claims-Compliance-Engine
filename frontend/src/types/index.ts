@@ -31,10 +31,26 @@ export interface Reserve {
   confidenceBasis?: string | null;
   /** What the claimant asked for. */
   claimedAmount?: number | null;
-  /** min(claimed, AI estimate): the most the AI will reserve before the deductible. */
+  /** min(claimed, the supported amount): the most that is reserved before the deductible. */
   settlementBasis?: number | null;
   deductible?: number | null;
   coverageLimit?: number | null;
+  breakdown?: ReserveBreakdown | null;
+}
+
+/** How the reserve was reached: the table's base and source, the AI adjustment, then the caps. */
+export interface ReserveBreakdown {
+  method: 'AVERAGE_TABLE' | 'AI_ESTIMATE';
+  tableEntryMissing: boolean;
+  baseRow?: string | null;
+  baseReserve?: number | null;
+  baseProvenance?: 'PUBLISHED' | 'SYNTHETIC' | null;
+  baseSource?: string | null;
+  adjustmentAllowed: boolean;
+  adjustmentReason?: string | null;
+  adjustmentMax?: number | null;
+  supportedAmount?: number | null;
+  capsApplied: string[];
 }
 
 export interface BranchAResult {
@@ -185,6 +201,9 @@ export interface FraudAnomaly {
 /** Saved claim row (GET /fnol/status/{claimId}). */
 export interface ClaimRecord {
   claimId: string;
+  segment?: string | null;
+  assignedTo?: string | null;
+  assignmentGroup?: string | null;
   policyNumber: string;
   status: string;
   incidentDate: string;
@@ -296,6 +315,19 @@ export interface QueueItem {
   gateFlags: string | null;
   failureReason: string | null;
   createdAt: string;
+  segment?: string | null;
+  assignedTo?: string | null;
+}
+
+/** A decision held because its reserve is above the person's authority. */
+export interface ReserveApprovalView {
+  approval: {
+    approvalId: string; claimId: string; decision: string; amount: number; requestedBy: string; requestedRole?: string | null;
+    requestedAt: string; assignedTo?: string | null; status: 'PENDING' | 'APPROVED' | 'DECLINED'; decidedBy?: string | null;
+    decidedAt?: string | null; decisionNote?: string | null;
+  };
+  youCanDecide: boolean;
+  whyNot?: string | null;
 }
 
 export interface QueuePage {
