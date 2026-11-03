@@ -256,7 +256,7 @@ const FLAG_TEXT: Record<string, string> = {
   INCIDENT_NEAR_POLICY_START: 'The loss happened within 30 days of the policy start.',
   INCOMPLETE_PHOTO_SET: 'Not every side of the vehicle (or the damage close-up) was photographed.',
   HIGH_CLAIM_FREQUENCY: 'The policy has a high recent claim frequency.',
-  SEVERITY_ESTIMATE_MISMATCH: 'The damage severity does not match the estimated amount.',
+  SEVERITY_ESTIMATE_MISMATCH: "The AI's rough dollar figure is far outside the published repair-cost range for this severity. Severity and reserve are unchanged; check the photos.",
   RESERVE_EXCEEDS_COVERAGE_LIMIT: 'The loss after the deductible is above the coverage limit; the reserve is capped.',
   RESERVE_TABLE_ENTRY_MISSING: 'The initial-reserve table has no row for this claim: set the reserve yourself.',
   CLAIMED_EXCEEDS_AI_ESTIMATE: 'The claimant asks for more than the reserve supports. Not approved automatically.',
@@ -357,7 +357,7 @@ function Summary({ claim, docs, onChanged }: { claim: DashboardClaim; docs: Clai
       <Panel title="Key Figures">
         <DetailView columns={2} rows={[
           ['Amount claimed', money(claim.branchA?.reserve.claimedAmount ?? r?.claimedAmount)],
-          ['AI estimate (from photos)', money(claim.branchA?.damageAssessment.estimatedDamage ?? r?.estimatedDamage)],
+          [aiEstimateLabel(claim.branchA?.reserve.breakdown), money(claim.branchA?.damageAssessment.estimatedDamage ?? r?.estimatedDamage)],
           ['Deductible', money(claim.branchA?.reserve.deductible ?? r?.deductible)],
           ['Recommended reserve', money(claim.branchA?.reserve.recommendedReserve ?? r?.reserve)],
           ['Adjuster reserve', r?.adjusterReserve != null ? money(r.adjusterReserve) : null],
@@ -464,7 +464,7 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
             ['Severity', onPremise ? 'Not assessed' : humanize(d.severity)],
             ['Visible damage extent', extent
               ? `${humanize(extent.band)} (about ${Math.round(extent.share * 100)}% of the photo; not a cost)` : null],
-            ['Estimated damage', onPremise
+            [onPremise ? 'Estimated damage' : aiEstimateLabel(claim.branchA?.reserve.breakdown), onPremise
               ? (cost ? `${money(d.estimatedDamage)} (from the repair-cost range below; confirm it)`
                 : `${money(d.estimatedDamage)} (placeholder: set it from the photos)`)
               : <span key="e">{money(d.estimatedDamage)} <span className="muted">(rough: {cost ? 'compare with the range below' : 'no published range for this reading'}. Gemini's figures mostly follow its severity label, not a costing of the damage)</span></span>],
@@ -769,6 +769,14 @@ function AcknowledgementLetterPanel({ claimId }: { claimId: string }) {
   );
 }
 
+/** The AI's dollars are for reference. When its reading held up they may also have moved the table's base, within the band: say so. */
+function aiEstimateLabel(b?: { method?: string; adjustmentAllowed?: boolean } | null): string {
+  if (b?.method && b.method !== 'AVERAGE_TABLE') return 'AI estimate (from photos)';
+  return b?.adjustmentAllowed
+    ? "AI rough estimate, for reference; not used for severity, and for the reserve only within the bounded adjustment"
+    : 'AI rough estimate, for reference; not used for severity or reserve';
+}
+
 /** How the recommended reserve was reached: lower of claimed and AI estimate, less the deductible. */
 function SettlementPanel({ claim }: { claim: DashboardClaim }) {
   const r = claim.record;
@@ -800,7 +808,7 @@ function SettlementPanel({ claim }: { claim: DashboardClaim }) {
           ['Amount claimed', claimed != null ? money(claimed) : 'Not stated'],
           ['Caps applied', b!.capsApplied.length ? b!.capsApplied.join('. ') : 'None'],
           ['Recommended reserve (amount owed)', <strong key="pay">{money(res?.recommendedReserve ?? r?.reserve)}</strong>],
-          ['AI estimate (shown, not relied on)', money(estimate)],
+          [aiEstimateLabel(b), money(estimate)],
           ['Rule', over ? 'Claimed more than the reserve supports: adjuster decides' : 'Within what the reserve supports: claimed amount used'],
         ]} />
       </Panel>

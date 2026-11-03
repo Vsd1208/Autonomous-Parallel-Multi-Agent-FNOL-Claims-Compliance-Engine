@@ -590,13 +590,37 @@ class FNOLOrchestratorTest {
     @Test
     @DisplayName("Reserve table: a vision flag blocks the adjustment, whatever the AI's confidence")
     void process_reserveTableBlockedByFlag() {
-        fixture.vision = p -> new DamageAssessment("FRONT_BUMPER", "SEVERE", new BigDecimal("4000"), new BigDecimal("0.95"), "CLEAR", Map.of());
+        fixture.vision = p -> new DamageAssessment("FRONT_BUMPER", "SEVERE", new BigDecimal("4000"), new BigDecimal("0.95"), "CLEAR",
+                Map.of("FRONT_BUMPER", new BigDecimal("0.50"), "SIDE_PANEL", new BigDecimal("0.45")));
         FNOLResponse response = withReserveTable().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "Scraped a pole."));
-        assertThat(response.gateFlags()).contains(GateConsistencyChecker.SEVERITY_ESTIMATE_MISMATCH);
+        assertThat(response.gateFlags()).contains(GateConsistencyChecker.AMBIGUOUS_DAMAGE_TYPE);
         ReserveResult r = response.branchA().reserve();
         assertThat(r.breakdown().adjustmentAllowed()).isFalse();
-        assertThat(r.breakdown().adjustmentReason()).contains(GateConsistencyChecker.SEVERITY_ESTIMATE_MISMATCH);
+        assertThat(r.breakdown().adjustmentReason()).contains(GateConsistencyChecker.AMBIGUOUS_DAMAGE_TYPE);
         assertThat(r.recommendedReserve()).isEqualByComparingTo("10708");  // 11,708 - 1,000
+    }
+
+    @Test
+    @DisplayName("ADR-016: the dollar figure far outside the range for the label routes to a person, and changes neither reserve nor severity")
+    void process_severityMismatchOnlyRoutes() {
+        fixture.vision = p -> new DamageAssessment("FRONT_BUMPER", "MINOR", new BigDecimal("4200"), new BigDecimal("0.95"), "CLEAR", Map.of());
+        FNOLResponse response = withReserveTable().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "CA"));
+        assertThat(response.gateFlags()).contains(GateConsistencyChecker.SEVERITY_ESTIMATE_MISMATCH);
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(response.explanation().severityGate()).isEqualTo("LOW");     // from the label, not the $4,200
+        ReserveResult r = response.branchA().reserve();
+        assertThat(r.breakdown().adjustmentAllowed()).isTrue();                 // the flag does not touch the reserve
+        assertThat(r.breakdown().baseReserve()).isEqualByComparingTo("1698");
+    }
+
+    @Test
+    @DisplayName("ADR-016: no severity label goes to a person, with a note saying why")
+    void process_missingSeverityLabel() {
+        fixture.vision = p -> new DamageAssessment("FRONT_BUMPER", null, new BigDecimal("4200"), new BigDecimal("0.95"), "CLEAR", Map.of());
+        FNOLResponse response = withReserveTable().process(OrchestratorFixture.payload("POL-AUTO-112233", "Avery Johnson", "CA"));
+        assertThat(response.explanation().severityGate()).isEqualTo("HIGH");
+        assertThat(response.status()).isEqualTo("HUMAN_REVIEW");
+        assertThat(response.notes()).anyMatch(n -> n.contains("no usable severity label"));
     }
 
     @Test

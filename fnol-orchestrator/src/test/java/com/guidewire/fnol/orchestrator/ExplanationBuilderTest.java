@@ -55,13 +55,13 @@ class ExplanationBuilderTest {
     }
 
     @Test
-    @DisplayName("Baseline: all six factors pass at LOW severity → STRAIGHT_THROUGH")
+    @DisplayName("Baseline: all six factors pass at MEDIUM severity → STRAIGHT_THROUGH")
     void allFactorsPassResultsInStraightThrough() {
         ExplanationObject result = build();
 
         assertThat(result.decision()).isEqualTo("STRAIGHT_THROUGH");
         assertThat(result.recommendedAction()).isEqualTo("APPROVE_AND_STP");
-        assertThat(result.severityGate()).isEqualTo("LOW");
+        assertThat(result.severityGate()).isEqualTo("MEDIUM");
         assertThat(result.factors()).hasSize(6).allMatch(f -> "PASS".equals(f.status()));
     }
 
@@ -102,7 +102,7 @@ class ExplanationBuilderTest {
     @DisplayName("Factor 4: reserve above $25,000 flips a MEDIUM claim when the medium ceiling allows it")
     void highReserveFlipsRoute() {
         stp.setMediumSeverityMax(new BigDecimal("30000"));   // lets the reserve ceiling bind
-        damage = DamageAssessment.of("SIDE_PANEL", "SEVERE", new BigDecimal("22000"), new BigDecimal("0.91"));
+        damage = DamageAssessment.of("SIDE_PANEL", "MODERATE", new BigDecimal("22000"), new BigDecimal("0.91"));
         reserve = new ReserveResult(new BigDecimal("22000"), new BigDecimal("1.15"), new BigDecimal("25300"));
 
         ExplanationObject result = build();
@@ -150,12 +150,58 @@ class ExplanationBuilderTest {
     }
 
     @Test
-    @DisplayName("Severity boundaries: 5000 LOW, 5001 MEDIUM, 20000 MEDIUM, 20001 HIGH")
-    void severityBoundaries() {
-        assertThat(builder.calculateClaimSeverity(DamageAssessment.of("X", "M", new BigDecimal("5000"), BigDecimal.ONE))).isEqualTo("LOW");
-        assertThat(builder.calculateClaimSeverity(DamageAssessment.of("X", "M", new BigDecimal("5001"), BigDecimal.ONE))).isEqualTo("MEDIUM");
-        assertThat(builder.calculateClaimSeverity(DamageAssessment.of("X", "M", new BigDecimal("20000"), BigDecimal.ONE))).isEqualTo("MEDIUM");
-        assertThat(builder.calculateClaimSeverity(DamageAssessment.of("X", "M", new BigDecimal("20001"), BigDecimal.ONE))).isEqualTo("HIGH");
+    @DisplayName("Severity comes from the label in each band, whatever the AI's dollars say")
+    void severityFromTheLabel() {
+        for (String dollars : new String[]{"100", "4200", "90000"}) {
+            assertThat(gateFor("MINOR", dollars, null, null).gate()).isEqualTo("LOW");
+            assertThat(gateFor("MODERATE", dollars, null, null).gate()).isEqualTo("MEDIUM");
+            assertThat(gateFor("SEVERE", dollars, null, null).gate()).isEqualTo("HIGH");
+        }
+    }
+
+    @Test
+    @DisplayName("Readings that disagree: the more severe stands and a note says why, in both directions")
+    void disagreementTakesTheMoreSevere() {
+        ExplanationBuilder.SeverityReading up = gateFor("MINOR", "1500", "LARGE", null);
+        assertThat(up.gate()).isEqualTo("HIGH");
+        assertThat(up.notes()).singleElement().asString().contains("more severe").contains("LARGE");
+        ExplanationBuilder.SeverityReading kept = gateFor("SEVERE", "12000", "SMALL", null);
+        assertThat(kept.gate()).isEqualTo("HIGH");
+        assertThat(kept.notes()).hasSize(1);
+        ExplanationBuilder.SeverityReading agreed = gateFor("MODERATE", "4000", "MEDIUM", null);
+        assertThat(agreed.gate()).isEqualTo("MEDIUM");
+        assertThat(agreed.notes()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("No usable label is treated as HIGH, so a person decides")
+    void missingLabelGoesToAPerson() {
+        ExplanationBuilder.SeverityReading missing = gateFor(null, "4000", null, null);
+        assertThat(missing.gate()).isEqualTo("HIGH");
+        assertThat(missing.notes()).singleElement().asString().contains("no usable severity label");
+        assertThat(gateFor("M", "4000", null, null).gate()).isEqualTo("HIGH");
+    }
+
+    @Test
+    @DisplayName("A table-based reserve above the medium threshold is HIGH; with the AI_ESTIMATE method the AI's figure is not read")
+    void tableReserveAboveTheThreshold() {
+        ReserveBreakdown above = new ReserveBreakdown("AVERAGE_TABLE", false, "row", new BigDecimal("25000"), "SYNTHETIC", null, false,
+                "why", null, new BigDecimal("25000"), List.of());
+        assertThat(gateFor("MINOR", "100", null, above).gate()).isEqualTo("HIGH");
+        ReserveBreakdown at = new ReserveBreakdown("AVERAGE_TABLE", false, "row", new BigDecimal("20000"), "SYNTHETIC", null, false,
+                "why", null, new BigDecimal("20000"), List.of());
+        assertThat(gateFor("MINOR", "100", null, at).gate()).isEqualTo("LOW");
+        ReserveBreakdown aiFigure = new ReserveBreakdown("AI_ESTIMATE", false, null, null, null, null, false,
+                "why", null, new BigDecimal("90000"), List.of());
+        assertThat(gateFor("MINOR", "90000", null, aiFigure).gate()).isEqualTo("LOW");
+    }
+
+    private ExplanationBuilder.SeverityReading gateFor(String label, String dollars, String band, ReserveBreakdown steps) {
+        DamageAssessment d = DamageAssessment.of("FRONT_BUMPER", label, new BigDecimal(dollars), new BigDecimal("0.9"));
+        SecondOpinion second = band == null ? null : new SecondOpinion("m", Map.of(), Map.of(), new DamageExtent(band, new BigDecimal("0.2")), null);
+        ReserveResult r = steps == null ? null : new ReserveResult(new BigDecimal(dollars), BigDecimal.ONE, BigDecimal.ONE, null, null, null, null,
+                null, null, steps);
+        return builder.readSeverity(d, second, r);
     }
 
     @Test

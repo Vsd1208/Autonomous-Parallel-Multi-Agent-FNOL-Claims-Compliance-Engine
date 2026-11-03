@@ -61,12 +61,18 @@ class GateConsistencyCheckerTest {
     }
 
     @Test
-    @DisplayName("SEVERITY_ESTIMATE_MISMATCH when the severity label disagrees with the estimate band")
+    @DisplayName("SEVERITY_ESTIMATE_MISMATCH when the dollars are far outside the published range for the label, and only then")
     void severityMismatch() {
+        // Front bumper, small band $50-$1,000: more than 2x above it.
         assertThat(checker.check(policy("AUTO"), branchA("FRONT_BUMPER", "MINOR", "4200", "0.91", "CLEAR", "50000")))
                 .containsExactly(SEVERITY_ESTIMATE_MISMATCH);
+        // Front bumper, medium band $1,000-$4,818: more than 2x above it.
         assertThat(checker.check(policy("AUTO"), branchA("FRONT_BUMPER", "MODERATE", "12000", "0.91", "CLEAR", "50000")))
                 .containsExactly(SEVERITY_ESTIMATE_MISMATCH);
+        // Inside the range for the label, where the old fixed dollar bands would have flagged it.
+        assertThat(checker.check(policy("AUTO"), branchA("FRONT_BUMPER", "SEVERE", "6000", "0.91", "CLEAR", "50000"))).isEmpty();
+        // No published range for this area: nothing to compare with.
+        assertThat(checker.check(policy("AUTO"), branchA("MULTIPLE", "MINOR", "9000", "0.91", "CLEAR", "50000"))).isEmpty();
     }
 
     @Test

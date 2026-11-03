@@ -5,16 +5,18 @@ Honest answers to the hard questions a reviewer or a ClaimCenter engineer is lik
 
 ## The four we expect first
 
-### Why should the reserve trust a dollar estimate you measured as 2.7x off?
+### Why should the reserve trust a dollar estimate with no validation behind it?
 
 It no longer does. Since ADR-015 the reserve starts from a table by line, coverage and severity, and the AI's figure can move it only within a
 bound, and not at all when a vision check doubts the reading or the figure is far outside the published range.
 
-The part you should push on: **this did not make the number closer.** Replaying 41 answers, the median against the published range midpoint went from
-2.69x to 3.57x, with 17 and 20 of 41 inside the range ([metrics §8](metrics.md#8-repair-cost-estimates)). Gemini's stock figures sit near the table's, so
-both are close to lookups by severity. What changed is that each figure has a source or a "synthetic" label, an insurer can replace it with its own
-averages, and the AI's influence is limited and explained. Severity still comes from the AI, the severity gate and fraud score still read its dollar figure, and
-true repair costs are unmeasured. Real invoices would settle it; the app stores them with each decision, and has none yet.
+The table is **the slot for the insurer's own average reserves**. Today it holds cited public figures and labelled synthetic values, and an insurer replaces them without touching a model. We do not claim it is more accurate: no true repair costs exist here, and comparing two estimates with each other measures neither. Each decision stores the real cost and its evidence, so real invoices could settle this; there are none yet. The AI's influence is limited and explained on the claim. What remains weak is the severity label the table is read by, whose accuracy is not measured.
+
+### Why is severity no longer from the AI's dollars?
+
+Because those dollars have no validation, and they mostly restate the AI's own label. On the 66 recorded answers the dollar gate never reached HIGH, although Gemini labelled 18 of them SEVERE. Severity now comes from the label, and the more severe reading stands when the second opinion's extent differs or no label exists; a table reserve above $20,000 is HIGH ([ADR-016](architecture-decisions.md), [metrics §3](metrics.md#3-vision-checks-replayed-gate-ablation-vehicle)).
+
+This costs people-work: of 32 answers passing the vision checks, 10 are now HIGH. One of them is the wrong answer that used to slip through, but that is in sample, and severity has no ground truth, so we cannot say the new readings are right. Label and extent disagree on 34 of 66 answers, partly because extent depends on how close the photo was taken. An adjuster's view would tell us whether that is too cautious; we don't know yet.
 
 ### Your trust score is fitted and tested on the same 66 photos. Why is that acceptable?
 

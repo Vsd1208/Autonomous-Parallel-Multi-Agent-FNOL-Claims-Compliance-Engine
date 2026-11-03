@@ -16,7 +16,7 @@ public class ClaimTypeValidatorTest {
 
     @BeforeEach
     public void setup() {
-        validator = new ClaimTypeValidator(new StpProperties());
+        validator = new ClaimTypeValidator();
     }
 
     /**
@@ -28,12 +28,12 @@ public class ClaimTypeValidatorTest {
 
         for (String visionType : new String[]{"FRONT_BUMPER", "REAR_BUMPER", "SIDE_PANEL", "WINDSHIELD"}) {
             DamageAssessment damage = DamageAssessment.of(visionType, "MINOR", new BigDecimal("2500"), new BigDecimal("0.91"));
-            assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history), visionType);
+            assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history, "LOW"), visionType);
         }
         assertFalse(validator.isEligibleForAdvisoryPrefill(
-                DamageAssessment.of("ROOF", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")), history));
+                DamageAssessment.of("ROOF", "MINOR", new BigDecimal("2500"), new BigDecimal("0.91")), history, "LOW"));
         assertFalse(validator.isEligibleForAdvisoryPrefill(
-                DamageAssessment.of("UNKNOWN", "MODERATE", new BigDecimal("3500"), new BigDecimal("0.60")), history));
+                DamageAssessment.of("UNKNOWN", "MODERATE", new BigDecimal("3500"), new BigDecimal("0.60")), history, "LOW"));
     }
 
     /**
@@ -49,7 +49,7 @@ public class ClaimTypeValidatorTest {
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history));
+        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history, "LOW"));
     }
 
     /**
@@ -65,7 +65,7 @@ public class ClaimTypeValidatorTest {
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history));
+        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history, "LOW"));
     }
 
     /**
@@ -81,7 +81,7 @@ public class ClaimTypeValidatorTest {
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history));
+        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history, "LOW"));
     }
 
     /**
@@ -97,7 +97,7 @@ public class ClaimTypeValidatorTest {
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history));
+        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history, "LOW"));
     }
 
     /**
@@ -113,7 +113,7 @@ public class ClaimTypeValidatorTest {
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        assertFalse(validator.isEligibleForAdvisoryPrefill(damage, history));
+        assertFalse(validator.isEligibleForAdvisoryPrefill(damage, history, "LOW"));
     }
 
     /**
@@ -129,7 +129,7 @@ public class ClaimTypeValidatorTest {
                 0, 0, 0, null, null, null, 0, "LOW"
         );
 
-        assertFalse(validator.isEligibleForAdvisoryPrefill(damage, history));
+        assertFalse(validator.isEligibleForAdvisoryPrefill(damage, history, "MEDIUM"));
     }
 
     /**
@@ -146,7 +146,7 @@ public class ClaimTypeValidatorTest {
                 new BigDecimal("3500"), 0, "HIGH"
         );
 
-        assertFalse(validator.isEligibleForAdvisoryPrefill(damage, history));
+        assertFalse(validator.isEligibleForAdvisoryPrefill(damage, history, "LOW"));
     }
 
     /**
@@ -163,6 +163,6 @@ public class ClaimTypeValidatorTest {
                 new BigDecimal("1800"), 0, "MEDIUM"
         );
 
-        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history));
+        assertTrue(validator.isEligibleForAdvisoryPrefill(damage, history, "LOW"));
     }
 }

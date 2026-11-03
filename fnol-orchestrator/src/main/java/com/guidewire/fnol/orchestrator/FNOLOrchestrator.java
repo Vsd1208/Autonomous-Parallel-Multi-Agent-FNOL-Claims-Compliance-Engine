@@ -507,10 +507,10 @@ public class FNOLOrchestrator {
                 + (range == null ? "" : ", held inside the published repair-cost range,") + " moved the base");
     }
 
-    /** The severity band that goes with an estimate (the bands GateConsistencyChecker checks). */
+    /** The severity label for an on-premise reading, from the published repair cost it was priced at (the AI gave no figure). */
     static String severityFor(java.math.BigDecimal estimate) {
-        return estimate.compareTo(GateConsistencyChecker.MINOR_MAX) < 0 ? "MINOR"
-                : estimate.compareTo(GateConsistencyChecker.MODERATE_MAX) <= 0 ? "MODERATE" : "SEVERE";
+        return estimate.compareTo(new BigDecimal("2000")) < 0 ? "MINOR"
+                : estimate.compareTo(new BigDecimal("10000")) <= 0 ? "MODERATE" : "SEVERE";
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────
@@ -583,8 +583,11 @@ public class FNOLOrchestrator {
                 branchA.reserve(),
                 branchB.pii(),
                 subrogation,
-                policyContext
+                policyContext,
+                branchA.secondOpinion()
         );
+        ExplanationBuilder.SeverityReading severityReading =
+                explanationBuilder.readSeverity(branchA.damageAssessment(), branchA.secondOpinion(), branchA.reserve());
         if ("STRAIGHT_THROUGH".equals(explanation.decision()) && !reviewFlags.isEmpty()) {
             // All six factors passed, but intake review or the consistency checks raised flags:
             // the WHY panel must say so.
@@ -599,7 +602,8 @@ public class FNOLOrchestrator {
 
         boolean eligibleForAdvisoryPrefill = claimTypeValidator.isEligibleForAdvisoryPrefill(
                 branchA.damageAssessment(),
-                policyContext
+                policyContext,
+                explanation.severityGate()
         );
 
         // Gate Step 4: Route — STP only when every factor passes and no review flag was raised
@@ -647,7 +651,7 @@ public class FNOLOrchestrator {
         log.info("[FNOL] Gate decision={} status={} inputFlags={} gateFlags={} — policy={}, claimId={}",
                 explanation.decision(), status, inputFlags, gateFlags, payload.policyNumber(), claimId);
 
-        List<String> notes = new ArrayList<>();
+        List<String> notes = new ArrayList<>(severityReading.notes());
         Map<String, String> flagReasons = new LinkedHashMap<>();   // flag → note text, for ClaimCenter activities
         if (highRiskEscalation) {
             notes.add("⚠ HIGH-RISK POLICY: This claim has been flagged for mandatory human validation " +
@@ -674,7 +678,9 @@ public class FNOLOrchestrator {
         for (String flag : gateFlags) {
             addFlagNote(notes, flagReasons, flag, "CONSISTENCY CHECK " + flag + ": " + switch (flag) {
                 case GateConsistencyChecker.SEVERITY_ESTIMATE_MISMATCH ->
-                        "the damage severity label does not match the estimated amount; verify the estimate.";
+                        "the AI's rough dollar figure of $" + branchA.damageAssessment().estimatedDamage() + " is far outside the published "
+                                + "repair-cost range for a " + branchA.damageAssessment().severity() + " claim; check the severity from the photos. "
+                                + "Neither the reserve nor the severity was changed.";
                 case GateConsistencyChecker.RESERVE_EXCEEDS_COVERAGE_LIMIT ->
                         "the loss after the deductible is above the coverage limit; the reserve is capped at the limit.";
                 case GateConsistencyChecker.CLAIMED_EXCEEDS_AI_ESTIMATE ->

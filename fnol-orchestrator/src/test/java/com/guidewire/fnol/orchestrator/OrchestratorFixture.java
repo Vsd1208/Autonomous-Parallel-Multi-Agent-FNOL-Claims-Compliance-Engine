@@ -50,7 +50,7 @@ final class OrchestratorFixture {
                 new ClaimHistoryEnricher(pc),
                 new IntakeReviewService(),
                 new ExplanationBuilder(stp),
-                new ClaimTypeValidator(stp),
+                new ClaimTypeValidator(),
                 new GateConsistencyChecker(stp),
                 properties,
                 stp);

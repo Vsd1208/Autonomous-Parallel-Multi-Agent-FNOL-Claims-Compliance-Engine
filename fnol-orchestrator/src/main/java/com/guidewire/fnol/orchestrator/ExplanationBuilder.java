@@ -1,11 +1,12 @@
 package com.guidewire.fnol.orchestrator;
 
+import com.guidewire.fnol.agents.OnPremiseVision;
 import com.guidewire.fnol.common.Models.*;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Builds the six-factor WHY panel and the recommended route.
@@ -29,8 +30,20 @@ public class ExplanationBuilder {
             PIIResult pii,
             SubrogationResult subrogation,
             PolicyHistoryContext historyContext) {
+        return build(coverage, damage, reserve, pii, subrogation, historyContext, null);
+    }
 
-        String severityGate = calculateClaimSeverity(damage);
+    public ExplanationObject build(
+            PolicyValidationResult coverage,
+            DamageAssessment damage,
+            ReserveResult reserve,
+            PIIResult pii,
+            SubrogationResult subrogation,
+            PolicyHistoryContext historyContext,
+            SecondOpinion secondOpinion) {
+
+        SeverityReading severity = readSeverity(damage, secondOpinion, reserve);
+        String severityGate = severity.gate();
         List<ExplanationFactor> factors = new ArrayList<>();
 
         // Factor 1: AI Confidence
@@ -90,8 +103,7 @@ public class ExplanationBuilder {
         if ("HIGH".equals(severityGate)) {
             decision = "ADVISORY_RECOMMENDED_ACTION";
             recommendedAction = "ESCALATE_TO_HUMAN_HIGH_RISK_SEVERITY";
-            summary = "Claim severity is HIGH (estimated damage above $" + stp.getMediumSeverityMax().toPlainString()
-                    + "); escalate to human claim handler regardless of factors";
+            summary = "Claim severity is HIGH (" + severity.reason() + "); escalate to human claim handler regardless of factors";
         } else if (allPassed) {
             decision = "STRAIGHT_THROUGH";
             recommendedAction = "APPROVE_AND_STP";
@@ -121,15 +133,50 @@ public class ExplanationBuilder {
                 + b.adjustmentReason() + ": $" + b.supportedAmount() + caps;
     }
 
-    /** LOW up to lowSeverityMax, MEDIUM up to mediumSeverityMax, otherwise HIGH (by estimated damage). */
-    public String calculateClaimSeverity(DamageAssessment damage) {
-        BigDecimal estimatedDamage = damage.estimatedDamage();
-        if (estimatedDamage.compareTo(stp.getLowSeverityMax()) <= 0) {
-            return "LOW";
-        } else if (estimatedDamage.compareTo(stp.getMediumSeverityMax()) <= 0) {
-            return "MEDIUM";
+    private static final Map<String, String> GATE_FOR_LABEL = Map.of("MINOR", "LOW", "MODERATE", "MEDIUM", "SEVERE", "HIGH");
+    private static final Map<String, String> GATE_FOR_EXTENT = Map.of("SMALL", "LOW", "MEDIUM", "MEDIUM", "LARGE", "HIGH");
+    private static final List<String> ORDER = List.of("LOW", "MEDIUM", "HIGH");
+
+    /** The severity gate, why it reached HIGH if it did, and anything the adjuster should be told. */
+    public record SeverityReading(String gate, String reason, List<String> notes) {}
+
+    /**
+     * Severity from the vision label, never from the AI's dollar figure (ADR-016). When the second opinion's visible extent
+     * reads differently, or there is no usable label, the more severe reading stands, so a doubtful claim is never under-routed.
+     * A table-based reserve above fnol.stp.medium-severity-max is HIGH whatever the reading.
+     */
+    public SeverityReading readSeverity(DamageAssessment damage, SecondOpinion secondOpinion, ReserveResult reserve) {
+        List<String> notes = new ArrayList<>();
+        String label = damage.severity();
+        String gate = label == null ? null : GATE_FOR_LABEL.get(label);
+        String reason = "the vision label is " + label;
+        if (gate == null) {
+            gate = "HIGH";
+            reason = "the vision reading has no usable severity label";
+            notes.add("SEVERITY: the vision reading has no usable severity label, so the claim is treated as HIGH; assess it from the photos.");
+        } else if (secondOpinion != null && secondOpinion.extent() != null && !OnPremiseVision.isOnPremise(damage)) {
+            String band = secondOpinion.extent().band();
+            String extentGate = GATE_FOR_EXTENT.get(band);
+            if (extentGate != null && !extentGate.equals(gate)) {
+                String moreSevere = ORDER.indexOf(extentGate) > ORDER.indexOf(gate) ? extentGate : gate;
+                notes.add("SEVERITY: Gemini's label is " + label + " but the second-opinion model sees " + band + " visible damage, "
+                        + "so the more severe reading (" + moreSevere + ") stands. Visible extent also depends on how close the photo was taken.");
+                if (!moreSevere.equals(gate)) {
+                    reason = "the second-opinion model sees " + band + " visible damage, more severe than the label " + label;
+                }
+                gate = moreSevere;
+            }
         }
-        return "HIGH";
+        ReserveBreakdown steps = reserve == null ? null : reserve.breakdown();
+        if (steps != null && "AVERAGE_TABLE".equals(steps.method()) && !steps.tableEntryMissing() && steps.supportedAmount() != null
+                && steps.supportedAmount().compareTo(stp.getMediumSeverityMax()) > 0) {
+            if (!"HIGH".equals(gate)) {
+                reason = "the table-based reserve of $" + steps.supportedAmount() + " is above $" + stp.getMediumSeverityMax().toPlainString();
+                notes.add("SEVERITY: HIGH because " + reason + ".");
+            }
+            gate = "HIGH";
+        }
+        return new SeverityReading(gate, reason, List.copyOf(notes));
     }
 
     private static String status(boolean pass) {
