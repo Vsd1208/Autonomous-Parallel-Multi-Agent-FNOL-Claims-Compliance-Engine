@@ -132,3 +132,19 @@ was deleted or skipped.
 - Review the claim-clock rules with someone qualified in insurance law.
 - Whether to keep the fraud score on by default before it is checked on real claims (it only routes; it can be turned
   off with `FNOL_STP_FRAUD_ANOMALY_ENABLED=false`).
+
+## 6. Selection-final
+
+Five weaknesses reviewers noticed, on branch `selection-final`, 3 Nov 2026. Full results: `mvn -B clean verify` 398 passed, 0 failed, 0 skipped; `run-all.sh` 111 of 111 in lite mode and in full mode.
+
+| Weakness | What changed | Evidence | What remains open |
+|---|---|---|---|
+| The name and the README contradicted each other | Registered name as the heading, "autonomous analysis, human decision", one definition of "autonomous" and "agent" | `README.md`, `docs/agent-architecture.md` | The diagram's word for the STP path differs, as noted in `docs/diagram-traceability.md` |
+| The reserve depended on an unreliable dollar estimate | The reserve starts from a sourced table, with a bounded AI adjustment that is blocked when vision is in doubt (ADR-015) | `initial-reserves.json`, `InitialReserveTest`, [metrics §8](metrics.md#8-repair-cost-estimates) | **Not closer to the published ranges** (median 3.57x against 2.69x). Several values are synthetic. The severity gate and fraud score still read the AI's dollars. True costs unmeasured |
+| No authority limits, segmentation or assignment | Limits by role, held approvals, no self-approval; rule-based segments, least busy person in the group | `ReserveAuthorityTest`, `SegmentationAndAssignmentTest`, `docs/guidewire-integration.md` | Modelled on the concepts, not verified against a tenant. Limits and rules are synthetic. No approval expiry, no manual reassignment, no SIU role |
+| Reviewers could not run it quickly | Lite mode with no vision service or model downloads | `docker-compose.lite.yml`, `LiteModeTest`, 116 s to healthy on one laptop with base images present | First-run time on a clean machine not measured. Mock vision only, so scenarios do not exercise the vision checks |
+| Unclear ownership | A guide to four areas with blank `Owner:` lines, and honest review answers | `docs/MODULE_GUIDE.md`, `docs/REVIEW_QA.md` | **The team must fill in owners and be able to explain each area.** No documentation can show that for them |
+
+Also measured or corrected: the trust score out of sample (AUC 0.79, Brier 0.113, calibration error 0.063) and the headline, which is 11 → 1 in sample and about 11 → 3 out of sample ([metrics §2-3](metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims)); stale fraud figures in two documents.
+
+**Open defect:** the notice date for regulatory deadlines is the day of analysis (`StatutoryDeadlineAgent.java:27`), so a claim analysed late, after an engine outage, starts its clock late.

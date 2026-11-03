@@ -210,9 +210,11 @@ unknown.
 
 | Metric | Value | Date | Command |
 |---|---|---|---|
-| Backend tests | **340 passed**, 0 failed (fnol-agents 95, fnol-orchestrator 87, fnol-api 100, fnol-mock-guidewire 30, fnol-guardrails 13, fnol-enrichment 15; fnol-common has none) | 2 Nov 2026 | `mvn -B test` |
-| Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-orchestrator 93%, fnol-mock-guidewire 93%, fnol-agents 85%, fnol-api 79%, fnol-enrichment 66% | 31 Oct 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
-| Build warnings | 0 | 31 Oct 2026 | `mvn -B verify` |
+| Backend tests | **398 passed**, 0 failed, 0 skipped (fnol-api 133, fnol-agents 114, fnol-orchestrator 92, fnol-mock-guidewire 31, fnol-enrichment 15, fnol-guardrails 13; fnol-common has none) | 3 Nov 2026 | `mvn -B clean verify` |
+| Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-mock-guidewire 94%, fnol-orchestrator 93%, fnol-agents 88%, fnol-api 83%, fnol-enrichment 48% | 3 Nov 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
+| Demo scenarios | **111 checks passed, 0 failed**, in lite mode and in full mode, both with mock vision | 3 Nov 2026 | `bash demo-scenarios/run-all.sh` |
+| Lite mode: build to healthy | 116 s (78 s `build --no-cache`, 38 s to start), then 75 s for `run-all.sh`; base images already present, about 5 MB/s connection, one laptop | 3 Nov 2026 | [README](../README.md#quick-review-lite-mode) |
+| Frontend and portal builds; Python compile | Pass | 3 Nov 2026 | `npm ci && npm run build`, `npm run build:portal`, `python -m compileall` |
 
 Update these rows whenever the test suite changes.
 
@@ -288,6 +290,13 @@ the AI's influence is bounded and explained. Two caveats on the measure itself: 
 visible-extent band that also depends on how close the photo was taken (a large part of the distance is a "severe" label
 against a "small" band), and nothing here measures the true cost. Tuning the table to this measure would be circular, since
 both come from the same sources, so it was not done.
+
+**The demo scenarios through both methods** (3 Nov 2026, lite stack,
+[`tools/cost-eval/compare_reserve_demo.py`](../tools/cost-eval/compare_reserve_demo.py),
+[results](../tools/cost-eval/results/reserve-methods-demo.md)): of 10 scenarios, the reserve differs on 1 and routing on none. The
+one is the home flood: $35,500 from the AI's figure, $32,500 from the table. Most scenarios claim less than the estimate, and the
+claimed amount sets the reserve under both methods. Mock vision's figures are written by this project, so this shows what
+changes, not which is more accurate.
 
 **Learning from real costs.** Each decision now stores the repair cost next to the AI's estimate (`V18`), with what it
 rests on: invoice, body-shop estimate or inspection (evidence, learned from) or the adjuster's judgement (recorded, never

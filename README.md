@@ -76,11 +76,33 @@ All from small public datasets, not real claims. Every number, with its run, dat
 | Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated (median 2.7x the published range midpoint, see [metrics §8](docs/metrics.md#8-repair-cost-estimates)) | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
 | Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
 | Our own on-premise vision model: damaged area right, strict / lenient | **78% / 87%** out-of-fold on 734 car photos, each reviewed (CLIP alone 65% / 81%); property cause of loss **93%** and property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests, build warnings | 340 passing, 0 warnings | [metrics §6](docs/metrics.md#6-engineering) |
+| Backend tests; demo scenario checks | 398 passing; 111 passing in lite and in full mode | [metrics §6](docs/metrics.md#6-engineering) |
 
-### Quick start (no API key needed)
+### Quick review (lite mode)
 
-Needs Docker and bash. The first build downloads PyTorch and the second-opinion model's two image encoders (CLIP and DINOv2 weights, about 0.9 GB); the built `vision-ml` image is 5.4 GB.
+The fastest way to run it: no API key, no model downloads and no `vision-ml` service. Needs Docker and bash.
+
+```bash
+git clone https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine.git && cd Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine
+docker compose --env-file .env.lite -f docker-compose.yml -f docker-compose.lite.yml up -d --build
+bash demo-scenarios/run-all.sh
+```
+
+**Measured on 3 Nov 2026, one laptop:** 116 s from build to healthy (78 s for `build --no-cache`, 38 s to start), then 75 s for `run-all.sh`, with **111 checks passed, 0 failed**. The base images were already on this machine and the connection was about 5 MB/s, so a first run also has to pull those images (Maven alone is 775 MB). On a very slow connection it takes far longer: at under 76 KB/s the same build had not finished after 39 minutes.
+
+**What is off in lite mode:**
+
+- Vision is mock: canned answers, no real photo analysis. To keep it that way, the engine refuses to start in lite mode with Gemini enabled, because photo blurring lives in `vision-ml`. No photo can reach an external model unblurred.
+- The second opinion is reported as "not available in lite mode", in `GET /api/v1/health` and in the claim's notes. So `MODEL_DISAGREEMENT` never fires, and the fraud score has no disagreement input.
+- There is no on-premise vision reading or visible damage extent.
+
+**No scenario expectation changed for lite mode:** the scenarios use mock vision in both modes, so all of them give the same results. They therefore do not exercise the vision checks; the figures for those come from the [evaluation](docs/metrics.md), not from these runs.
+
+Sign-in and addresses are the same as in the quick start below.
+
+### Quick start, full mode (no API key needed)
+
+Adds the `vision-ml` service: the second-opinion model and photo blurring. Needs Docker and bash. The first build downloads PyTorch and the second-opinion model's two image encoders (CLIP and DINOv2 weights, about 0.9 GB); the built `vision-ml` image is 5.4 GB.
 
 ```bash
 git clone https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine.git && cd Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine
@@ -186,7 +208,7 @@ fnol-enrichment/      PolicyCenter/ClaimCenter clients, ClaimHistoryEnricher
 fnol-agents/          Agents, vision providers, EvidenceImageLoader, rule providers
 fnol-guardrails/      Input, output, PII and coverage guardrails
 fnol-orchestrator/    FNOLOrchestrator, IntakeReviewService, ExplanationBuilder, STP settings
-fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V18, PDF
+fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V22, PDF
 fnol-vision-ml/       On-premise vision service (Python): second opinion, property heads, face and plate blurring
 frontend/             React + Vite adjuster workspace (src/) and policyholder portal (portal/)
 tools/                vision-eval (Gemini evaluation, trust score, photo collection and review), second-opinion

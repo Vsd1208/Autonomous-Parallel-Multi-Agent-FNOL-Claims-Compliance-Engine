@@ -1,0 +1,94 @@
+{
+ "10_fraud_anomaly": {
+  "http": 200,
+  "status": "HUMAN_REVIEW",
+  "estimate": 4200,
+  "claimed": 4600,
+  "reserve": 3200,
+  "flags": [
+   "FRAUD_ANOMALY"
+  ]
+ },
+ "1_clean_stp": {
+  "http": 200,
+  "status": "PENDING_ADVISORY_REVIEW",
+  "estimate": 4200,
+  "claimed": 3000,
+  "reserve": 2000,
+  "flags": []
+ },
+ "2_low_confidence": {
+  "http": 200,
+  "status": "HUMAN_REVIEW",
+  "estimate": 4200,
+  "claimed": 3500,
+  "reserve": 2500,
+  "flags": [
+   "AMBIGUOUS_DAMAGE_TYPE",
+   "CONFIDENCE_PHOTO_QUALITY_MISMATCH"
+  ]
+ },
+ "3_compliance_block": {
+  "http": 422,
+  "status": 422,
+  "estimate": null,
+  "claimed": null,
+  "reserve": null,
+  "flags": []
+ },
+ "4_api_timeout": {
+  "http": 504,
+  "status": 504,
+  "estimate": null,
+  "claimed": null,
+  "reserve": null,
+  "flags": []
+ },
+ "5_duplicate": {
+  "http": 200,
+  "status": "PENDING_ADVISORY_REVIEW",
+  "estimate": 4200,
+  "claimed": 3000,
+  "reserve": 2000,
+  "flags": []
+ },
+ "6_high_claim_frequency": {
+  "http": 200,
+  "status": "HUMAN_REVIEW",
+  "estimate": 4200,
+  "claimed": 2500,
+  "reserve": 1500,
+  "flags": [
+   "HIGH_CLAIM_FREQUENCY"
+  ]
+ },
+ "7_home_policy": {
+  "http": 200,
+  "status": "PENDING_ADVISORY_REVIEW",
+  "estimate": 4200,
+  "claimed": 3000,
+  "reserve": 500,
+  "flags": []
+ },
+ "8_claim_above_estimate": {
+  "http": 200,
+  "status": "HUMAN_REVIEW",
+  "estimate": 4200,
+  "claimed": 9000,
+  "reserve": 3200,
+  "flags": [
+   "CLAIMED_EXCEEDS_AI_ESTIMATE",
+   "FRAUD_ANOMALY"
+  ]
+ },
+ "9_home_flood": {
+  "http": 200,
+  "status": "HUMAN_REVIEW",
+  "estimate": 38000,
+  "claimed": 38000,
+  "reserve": 32500,
+  "flags": [
+   "POSSIBLE_FLOOD_EXCLUSION"
+  ]
+ }
+}
