@@ -177,6 +177,11 @@ public class FNOLOrchestrator {
      * @param existingClaimId the claims system's claim number, or null to create the claim (direct intake)
      */
     public FNOLResponse process(FNOLPayload payload, String existingClaimId) {
+        return process(payload, existingClaimId, LocalDate.now());
+    }
+
+    /** @param noticeDate the day the claim was received, which the regulatory clocks run from; it may be before today */
+    public FNOLResponse process(FNOLPayload payload, String existingClaimId, LocalDate noticeDate) {
 
         // ── Stage 1: Input validation ──────────────────────────────────────────────────
         input.validate(payload);
@@ -226,7 +231,7 @@ public class FNOLOrchestrator {
         }
         try {
             futureB = executor.submit(() -> timed(legalMs,
-                    () -> runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete)));
+                    () -> runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete, noticeDate)));
         } catch (RejectedExecutionException e) {
             futureA.cancel(true);
             throw capacityExceeded(payload, e);
@@ -514,7 +519,7 @@ public class FNOLOrchestrator {
     //  fully independent of Branch A. The subrogation score is finalised at the gate,
     //  once Branch A's damage severity is known.
     // ─────────────────────────────────────────────────────────────────────────────────
-    private BranchBResult runLegalAI(FNOLPayload payload, String lineOfBusiness, boolean proofOfLossComplete) {
+    private BranchBResult runLegalAI(FNOLPayload payload, String lineOfBusiness, boolean proofOfLossComplete, LocalDate noticeDate) {
         log.debug("[Branch B — Legal AI] Starting — policy={}", payload.policyNumber());
 
         // Step B1: PII redaction — SSN, DOB, MRN, name, phone, email masking before any persistence
@@ -523,7 +528,7 @@ public class FNOLOrchestrator {
         log.debug("[Branch B] PII redaction complete — detected={}", piiResult.piiDetected());
 
         // Step B2: State regulatory deadlines from the cited rule set (claim-regulations.json)
-        DeadlineResult deadlineResult = deadline.execute(payload, lineOfBusiness, proofOfLossComplete);
+        DeadlineResult deadlineResult = deadline.execute(payload, lineOfBusiness, proofOfLossComplete, noticeDate);
         log.debug("[Branch B] Deadlines — state={}, acknowledgeBy={}, urgency={}",
                 deadlineResult.state(), deadlineResult.acknowledgeBy(), deadlineResult.urgencyFlag());
 

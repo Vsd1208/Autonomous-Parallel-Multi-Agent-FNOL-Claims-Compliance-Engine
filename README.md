@@ -76,7 +76,7 @@ All from small public datasets, not real claims. Every number, with its run, dat
 | Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated (median 2.7x the published range midpoint, see [metrics §8](docs/metrics.md#8-repair-cost-estimates)) | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
 | Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
 | Our own on-premise vision model: damaged area right, strict / lenient | **78% / 87%** out-of-fold on 734 car photos, each reviewed (CLIP alone 65% / 81%); property cause of loss **93%** and property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests; demo scenario checks | 398 passing; 111 passing in lite and in full mode | [metrics §6](docs/metrics.md#6-engineering) |
+| Backend tests; demo scenario checks | 400 passing; 111 passing in lite and in full mode | [metrics §6](docs/metrics.md#6-engineering) |
 
 ### Quick review (lite mode)
 

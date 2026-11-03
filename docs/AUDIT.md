@@ -135,7 +135,7 @@ was deleted or skipped.
 
 ## 6. Selection-final
 
-Five weaknesses reviewers noticed, on branch `selection-final`, 3 Nov 2026. Full results: `mvn -B clean verify` 398 passed, 0 failed, 0 skipped; `run-all.sh` 111 of 111 in lite mode and in full mode.
+Five weaknesses reviewers noticed, on branch `selection-final`, 3 Nov 2026. Full results: `mvn -B clean verify` 400 passed, 0 failed, 0 skipped; `run-all.sh` 111 of 111 in lite mode and in full mode.
 
 | Weakness | What changed | Evidence | What remains open |
 |---|---|---|---|
@@ -147,4 +147,4 @@ Five weaknesses reviewers noticed, on branch `selection-final`, 3 Nov 2026. Full
 
 Also measured or corrected: the trust score out of sample (AUC 0.79, Brier 0.113, calibration error 0.063) and the headline, which is 11 → 1 in sample and about 11 → 3 out of sample ([metrics §2-3](metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims)); stale fraud figures in two documents.
 
-**Open defect:** the notice date for regulatory deadlines is the day of analysis (`StatutoryDeadlineAgent.java:27`), so a claim analysed late, after an engine outage, starts its clock late.
+**Defect found and fixed during this work:** a claim analysed late, after an engine outage, started its regulatory clock on the day of analysis. It now runs from the time on the `claim.submitted` event (`ClaimEventController`, `ClaimEventExtensionTest.lateAnalysisKeepsTheNoticeDate`). Whether that time is the legal date of notice on a real tenant is not verified.

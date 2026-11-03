@@ -23,6 +23,22 @@ class CitedRegulationsTest {
             Clock.fixed(NOTICE.atStartOfDay().toInstant(ZoneOffset.UTC), ZoneOffset.UTC));
 
     @Test
+    @DisplayName("Received earlier than analysed: both clocks run from the day it was received, and a missing proof of loss still holds the decision clock")
+    void noticeDateBeforeAnalysis() {
+        StatutoryDeadlineAgent agent = new StatutoryDeadlineAgent(rules);
+        FNOLPayload claim = new FNOLPayload("POL-AUTO-112233", LOSS, "CA", "loss", null, null, null, List.of(), "WEB");
+        LocalDate received = NOTICE.minusDays(10);
+
+        DeadlineResult complete = agent.execute(claim, "AUTO", true, received);
+        assertThat(complete.acknowledgeBy()).isEqualTo(received.plusDays(15));
+        assertThat(complete.decisionBy()).isEqualTo(received.plusDays(40));
+
+        DeadlineResult incomplete = agent.execute(claim, "AUTO", false, received);
+        assertThat(incomplete.acknowledgeBy()).isEqualTo(received.plusDays(15));
+        assertThat(incomplete.decisionBy()).isNull();
+    }
+
+    @Test
     @DisplayName("California: acknowledge 15 calendar days from notice, decide 40 days from proof of loss, cited")
     void california() {
         DeadlineResult d = rules.deadline("CA", LOSS, "AUTO", NOTICE, NOTICE);

@@ -3,7 +3,7 @@
 For the people who will own and explain each part of this project. Each section says what the part does and why, where the
 code is, how data moves through it, how it fails safely, and three questions you are likely to be asked, with honest answers.
 
-Line references were checked on 2 Nov 2026 on branch `selection-final`; if a line has moved, search for the name. Every
+Line references were checked on 3 Nov 2026 on branch `selection-final`; if a line has moved, search for the name. Every
 number comes from [metrics.md](metrics.md), which is the source of truth. Fill in the `Owner:` lines yourselves.
 
 ---
@@ -23,9 +23,9 @@ every factor to pass and no flag raised to be eligible for straight-through, and
 
 | What | Where |
 |---|---|
-| Fan-out and the single overall deadline | [FNOLOrchestrator.java:219-233](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L219-L233) |
-| The gate | [FNOLOrchestrator.java:542](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L542) |
-| The routing decision | [FNOLOrchestrator.java:600-606](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L600-L606) |
+| Fan-out and the single overall deadline | [FNOLOrchestrator.java:224-238](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L224-L238) |
+| The gate | [FNOLOrchestrator.java:547](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L547) |
+| The routing decision | [FNOLOrchestrator.java:605-611](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L605-L611) |
 | Consistency flags | [GateConsistencyChecker.java:95](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/GateConsistencyChecker.java#L95) |
 | Intake flags | [IntakeReviewService.java:50](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/IntakeReviewService.java#L50) |
 | The six factors and the severity gate | [ExplanationBuilder.java:39-90](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/ExplanationBuilder.java#L39-L90) |
@@ -83,11 +83,11 @@ than code so that each one can carry its citation, and so that a state with no v
 
 | What | Where |
 |---|---|
-| The branch | [FNOLOrchestrator.java:517-535](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L517-L535) |
+| The branch | [FNOLOrchestrator.java:522-540](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L522-L540) |
 | PII masking and its hard stop | [PiiRedactionAgent.java](../fnol-agents/src/main/java/com/guidewire/fnol/agents/PiiRedactionAgent.java), [PIIGuardrail.java:18](../fnol-guardrails/src/main/java/com/guidewire/fnol/guardrails/PIIGuardrail.java#L18) |
 | Rules: CA, FL, IL, NY, TX | [claim-regulations.json](../fnol-agents/src/main/resources/claim-regulations.json) |
 | Date calculation | [CitedDeadlineRuleProvider.java:66-116](../fnol-agents/src/main/java/com/guidewire/fnol/agents/CitedDeadlineRuleProvider.java#L66-L116) |
-| Where the clock starts | [StatutoryDeadlineAgent.java:26-30](../fnol-agents/src/main/java/com/guidewire/fnol/agents/StatutoryDeadlineAgent.java#L26-L30) |
+| Where the clock starts | [StatutoryDeadlineAgent.java:26-38](../fnol-agents/src/main/java/com/guidewire/fnol/agents/StatutoryDeadlineAgent.java#L26-L38) |
 | Restart when photos arrive | [UploadRequestController.java:248-252](../fnol-api/src/main/java/com/guidewire/fnol/api/UploadRequestController.java#L248-L252) |
 | Subrogation | [DeterministicSubrogationScorer.java](../fnol-agents/src/main/java/com/guidewire/fnol/agents/DeterministicSubrogationScorer.java) |
 | Letter | [AcknowledgementLetter.java](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/AcknowledgementLetter.java) |
@@ -108,7 +108,7 @@ arrive. Acknowledgement always runs from notice.
 
 - If raw PII would remain, the guardrail throws and the claim is saved as a blocked intake, with the PII not stored.
 - Audit records hash the sanitized intake only
-  ([FNOLOrchestrator.java:728-730](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L728-L730)).
+  ([FNOLOrchestrator.java:733-735](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L733-L735)).
 - A state with no rule gets no dates and a note to set them manually
   ([CitedDeadlineRuleProvider.java:70-75](../fnol-agents/src/main/java/com/guidewire/fnol/agents/CitedDeadlineRuleProvider.java#L70-L75)).
   A rule with no fixed period, such as Illinois, says so.
@@ -120,8 +120,9 @@ arrive. Acknowledgement always runs from notice.
    confirm each one. See [legal-compliance.md](legal-compliance.md).
 2. **"Do the dates handle holidays and late analysis?"** Not fully. Business days skip weekends but not public holidays
    ([CitedDeadlineRuleProvider.java:122](../fnol-agents/src/main/java/com/guidewire/fnol/agents/CitedDeadlineRuleProvider.java#L122)).
-   And notice is taken as the day of analysis: a claim filed while the engine was down and analysed later starts its clock late,
-   which is an open defect ([StatutoryDeadlineAgent.java:27](../fnol-agents/src/main/java/com/guidewire/fnol/agents/StatutoryDeadlineAgent.java#L27)).
+   Late analysis is handled: for a claim that comes through the claims system, notice is the time on its `claim.submitted` event, so an
+   engine outage does not delay the clock (`ClaimEventController`, tested in `ClaimEventExtensionTest`). On a real tenant, whether that event's time is
+   the legal date of notice is not verified: a loss reported by phone or letter may have been received earlier.
 3. **"Would this work outside the US?"** Not as it stands. The seam is `DeadlineRuleProvider`, and adding another jurisdiction means reading
    its official text and adding cited rules. No Indian rule is loaded.
 
@@ -202,7 +203,7 @@ into one calibrated confidence. No figure here comes from real claims, and none 
 | Gemini call | [GeminiVisionProvider.java](../fnol-agents/src/main/java/com/guidewire/fnol/agents/GeminiVisionProvider.java) |
 | Second opinion: client and service | [SecondOpinionAgent.java](../fnol-agents/src/main/java/com/guidewire/fnol/agents/SecondOpinionAgent.java), [fnol-vision-ml/app.py](../fnol-vision-ml/app.py) |
 | Trust score in the app | [TrustScorer.java:49-53](../fnol-agents/src/main/java/com/guidewire/fnol/agents/TrustScorer.java#L49-L53), [trust-score.json](../fnol-agents/src/main/resources/trust-score.json) |
-| Waits, then scoring | [FNOLOrchestrator.java:440-456](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L440-L456) |
+| Waits, then scoring | [FNOLOrchestrator.java:445-461](../fnol-orchestrator/src/main/java/com/guidewire/fnol/orchestrator/FNOLOrchestrator.java#L445-L461) |
 | Blurring before any external call | [PhotoRedactor.java](../fnol-agents/src/main/java/com/guidewire/fnol/agents/PhotoRedactor.java) |
 | Evaluation | [tools/vision-eval/](../tools/vision-eval/): `evaluate.py`, `calibrate.py`, `gate_ablation.py`, `trust_score.py`, `trust_score_strict.py` |
 | Model training | [tools/second-opinion/](../tools/second-opinion/): `benchmark_encoders.py`, `build_model.py`, `compare_gemini.py` |

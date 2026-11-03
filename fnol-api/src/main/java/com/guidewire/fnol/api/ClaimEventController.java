@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
@@ -127,10 +128,12 @@ class ClaimEventController {
         if (claims.existsById(claimId) || !inFlight.add(claimId)) {
             return ResponseEntity.accepted().body(Map.of("status", "duplicate", "claimId", claimId));
         }
+        // When the claims system received the claim: the regulatory clocks run from then, however late this runs.
+        LocalDate noticeDate = event.time() == null ? LocalDate.now() : LocalDate.ofInstant(event.time(), ZoneId.systemDefault());
         try {
             executor.execute(() -> {
                 try {
-                    analyse(claimId);
+                    analyse(claimId, noticeDate);
                 } finally {
                     inFlight.remove(claimId);
                 }
@@ -215,7 +218,7 @@ class ClaimEventController {
     }
 
     /** Reads the FNOL from the claims system, analyses it and writes the results back onto that claim. */
-    void analyse(String claimId) {
+    void analyse(String claimId, LocalDate noticeDate) {
         FNOLPayload fnol;
         try {
             fnol = claimCenter.getFnol(claimId);
@@ -238,7 +241,7 @@ class ClaimEventController {
         }
         FNOLResponse response;
         try {
-            response = orchestrator.process(fnol, claimId);
+            response = orchestrator.process(fnol, claimId, noticeDate);
         } catch (RuntimeException e) {
             idempotency.release(policy, date.toString(), fnol.state());
             String[] outcome = classify(e);

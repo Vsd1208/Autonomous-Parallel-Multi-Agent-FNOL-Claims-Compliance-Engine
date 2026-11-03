@@ -63,7 +63,7 @@ Public material presents App Events and Integration Gateway as the way to move t
 
 ### What happens if your engine goes down?
 
-Claims are still filed, listed under Awaiting AI Analysis, and analysed when it returns; a one-off check did so 14 s after restart. Tested in `ClaimEventFlowTest` and `ClaimEventExtensionTest`. One known defect: the deadline's notice date is the day of analysis, so a long outage would start the legal clock late.
+Claims are still filed, listed under Awaiting AI Analysis, and analysed when it returns; a one-off check did so 14 s after restart. Tested in `ClaimEventFlowTest` and `ClaimEventExtensionTest`. The regulatory clock runs from the time on the claim's `claim.submitted` event, so an outage does not delay it, though the engine's work is then that much closer to the deadline. Whether that event's time is the legal date of notice on a real tenant, we don't know yet; an insurance-law specialist and an implementer would need to confirm it.
 
 ### What if ClaimCenter goes down mid-decision?
 
