@@ -161,6 +161,9 @@ public class FNOLController {
     }
     static final Set<String> ADJUSTER_DECISIONS = CLAIMCENTER_STATUS.keySet();
 
+    @org.springframework.beans.factory.annotation.Value("${fnol.claim-clock.india.enabled:false}")
+    private boolean indiaClock;
+
     // ── Health ──────────────────────────────────────────────────────────────
     @GetMapping("/health")
     Map<String, String> health() {
@@ -169,6 +172,9 @@ public class FNOLController {
                 : ClaimsSystemIntake.DIRECT, "secondOpinion", liteMode == null ? "CONFIGURED" : liteMode.secondOpinion()));
         if (liteMode != null && liteMode.vision() != null) {
             health.put("vision", liteMode.vision());
+        }
+        if (indiaClock) {
+            health.put("indiaClock", "ON");
         }
         return health;
     }

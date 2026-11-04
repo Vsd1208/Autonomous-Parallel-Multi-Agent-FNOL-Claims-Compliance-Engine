@@ -67,7 +67,7 @@ People sign in; integrations and scripts send the service credential `X-Adjuster
   `requestedBy` or `inspectorId` in a request. An ended session answers `401`.
 
 ## `GET /api/v1/health`
-`200 {"status":"UP","intake":"CLAIMS_SYSTEM","secondOpinion":"CONFIGURED"}`. `secondOpinion` is `REPLAYING_RECORDED_ANSWERS` when recorded answers are replayed, with a `vision` field saying so, or `NOT_AVAILABLE_IN_LITE_MODE` in lite mode without replay. `intake` is `CLAIMS_SYSTEM` (losses are filed there and analysed from
+`200 {"status":"UP","intake":"CLAIMS_SYSTEM","secondOpinion":"CONFIGURED"}`. `indiaClock` is `ON` only with India's claim clock switched on. `secondOpinion` is `REPLAYING_RECORDED_ANSWERS` when recorded answers are replayed, with a `vision` field saying so, or `NOT_AVAILABLE_IN_LITE_MODE` in lite mode without replay. `intake` is `CLAIMS_SYSTEM` (losses are filed there and analysed from
 its event) or `DIRECT` (no event secret set).
 
 ## `POST /api/v1/fnol/report` (token)

@@ -60,7 +60,7 @@ Sources consulted: [Cal. Code Regs. tit. 10 § 2695.5](https://www.law.cornell.e
 - **Currency is not handled.** A policy in rupees has no reserve table row and no repair-cost range, and none is invented, so a person sets the reserve. Authority limits and the screens' dollar signs are not converted either.
 - A search for later amendments found none changing these periods, but it was not exhaustive, and the circular's cover page says "2025" in its English title. Whether anything newer applies is **not verified**.
 
-The demo policy `POL-AUTO-778899` is synthetic.
+The demo policy `POL-AUTO-778899` is synthetic. With the switch on, intake also accepts the demo state `MH`, and only that one, not the full list of Indian states; with it off, intake refuses `MH` as before.
 
 ## 2. Unfair-discrimination testing
 

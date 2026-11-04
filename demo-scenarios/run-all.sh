@@ -271,6 +271,23 @@ run_replay() {
   done
 }
 
+# India's claim clock, only when it is switched on (FNOL_CLAIM_CLOCK_INDIA_ENABLED=true).
+run_india() {
+  echo "### India: claim clock milestones"
+  local file="$DIR/india/scenario_india_policy.json"
+  local d
+  for d in $(seq 1 28); do
+    post "$(payload_with_date "$file" "$(days_ago "$d")")"
+    [[ "$HTTP_CODE" != "409" ]] && break
+  done
+  check india "HTTP status" "$(expected "$file" expectedStatus)" "$HTTP_CODE"
+  check india "claim status" "$(expected "$file" expectedClaimStatus)" "$(json_string "$BODY" status)"
+  has_flag india gateFlags "$(expected "$file" expectedGateFlag)" "$BODY"
+  for want in 'milestones' 'IRDAI/PP&GR/CIR/MISC/117/9/2024' 'CURRENCY: this policy is in INR'; do
+    if grep -qF "$want" <<<"$BODY"; then PASSES=$((PASSES + 1)); else FAILURES=$((FAILURES + 1)); echo "  FAIL [india] missing: $want"; fi
+  done
+}
+
 if ! curl -s --max-time 5 "$API_URL/api/v1/health" | grep -q UP; then
   echo "API at $API_URL is not up. Start it with: docker compose --env-file .env.demo up -d --build"
   exit 2
@@ -293,6 +310,11 @@ fi
 if curl -s --max-time 5 "$API_URL/api/v1/health" | grep -q '"vision":"replaying'; then
   echo
   run_replay
+fi
+
+if curl -s --max-time 5 "$API_URL/api/v1/health" | grep -q '"indiaClock":"ON"'; then
+  echo
+  run_india
 fi
 
 echo
