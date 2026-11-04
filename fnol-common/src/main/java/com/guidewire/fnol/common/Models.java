@@ -77,12 +77,25 @@ public final class Models {
             String riskDescription,
             List<Coverage> coverages,
             String jurisdiction,        // which claim rules apply; null means US
-            String currency             // null means USD
+            String currency,            // null means USD
+            LocalDate cancellationDate, // null when not cancelled
+            List<Endorsement> endorsements
     ) {
         public Policy(String policyNumber, String policyType, String status, LocalDate effectiveDate, LocalDate expirationDate,
                       String insuredName, String state, String riskDescription, List<Coverage> coverages) {
-            this(policyNumber, policyType, status, effectiveDate, expirationDate, insuredName, state, riskDescription, coverages, null, null);
+            this(policyNumber, policyType, status, effectiveDate, expirationDate, insuredName, state, riskDescription, coverages, null, null, null, null);
         }
+
+        public Policy(String policyNumber, String policyType, String status, LocalDate effectiveDate, LocalDate expirationDate,
+                      String insuredName, String state, String riskDescription, List<Coverage> coverages, String jurisdiction, String currency) {
+            this(policyNumber, policyType, status, effectiveDate, expirationDate, insuredName, state, riskDescription, coverages, jurisdiction, currency, null, null);
+        }
+    }
+
+    /** A change to a coverage from a given date. */
+    public record Endorsement(LocalDate effectiveDate, String change, String coverageType, BigDecimal limit, BigDecimal deductible) {
+        public static final String ADD = "ADD";
+        public static final String REMOVE = "REMOVE";
     }
 
     public record ClaimHistory(
@@ -431,8 +444,21 @@ public final class Models {
             String coverageType,
             BigDecimal coverageLimit,
             BigDecimal deductible,
-            List<String> reasoning
-    ) {}
+            List<String> reasoning,
+            String coverageState        // COVERED, NOT_COVERED, NOT_IN_FORCE or UNVERIFIED
+    ) {
+        public static final String COVERED = "COVERED";
+        public static final String NOT_COVERED = "NOT_COVERED";
+        public static final String NOT_IN_FORCE = "NOT_IN_FORCE";
+        /** The data cannot settle it. Goes to a person. */
+        public static final String UNVERIFIED = "UNVERIFIED";
+
+        public PolicyValidationResult(String policyNumber, boolean policyFound, boolean policyActive, boolean relevantCoverageFound, boolean covered,
+                                      String coverageType, BigDecimal coverageLimit, BigDecimal deductible, List<String> reasoning) {
+            this(policyNumber, policyFound, policyActive, relevantCoverageFound, covered, coverageType, coverageLimit, deductible, reasoning,
+                    covered ? COVERED : NOT_COVERED);
+        }
+    }
 
     public record AuditRecord(
             String eventId,

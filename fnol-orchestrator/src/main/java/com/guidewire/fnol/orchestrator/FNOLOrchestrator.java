@@ -450,7 +450,7 @@ public class FNOLOrchestrator {
         log.debug("[Branch A] Vision complete — severity={}, confidence={}", damage.severity(), damage.confidence());
 
         // Step A2: Coverage verification against the line-of-business coverage rule
-        PolicyValidationResult coverage = policy.execute(payload.policyNumber());
+        PolicyValidationResult coverage = policy.execute(payload.policyNumber(), payload.incidentDate());
         validation.requireCovered(coverage);    // hard stop: no uncovered claim proceeds
         log.debug("[Branch A] Coverage verified — type={}, covered={}", coverage.coverageType(), coverage.covered());
 
