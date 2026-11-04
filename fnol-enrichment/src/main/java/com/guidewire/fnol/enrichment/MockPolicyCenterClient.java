@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Objects;
 
 @Component
-@Profile("!guidewire")
+@Profile("!guidewire & !guidewire-cloud-policy")
 public class MockPolicyCenterClient implements PolicyCenterClient {
 
     private final RestTemplate rest;

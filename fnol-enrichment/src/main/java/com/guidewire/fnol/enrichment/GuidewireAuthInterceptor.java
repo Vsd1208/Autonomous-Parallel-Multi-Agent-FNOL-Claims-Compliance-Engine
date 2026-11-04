@@ -31,7 +31,7 @@ public class GuidewireAuthInterceptor implements ClientHttpRequestInterceptor {
     @Override
     public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution)
             throws IOException {
-        if (isActive()) {
+        if (isActive() && !request.getHeaders().containsKey(HttpHeaders.AUTHORIZATION)) {   // never over an OAuth2 token or a token request
             request.getHeaders().set(HttpHeaders.AUTHORIZATION, "Bearer " + token);
         }
         return execution.execute(request, body);
