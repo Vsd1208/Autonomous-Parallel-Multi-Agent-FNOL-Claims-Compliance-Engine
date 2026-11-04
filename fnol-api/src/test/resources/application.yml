@@ -3,6 +3,9 @@ server:
 mock-guidewire:
   base-url: http://localhost:9090
 fnol:
+  inbox:
+    poll-ms: 50
+    max-attempts: 1
   orchestrator:
     timeout-seconds: 10
   security:

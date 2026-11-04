@@ -22,8 +22,10 @@ public class ClaimAccessPolicy {
         CLAIM_WORK,
         /** Recording a decision: a signed-in person only. */
         CLAIM_DECIDE,
-        /** The governance page and processing administration. */
-        GOVERNANCE
+        /** The governance page. */
+        GOVERNANCE,
+        /** Operating the system, such as replaying failed events: a signed-in supervisor only. */
+        ADMINISTER
     }
 
     /** The caller may not see this claim. Answered as 404. */
@@ -59,6 +61,9 @@ public class ClaimAccessPolicy {
     public void requirePermission(Actor actor, Permission permission) {
         if (actor == null) {
             throw new PermissionDeniedException("Authentication is required");
+        }
+        if (permission == Permission.ADMINISTER && !ReserveAuthority.SUPERVISOR.equals(actor.role())) {
+            throw new PermissionDeniedException("This needs a signed-in supervisor");
         }
         if (permission == Permission.CLAIM_DECIDE && actor.type() != ActorType.HUMAN_ACTOR) {
             throw new PermissionDeniedException("A decision needs a signed-in person; a service credential cannot make one");

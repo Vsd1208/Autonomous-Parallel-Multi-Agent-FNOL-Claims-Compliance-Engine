@@ -182,6 +182,11 @@ public class FNOLOrchestrator {
 
     /** @param noticeDate the day the claim was received, which the regulatory clocks run from; it may be before today */
     public FNOLResponse process(FNOLPayload payload, String existingClaimId, LocalDate noticeDate) {
+        return process(payload, existingClaimId, noticeDate, BranchCheckpoint.NONE);
+    }
+
+    /** @param checkpoint keeps each finished branch, so a retry runs only what did not finish */
+    public FNOLResponse process(FNOLPayload payload, String existingClaimId, LocalDate noticeDate, BranchCheckpoint checkpoint) {
 
         // ── Stage 1: Input validation ──────────────────────────────────────────────────
         input.validate(payload);
@@ -223,15 +228,23 @@ public class FNOLOrchestrator {
                 && !inputFlags.contains(IntakeReviewService.INCOMPLETE_PHOTO_SET);
         // One overall deadline for both branches, from submission; Branch A also uses it to cap its waits.
         long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        BranchAResult savedA = checkpoint.savedA();
+        BranchBResult savedB = checkpoint.savedB();
         try {
-            futureA = executor.submit(() -> timed(operationalMs,
-                    () -> runOperationalAI(payload, policyRecord.policyType(), policyRecord.currency(), deadlineNanos)));
+            futureA = savedA != null ? CompletableFuture.completedFuture(savedA) : executor.submit(() -> timed(operationalMs, () -> {
+                BranchAResult done = runOperationalAI(payload, policyRecord.policyType(), policyRecord.currency(), deadlineNanos);
+                checkpoint.saveA(done);
+                return done;
+            }));
         } catch (RejectedExecutionException e) {
             throw capacityExceeded(payload, e);
         }
         try {
-            futureB = executor.submit(() -> timed(legalMs,
-                    () -> runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete, noticeDate, policyRecord.jurisdiction())));
+            futureB = savedB != null ? CompletableFuture.completedFuture(savedB) : executor.submit(() -> timed(legalMs, () -> {
+                BranchBResult done = runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete, noticeDate, policyRecord.jurisdiction());
+                checkpoint.saveB(done);
+                return done;
+            }));
         } catch (RejectedExecutionException e) {
             futureA.cancel(true);
             throw capacityExceeded(payload, e);

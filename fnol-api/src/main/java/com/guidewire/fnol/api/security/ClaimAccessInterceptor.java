@@ -21,7 +21,8 @@ class ClaimAccessInterceptor implements HandlerInterceptor {
 
     private static final Pattern CLAIM_ROUTE = Pattern.compile("^/api/v1/fnol/(?:status/)?([^/]+)(/.*)?$");
     private static final Pattern NOT_A_CLAIM = Pattern.compile("^(queue|intake|report)$");
-    private static final Pattern GOVERNANCE_ROUTE = Pattern.compile("^/api/v1/(ai|admin)/.*$");
+    private static final Pattern GOVERNANCE_ROUTE = Pattern.compile("^/api/v1/ai/.*$");
+    private static final Pattern ADMIN_ROUTE = Pattern.compile("^/api/v1/admin/.*$");
     /** Routes an inspector may reach, on an assigned claim only. */
     private static final Map<String, Pattern> BASIC = Map.of(
             "GET", Pattern.compile("^/(inspection-view|inspections|documents|documents/[^/]+/content)/?$"),
@@ -38,6 +39,10 @@ class ClaimAccessInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String path = request.getRequestURI();
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+        if (ADMIN_ROUTE.matcher(path).matches()) {
+            policy.requirePermission(Actor.caller(), ClaimAccessPolicy.Permission.ADMINISTER);
             return true;
         }
         if (GOVERNANCE_ROUTE.matcher(path).matches()) {

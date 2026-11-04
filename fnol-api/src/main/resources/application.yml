@@ -13,6 +13,15 @@ fnol:
     queue-size: ${FNOL_ORCHESTRATOR_QUEUE_SIZE:32}
   # Quick review with no vision service: mock vision only, and each claim says the second opinion did not run.
   lite-mode: ${FNOL_LITE_MODE:false}
+  # The durable event inbox. Attempts, lease and backoff for a claim event's analysis.
+  inbox:
+    worker-enabled: ${FNOL_INBOX_WORKER_ENABLED:true}
+    poll-ms: ${FNOL_INBOX_POLL_MS:1000}
+    concurrency: ${FNOL_INBOX_CONCURRENCY:4}
+    max-attempts: ${FNOL_INBOX_MAX_ATTEMPTS:5}
+    lease-seconds: ${FNOL_INBOX_LEASE_SECONDS:120}
+    backoff-base-seconds: ${FNOL_INBOX_BACKOFF_BASE_SECONDS:5}
+    backoff-max-seconds: ${FNOL_INBOX_BACKOFF_MAX_SECONDS:600}
   # Drafts the advisory note and acknowledgement letter for a person to review. Off by default; outside the intake path.
   # India's claim clock (claim-regulations-in.json), for a policy whose jurisdiction is IN. Off by default.
   claim-clock:

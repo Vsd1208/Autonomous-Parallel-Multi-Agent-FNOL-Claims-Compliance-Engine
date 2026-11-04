@@ -41,8 +41,8 @@ import java.util.concurrent.*;
  * number, and stores no raw personal data.
  *
  * <p>Events are authenticated by an HMAC-SHA256 signature over the body with a shared secret (no adjuster token),
- * de-duplicated by claim, and processed in the background so the claims system is answered at once (202). Delivery is
- * at-least-once: a repeat of an event already handled is acknowledged and ignored. Nothing is dropped: if the analysis
+ * written to the durable inbox before the 202, and processed by {@code EventInboxWorker}. Delivery is at-least-once: a repeat of an event
+ * already accepted is acknowledged and ignored, and the same id with different content is refused. Nothing is dropped: if the analysis
  * fails, the claim gets an activity for an adjuster and stays in review, and the failure is recorded and audited.
  */
 @RestController
@@ -67,20 +67,15 @@ class ClaimEventController {
     private final ClaimsSystemIntake claimsSystem;
     private final ClaimDecisionRecorder decisions;
     private final ClaimAssignmentService assignment;
+    private final EventInboxService inbox;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
-    private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
-    private final ThreadPoolExecutor executor = new ThreadPoolExecutor(2, 4, 60, TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(50), r -> {
-                Thread t = new Thread(r, "claim-event");
-                t.setDaemon(true);
-                return t;
-            });
 
     ClaimEventController(@Value("${fnol.claims-events.secret:}") String secret, ClaimCenterClient claimCenter,
                          FNOLOrchestrator orchestrator, ClaimRepository claims, AuditService auditService,
                          FailedIntakeRecorder failedIntakes, DuplicateSubmissionRecorder duplicates,
                          EvidenceStore evidence, IdempotencyStore idempotency, ClaimsSystemIntake claimsSystem,
-                         ClaimDecisionRecorder decisions, ClaimAssignmentService assignment) {
+                         ClaimDecisionRecorder decisions, ClaimAssignmentService assignment, EventInboxService inbox) {
+        this.inbox = inbox;
         this.secret = secret == null ? new byte[0] : secret.getBytes(StandardCharsets.UTF_8);
         this.claimCenter = claimCenter;
         this.orchestrator = orchestrator;
@@ -93,11 +88,6 @@ class ClaimEventController {
         this.claimsSystem = claimsSystem;
         this.decisions = decisions;
         this.assignment = assignment;
-    }
-
-    @PreDestroy
-    void shutdown() {
-        executor.shutdown();
     }
 
     @PostMapping("/claimcenter")
@@ -124,28 +114,20 @@ class ClaimEventController {
         if (!CLAIM_SUBMITTED.equals(event.type()) || event.subject() == null) {
             return ResponseEntity.accepted().body(Map.of("status", "ignored", "reason", "not a claim event we handle"));
         }
+        if (event.id() == null || event.id().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "BAD_EVENT", "message", "An event needs an id"));
+        }
         String claimId = event.subject();
-        if (claims.existsById(claimId) || !inFlight.add(claimId)) {
-            return ResponseEntity.accepted().body(Map.of("status", "duplicate", "claimId", claimId));
-        }
-        // When the claims system received the claim: the regulatory clocks run from then, however late this runs.
-        LocalDate noticeDate = event.time() == null ? LocalDate.now() : LocalDate.ofInstant(event.time(), ZoneId.systemDefault());
-        try {
-            executor.execute(() -> {
-                try {
-                    analyse(claimId, noticeDate);
-                } finally {
-                    inFlight.remove(claimId);
-                }
-            });
-        } catch (RejectedExecutionException e) {
-            inFlight.remove(claimId);
-            // The claims system retries with backoff; nothing is lost.
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(Map.of("error", "BUSY", "message", "Too many claims in progress; retry later"));
-        }
-        log.info("[Events] claim.submitted {} accepted for analysis (event {})", claimId, event.id());
-        return ResponseEntity.accepted().body(Map.of("status", "accepted", "claimId", claimId));
+        // The row commits before this returns: a 202 means the event survives a crash, and the worker takes it from here.
+        return switch (inbox.accept(event, body)) {
+            case NEW -> {
+                log.info("[Events] claim.submitted {} durably accepted (event {})", claimId, event.id());
+                yield ResponseEntity.accepted().body(Map.of("status", "accepted", "claimId", claimId));
+            }
+            case DUPLICATE -> ResponseEntity.accepted().body(Map.of("status", "duplicate", "claimId", claimId));
+            case CONFLICT -> ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "EVENT_CONFLICT",
+                    "message", "This event id was already received with different content"));
+        };
     }
 
     /**
@@ -173,7 +155,7 @@ class ClaimEventController {
                 return ResponseEntity.accepted().body(Map.of("status", "duplicate", "claimId", claimId));
             }
             if (record.isEmpty()) {
-                boolean analysing = inFlight.contains(claimId);
+                boolean analysing = inbox.activeFor(claimId);
                 record = analysing ? Optional.empty() : claimsSystem.recordOf(claimId);
                 if (record.isEmpty() || ClaimsSystemIntake.ANALYSIS_PENDING.equals(record.get().status)) {
                     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("error", "NOT_READY",
@@ -217,16 +199,41 @@ class ClaimEventController {
         return value == null ? null : new BigDecimal(value.toString());
     }
 
-    /** Reads the FNOL from the claims system, analyses it and writes the results back onto that claim. */
-    void analyse(String claimId, LocalDate noticeDate) {
+    /** A failure worth trying again. The inbox backs off and retries, then dead-letters. */
+    static class RetryLaterException extends RuntimeException {
+        RetryLaterException(String message) {
+            super(message);
+        }
+    }
+
+    private static boolean transientFailure(RuntimeException e) {
+        return e instanceof ProcessingTimeoutException || e instanceof ResourceAccessException
+                || e instanceof org.springframework.web.client.HttpServerErrorException;
+    }
+
+    /**
+     * Reads the FNOL from the claims system, analyses it and writes the results back onto that claim. Safe to run again: a claim already
+     * analysed is left alone. A transient failure throws {@link RetryLaterException} until the last attempt, when the claim goes to a person.
+     */
+    void analyse(String claimId, LocalDate noticeDate, com.guidewire.fnol.orchestrator.BranchCheckpoint checkpoint, boolean lastAttempt) {
+        // Already analysed, by an attempt that died before saying so. A row that only records a failure may be analysed again.
+        if (claims.findById(claimId).filter(c -> c.failureReason == null).isPresent()) {
+            return;
+        }
         FNOLPayload fnol;
         try {
             fnol = claimCenter.getFnol(claimId);
         } catch (RuntimeException e) {
+            if (transientFailure(e) && !lastAttempt) {
+                throw new RetryLaterException(String.valueOf(e.getMessage()));
+            }
             log.error("[Events] FNOL for {} could not be read from the claims system; the event will not be retried "
                     + "by the engine: {}", claimId, e.getMessage());
             flagForAdjuster(claimId, "HUMAN_REVIEW", "AI analysis could not start: the loss report could not be read. "
                     + "Handle this claim manually.");
+            if (transientFailure(e)) {
+                throw new RetryLaterException(String.valueOf(e.getMessage()));   // attempts used up: dead letter, and a person has it
+            }
             return;
         }
         String policy = fnol.policyNumber();
@@ -241,13 +248,19 @@ class ClaimEventController {
         }
         FNOLResponse response;
         try {
-            response = orchestrator.process(fnol, claimId, noticeDate);
+            response = orchestrator.process(fnol, claimId, noticeDate, checkpoint);
         } catch (RuntimeException e) {
             idempotency.release(policy, date.toString(), fnol.state());
+            if (transientFailure(e) && !lastAttempt) {
+                throw new RetryLaterException(String.valueOf(e.getMessage()));
+            }
             String[] outcome = classify(e);
             failedIntakes.record(claimId, fnol, outcome[0], outcome[1], outcome[2]);
             flagForAdjuster(claimId, outcome[0], "AI analysis could not complete (" + outcome[1] + "): " + outcome[2]
                     + ". Handle this claim manually.");
+            if (transientFailure(e)) {
+                throw new RetryLaterException(String.valueOf(e.getMessage()));   // attempts used up: dead letter, and a person has it
+            }
             return;
         }
         try {
