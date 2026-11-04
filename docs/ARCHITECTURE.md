@@ -3,6 +3,18 @@
 ## Overview
 The **Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine** (autonomous analysis, human decision; the terms are defined in [agent-architecture.md](agent-architecture.md)) is a decision-support platform for P&C First Notice of Loss. It runs operational analysis (damage, coverage, reserve) and legal analysis (PII, deadlines) in parallel, reconciles them through a safety gate that explains its reasoning, pre-files the claim in ClaimCenter, and gives an adjuster a console and a queue for the final decision. Failed intakes are saved and escalated rather than dropped.
 
+## What is real, and what is not
+
+| Status | What |
+|---|---|
+| **Implemented and tested** | Agents, reconciliation gate, abstention, human decision and reserve authority, object-level access, portal protection, event inbox, audit chain, coverage at the date of loss, PII re-scan, versioned rules, metrics and probes. The database-sensitive parts also on PostgreSQL 16.14 |
+| **Implemented, not externally verified** | Cloud clients for ClaimCenter and PolicyCenter, OAuth2: [simulator only](GUIDEWIRE_INTEGRATION.md). Rule contents: [no legal review](REGULATORY_RULES.md) |
+| **Experimental** | Reserve accuracy, fraud score (synthetic data), trust score (66 answers), India's clock, the drafting agent (off by default): [evaluation](AI_MODEL_EVALUATION.md) |
+| **Mocked** | ClaimCenter and PolicyCenter in every demo: `fnol-mock-guidewire` |
+| **Future** | Real App Events, single sign-on, the AI panel inside ClaimCenter, off-site audit anchoring, dashboards: [plan](ROADMAP.md) |
+
+Processing and failure: [DISTRIBUTED_PROCESSING.md](DISTRIBUTED_PROCESSING.md). Access: [SECURITY.md](SECURITY.md). Audit: [AUDIT_INTEGRITY.md](AUDIT_INTEGRITY.md).
+
 ## How a claim flows
 
 The claims system (mock ClaimCenter) owns the claim, the work queue and the decision; the engine is an extension of it

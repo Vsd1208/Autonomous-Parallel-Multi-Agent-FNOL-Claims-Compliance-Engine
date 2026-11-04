@@ -223,11 +223,12 @@ unknown.
 
 | Metric | Value | Date | Command |
 |---|---|---|---|
-| Backend tests | **437 passed**, 0 failed, 0 skipped (fnol-api 155, fnol-agents 126, fnol-orchestrator 97, fnol-mock-guidewire 31, fnol-enrichment 15, fnol-guardrails 13; fnol-common has none) | 4 Nov 2026 | `mvn -B clean verify` |
-| Instruction coverage (JaCoCo) | fnol-mock-guidewire 94%, fnol-orchestrator 92%, fnol-guardrails 91%, fnol-api 84%, fnol-agents 80%, fnol-enrichment 48%. JaCoCo counts each module's own tests. fnol-enrichment fell from 66% on 31 Oct because mock client code, at 7%, is exercised from other modules' tests or a running stack. fnol-agents fell from 88% on 3 Nov mainly because of replay and drafting code tested from fnol-api and the real Gemini drafting client, which no test calls | 4 Nov 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
-| Demo scenarios | Lite mode with replay: **129 passed, 0 failed**. Full mode with mock vision: **111 passed, 0 failed**. Full mode with India's clock on, direct intake only: 35 passed, 0 failed | 4 Nov 2026 | `bash demo-scenarios/run-all.sh` |
+| Backend tests | **597 passed**, 0 failed, 0 skipped (fnol-api 232, fnol-agents 177, fnol-orchestrator 109, fnol-enrichment 35, fnol-mock-guidewire 31, fnol-guardrails 13; fnol-common has none) | 4 Nov 2026 | `mvn -B clean verify` |
+| Database-sensitive tests on real PostgreSQL 16.14 | **57 passed**: inbox 14, audit 20, portal 7, access 16; each on a fresh database built by Flyway V1 to V26 | 4 Nov 2026 | CI job `postgres` in `.github/workflows/ci.yml` |
+| Instruction coverage (JaCoCo), **from before the engineering remediation, not re-read since** | fnol-mock-guidewire 94%, fnol-orchestrator 92%, fnol-guardrails 91%, fnol-api 84%, fnol-agents 80%, fnol-enrichment 48%. JaCoCo counts each module's own tests. fnol-enrichment fell from 66% on 31 Oct because mock client code, at 7%, is exercised from other modules' tests or a running stack. fnol-agents fell from 88% on 3 Nov mainly because of replay and drafting code tested from fnol-api and the real Gemini drafting client, which no test calls | 4 Nov 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
+| Demo scenarios | Lite mode with replay: **130 passed, 0 failed**, 7 runs of 7. Full mode with mock vision: **112 passed, 0 failed**. India's clock on, direct intake only: 35 passed, measured before the engineering remediation and not repeated | 4 Nov 2026 | `bash demo-scenarios/run-all.sh` |
 | Lite mode: build to healthy | 160 s (121 s `build --no-cache`, 39 s to start), then 81 s for `run-all.sh`; base images already present, one laptop. On a clean machine: not measured | 4 Nov 2026 | [README](../README.md#quick-review-lite-mode) |
-| Frontend and portal builds; Python compile | Pass | 4 Nov 2026 | `npm ci && npm run build`, `npm run build:portal`, `python -m compileall` |
+| Frontend tests and builds; Python tests | Frontend **18 passed**, both builds pass. Python **30 passed** (redaction and evaluation code); other Python is compile-checked only | 4 Nov 2026 | `npm test && npm run build && npm run build:portal`, `python -m pytest tools/test_evaluation.py fnol-vision-ml/redaction/test_redact.py` |
 
 Update these rows whenever the test suite changes.
 

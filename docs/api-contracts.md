@@ -12,6 +12,24 @@ All platform endpoints are served by `fnol-api` on port 8080 under `/api/v1`. Da
 
 CORS allows only the origins in `fnol.cors.allowed-origins` (env `FNOL_CORS_ALLOWED_ORIGINS`, default `http://localhost:5173,http://localhost:5174`), methods GET/POST/OPTIONS, headers `Content-Type` and `X-Adjuster-Token`.
 
+## Behaviour changes in the engineering remediation (Nov 2026)
+
+Additions do not break a client that ignores unknown fields. **The first three do break a script relying on the old behaviour.**
+
+| Change | Who is affected |
+|---|---|
+| `POST /fnol/{id}/review` with the service token answers **403**: only a signed-in person decides. A name in the request no longer sets the actor for a service caller | Scripts recording decisions |
+| An inspector gets **404** on a claim not assigned to them and on internal data, sees only their own assignments in the queue, and their report answer has no recommended payment | Inspector clients |
+| Public portal routes answer **429** past the attempt limit; wrong claim and wrong policy look the same | Portal clients |
+| `/api/v1/events/claimcenter`: a 202 now means committed to the inbox. The same event ID with different content is refused | The claims system |
+| `pii.redactionConfidence` is null on new records. Added `pii.detections` and `pii.validation`. Older records keep their number | Anything reading that field |
+| Added `abstention` `{abstained, reasons}` on the analysis, and gate flag `AI_ABSTAINED` | Additive |
+| Added `deadline.appliedRules`. Dates in NY now skip listed state holidays, so a NY business-day deadline in 2026 can be later than before | Anything comparing NY dates |
+| Coverage is judged at the date of loss. Added `coverage.coverageState`: `COVERED`, `NOT_COVERED`, `NOT_IN_FORCE` or `UNVERIFIED`. A loss within the term on a policy since expired now proceeds; one outside it goes to a person | Coverage readers |
+| Audit trail gains `problems`; `chainValid` kept | Additive |
+| Added: `GET /fnol/{id}/inspection-view`, `POST /portal/claims/{id}/access`, `POST /portal/access/revoke`, `GET /admin/event-inbox`, `POST /admin/event-inbox/{id}/replay`, `GET /admin/audit/anchor` (admin: supervisors only) | Additive |
+| Added: `/actuator/health`, `/liveness`, `/readiness` (public, no detail), `/actuator/prometheus` (credential), and `X-Correlation-ID` on every answer | Additive |
+
 ## Claim statuses
 
 | Status | Meaning |

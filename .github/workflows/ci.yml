@@ -29,6 +29,39 @@ jobs:
           path: '*/target/site/jacoco/'
           if-no-files-found: ignore
 
+  postgres:
+    name: Database-sensitive tests on real PostgreSQL 16 (Flyway, SKIP LOCKED, audit lock)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fnol
+          POSTGRES_PASSWORD: fnol
+          POSTGRES_DB: fnol
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U fnol" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Each class on a fresh database built by the migrations
+        env:
+          PGPASSWORD: fnol
+        run: |
+          for T in DurableInboxTest AuditIntegrityTest PortalSecurityTest ClaimAccessTest; do
+            DB=$(echo "$T" | tr 'A-Z' 'a-z')
+            psql -h localhost -U fnol -d fnol -c "create database $DB"
+            mvn -B -q test -pl fnol-api -am -Dtest="$T" -Dsurefire.failIfNoSpecifiedTests=false \
+              -Dspring.datasource.url="jdbc:postgresql://localhost:5432/$DB" -Dspring.datasource.username=fnol -Dspring.datasource.password=fnol \
+              -Dspring.datasource.driver-class-name=org.postgresql.Driver -Dspring.flyway.enabled=true -Dspring.jpa.hibernate.ddl-auto=validate \
+              -Dspring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+          done
+
   frontend:
     name: Frontend (workspace and portal builds, Node 20)
     runs-on: ubuntu-latest
