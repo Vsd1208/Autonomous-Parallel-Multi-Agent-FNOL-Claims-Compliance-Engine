@@ -124,6 +124,19 @@ public class EventInboxService {
         return claimed;
     }
 
+    /** A claimed row that never started: as if it had not been claimed, so it does not use up an attempt. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void giveBack(String id) {
+        inbox.findById(id).ifPresent(e -> {
+            e.status = EventInboxEntity.PENDING;
+            e.attemptCount = Math.max(0, e.attemptCount - 1);
+            e.leaseOwner = null;
+            e.leaseExpiresAt = null;
+            e.updatedAt = Instant.now();
+            inbox.save(e);
+        });
+    }
+
     public boolean lastAttempt(EventInboxEntity e) {
         return e.attemptCount >= maxAttempts;
     }

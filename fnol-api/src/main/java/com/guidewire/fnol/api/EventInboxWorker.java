@@ -18,7 +18,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -38,6 +40,8 @@ class EventInboxWorker {
     private final boolean enabled;
     private final String owner = EventInboxService.newOwner();
     private final ThreadPoolExecutor executor;
+    /** One per job this instance may hold. A row is claimed only with a slot for it, so a claimed row always has a thread coming. */
+    private final Semaphore slots;
 
     EventInboxWorker(EventInboxService inbox, EventInboxRepository rows, ClaimEventController events,
                      @Value("${fnol.inbox.worker-enabled:true}") boolean enabled,
@@ -46,7 +50,8 @@ class EventInboxWorker {
         this.rows = rows;
         this.events = events;
         this.enabled = enabled;
-        this.executor = new ThreadPoolExecutor(concurrency, concurrency, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1), r -> {
+        this.slots = new Semaphore(concurrency);
+        this.executor = new ThreadPoolExecutor(concurrency, concurrency, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), r -> {
             Thread t = new Thread(r, "claim-event");
             t.setDaemon(true);
             return t;
@@ -63,17 +68,35 @@ class EventInboxWorker {
         if (!enabled) {
             return;
         }
-        int free = executor.getMaximumPoolSize() - executor.getActiveCount();
+        int free = slots.availablePermits();
         if (free <= 0) {
             return;
         }
         try {
             for (EventInboxEntity row : inbox.claimDue(owner, free)) {
-                executor.execute(() -> process(row));
+                start(row);
             }
         } catch (RuntimeException e) {
             // The database may be away. Nothing is lost: the rows are still there, and this runs again shortly.
             log.warn("[Inbox] Could not claim work: {}", e.getMessage());
+        }
+    }
+
+    /** A row that cannot start goes straight back: otherwise it would look taken, with nobody working on it, until its lease ran out. */
+    private void start(EventInboxEntity row) {
+        slots.acquireUninterruptibly();
+        try {
+            executor.execute(() -> {
+                try {
+                    process(row);
+                } finally {
+                    slots.release();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            slots.release();
+            log.warn("[Inbox] Event {} could not start and goes back to the queue", row.eventId);
+            inbox.giveBack(row.id);
         }
     }
 
