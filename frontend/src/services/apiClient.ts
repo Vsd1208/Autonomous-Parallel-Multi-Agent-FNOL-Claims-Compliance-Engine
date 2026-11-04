@@ -14,6 +14,7 @@ import {
   FormData,
   QueuePage,
   ReserveApprovalView,
+  ClaimDraft,
 } from '../types';
 
 import { Session, session } from './session';
@@ -70,6 +71,15 @@ export const apiClient = {
     request<{ status: string }>(`/api/v1/fnol/${encodeURIComponent(claimId)}/reserve-approvals/${encodeURIComponent(approvalId)}/decide`,
       { method: 'POST', body: JSON.stringify({ approve, note }) }, true),
 
+  listDrafts: (claimId: string) =>
+    request<ClaimDraft[]>(`/api/v1/fnol/${encodeURIComponent(claimId)}/drafts`, {}, true),
+  createDraft: (claimId: string, kind: 'ADVISORY_NOTE' | 'ACKNOWLEDGEMENT_LETTER') =>
+    request<ClaimDraft>(`/api/v1/fnol/${encodeURIComponent(claimId)}/drafts`, { method: 'POST', body: JSON.stringify({ kind }) }, true),
+  acceptDraft: (claimId: string, draftId: string, text: string) =>
+    request<ClaimDraft>(`/api/v1/fnol/${encodeURIComponent(claimId)}/drafts/${encodeURIComponent(draftId)}/accept`,
+      { method: 'POST', body: JSON.stringify({ text }) }, true),
+  discardDraft: (claimId: string, draftId: string) =>
+    request<ClaimDraft>(`/api/v1/fnol/${encodeURIComponent(claimId)}/drafts/${encodeURIComponent(draftId)}/discard`, { method: 'POST', body: '{}' }, true),
   logout: () => request<{ status: string }>('/api/v1/auth/logout', { method: 'POST' }, true),
 
   /**

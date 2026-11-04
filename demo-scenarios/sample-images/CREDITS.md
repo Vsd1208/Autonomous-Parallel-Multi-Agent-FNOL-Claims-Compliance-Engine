@@ -78,3 +78,7 @@ the close-up adds no information the overview does not already have.
 The claim descriptions in the app are invented for the demo; they are not statements by the people or owners of the
 places shown. Flood is excluded from standard homeowners policies, so the flood set is expected to raise
 `POSSIBLE_FLOOD_EXCLUSION` and go to an adjuster.
+
+## Recorded photos: `fnol-set-replay-*/`
+
+Downscaled copies of five CC0 1.0 photos from Humans in the Loop, *Car Parts and Car Damages*, with recorded model answers ([demo-scenarios/replay](../replay/README.md)). One photo fills every slot of a set, since the answer was recorded for that one photo.

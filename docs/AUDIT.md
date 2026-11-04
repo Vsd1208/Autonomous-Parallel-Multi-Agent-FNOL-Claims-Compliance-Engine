@@ -161,3 +161,23 @@ Also measured or corrected: the trust score out of sample (AUC 0.79, Brier 0.113
 Run against the code before these fixes, 8 of the 9 new tests fail. The ninth, `assignmentKeepsADecision`, passes on both, because a test with one thread cannot reproduce that race: the overwrite fix rests on reading the code, which now writes only the assignment columns.
 
 **Defect found and fixed during this work:** a claim analysed late, after an engine outage, started its regulatory clock on the day of analysis. It now runs from the time on the `claim.submitted` event (`ClaimEventController`, `ClaimEventExtensionTest.lateAnalysisKeepsTheNoticeDate`). Whether that time is the legal date of notice on a real tenant is not verified.
+
+## 7. Selection-final-2
+
+Branch `selection-final-2`, 3-4 Nov 2026. `mvn -B clean verify` 437 passed, 0 failed, 0 skipped. `run-all.sh`: lite with replay 129 of 129, full 111 of 111, India's clock on 35 of 35 (direct intake only).
+
+| Task | What changed | Evidence | What remains open |
+|---|---|---|---|
+| A. Severity not from the AI's dollars | From the label; the second opinion's extent or no label can only raise it; a table reserve above $20,000 is HIGH. The mismatch flag compares with the published range and only routes | ADR-016, `ExplanationBuilderTest`, `FNOLOrchestratorTest.process_severityMismatchOnlyRoutes`, `severity_replay.py` | **The label's accuracy is not measured.** More people-work: 10 of 32 answers passing the vision checks are now HIGH. The fraud score's `claimRatio` and the bounded adjustment still read the dollars, as ADR-016 lists |
+| B. Replay | 66 recorded answers found by photo hash, 2.14 MB, all CC0; 5 console sample sets, 0.75 MB; lite mode uses them | `ReplayModeTest`, `demo-scenarios/replay/`, `export_replay.py` (same bytes each run) | Not live analysis. A trust score shown in replay is in sample. Home claims are not replayed |
+| C. README | First screen as asked; everything else under `## Reference`; old lines checked against the new text | `README.md` | Rewritten rows are listed in the commit; a reader's five minutes is not measured |
+| D. Drafting agent, **off** | Read-only tools, 6 calls and 8 s, deterministic guard, template on any failure, a person accepts, audited | ADR-017, `DraftingAgentTest`, `DraftingAgentApiTest`, `DraftingSwitchOffTest` | **Quality not measured.** One live call with made-up facts confirmed the format. The guard uses English patterns and can miss a rewording. No test calls the real Gemini client |
+| E. India's clock, **off** | Official IRDAI text read; three milestones as data, with citations | `claim-regulations-in.json`, `IndianClaimClockTest`, `IndianClaimClockApiTest`, [legal-compliance.md](legal-compliance.md) | **No lawyer has reviewed it.** Our reading of the decision deadline needs confirming. Later amendments were searched for, not ruled out. Rupees are not handled, and only the demo state is accepted |
+
+**Demo scenario expectations changed in Task A: none.** Unit test expectations changed are listed in commit `b083ee1`, each because behaviour legitimately changed.
+
+**Defects found by the final checks, before the pull request:** the new `/drafts` endpoints were outside the auth filter's list, so anyone could have triggered a draft; a test found it. An Indian claim was refused at intake, because the state check knew only US states; the end-to-end run found it, after unit tests had passed, and an end-to-end test now covers it. A missing severity label threw an error rather than reading as HIGH; a test found it.
+
+**Also corrected:** stale statements that the reserve is the lower of the claim and the AI's estimate, in `database.md`, `diagram-traceability.md` and code comments; `fnol.stp.low-severity-max` removed, since nothing read it.
+
+**Known and left alone:** the application's catch-all answers any unknown path with a 502 rather than a 404, as it did before this work. A claimant uploading while a claim is out for inspection is still told it was decided.

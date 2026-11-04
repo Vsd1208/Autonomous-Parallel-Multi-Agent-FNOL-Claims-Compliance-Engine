@@ -109,7 +109,7 @@ Known gaps: a decision made directly in the claims system is followed as it stan
 - **Authority:** if the recommended reserve is above everyone in the group, the claim is still assigned and a high-priority activity also goes to a supervisor. The decision itself still follows [the limits above](#reserve-authority-limits).
 - **Written back and audited:** segment, group and assignee go onto the claim, the console shows them and filters queues by segment, and each assignment is an audit event. It never posts money or moves a claim, and a failure leaves the claim in its queue, unassigned.
 
-Known gaps: failed direct intakes (`REJ-…`) have no segment, and severity here still reads the AI's dollar figure ([ADR-015](architecture-decisions.md)). Reassigning by hand is not built.
+Known gaps: failed direct intakes (`REJ-…`) have no segment, and severity rests on an unmeasured vision label ([ADR-016](architecture-decisions.md)). Reassigning by hand is not built.
 
 ## What is real in this repository
 

@@ -88,19 +88,32 @@ model and thinking budget). Home claims keep Gemini's confidence. The older marg
 The 66 `v3-subject` answers replayed through the app's checks, adding one at a time (no API calls). Commands:
 `python -P gate_ablation.py --run v2-multiphoto --run v3-subject`
 ([results/gate-ablation.md](../tools/vision-eval/results/gate-ablation.md)) and, for the second-opinion row,
-`python -P compare_gemini.py --run v2-multiphoto --run v3-subject` in `tools/second-opinion`. Measured 31 Oct 2026.
+`python -P compare_gemini.py --run v2-multiphoto --run v3-subject` in `tools/second-opinion`. Measured 3 Nov 2026, after
+ADR-016 changed the severity check.
 
 | Checks on | Could go straight through | Wrong answers let through (lenient / strict) | Right answers sent to an adjuster |
 |---|---|---|---|
 | Gemini's confidence only (≥ 0.85) | 65/66 | 11 / 27 | 0 |
 | + probability-margin check (`AMBIGUOUS_DAMAGE_TYPE`) | 42/66 | 2 / 4 | 14 |
-| + severity and photo-subject checks | 42/66 | 2 / 4 | 14 |
-| + second-opinion model (`MODEL_DISAGREEMENT`) | 36/66 | **1** / — | 19 |
+| + severity and photo-subject checks | 37/66 | 2 / 4 | 19 |
+| + second-opinion model (`MODEL_DISAGREEMENT`) | 32/66 | **1** / — | 23 |
 
 Caveat: vision checks only. Coverage, the claimed-amount check, intake flags and the severity gate also apply to real
 claims. The one wrong answer left (photo 1336) is a confident "multiple areas" answer, which the second-opinion model
-has no class for. **Correction (2 Nov 2026):** the last row used to read 39/66 and 16, measured before the 734-photo model.
-The wrong count did not change; the checks now send 3 more right answers to an adjuster.
+has no class for. **Corrections:** on 2 Nov 2026 the last row changed from 39/66 and 16 to 36/66 and 19, because it had been measured before
+the 734-photo model. On 3 Nov 2026 it changed to 32/66 and 23, because `SEVERITY_ESTIMATE_MISMATCH` now compares the dollars with the published
+range for the label (ADR-016): it now fires on 5 answers, where the fixed dollar bands fired on none. The wrong count did not change.
+
+**The severity gate (ADR-016, `tools/cost-eval/severity_replay.py`, [results](../tools/cost-eval/results/severity-replay-v3-subject.md)).** Severity has no
+ground truth in these photos, so this shows how routing moves, not which reading is right:
+
+| Gate | All 66 answers: LOW / MEDIUM / HIGH | The 32 passing the vision checks: LOW / MEDIUM / HIGH |
+|---|---|---|
+| Old: the AI's dollars | 45 / 21 / 0 | 25 / 7 / 0 |
+| The label alone | 14 / 34 / 18 | 10 / 16 / 6 |
+| **In use: the label, or the second opinion's extent if more severe** | 6 / 36 / 24 | 3 / 19 / 10 |
+
+HIGH always goes to a person. Of those 32, the 10 now HIGH include the 1 wrong answer left, in sample. Label and extent disagree on 34 of 66.
 
 **What was fitted on these 66 answers, and what 11 → 1 is worth out of sample.** The 11 and the 1 are counts on the same
 answers the checks were tuned against, so 1 is an in-sample figure:
@@ -116,13 +129,13 @@ With both thresholds chosen inside each training fold, from the training answers
 
 | One wrong answer through is as bad as | Could go straight through | Wrong let through | Right answers sent to an adjuster |
 |---|---|---|---|
-| 5, 10 or 20 right answers held back (an assumption; same result) | 40.6/66 | **3.0** | 16.4 |
-| 2 right answers held back | 44.5/66 | 4.6 | 14.1 |
+| 5, 10 or 20 right answers held back (an assumption; same result) | 35.6/66 | **3.0** | 21.4 |
+| 2 right answers held back | 39.5/66 | 4.6 | 19.1 |
 
 **The honest out-of-sample headline is about 11 → 3, not 11 → 1.** A threshold chosen without seeing a wrong answer does not
-reliably catch that answer, and with so few wrong answers each one matters. Even the in-sample "1 of 36" allows a true
-wrong-through rate up to 15% (exact 95%). Showing it is below 5% takes 72 passing answers with none wrong, or 110 with one
-wrong (exact two-sided 95%): about 132 and 202 answers at today's 55% pass rate.
+reliably catch that answer, and with so few wrong answers each one matters. Even the in-sample "1 of 32" allows a true
+wrong-through rate up to 16% (exact 95%). Showing it is below 5% takes 72 passing answers with none wrong, or 110 with one
+wrong (exact two-sided 95%): about 149 and 227 answers at today's 48% pass rate.
 
 ## 4. Second-opinion model (trained in this project)
 
@@ -210,11 +223,11 @@ unknown.
 
 | Metric | Value | Date | Command |
 |---|---|---|---|
-| Backend tests | **409 passed**, 0 failed, 0 skipped (fnol-api 143, fnol-agents 115, fnol-orchestrator 92, fnol-mock-guidewire 31, fnol-enrichment 15, fnol-guardrails 13; fnol-common has none) | 3 Nov 2026 | `mvn -B clean verify` |
-| Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-mock-guidewire 94%, fnol-orchestrator 93%, fnol-agents 88%, fnol-api 84%, fnol-enrichment 48% (down from 66% on 31 Oct: JaCoCo counts each module's own tests, and mock client code added since, at 7%, is exercised from other modules' tests or a running stack) | 3 Nov 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
-| Demo scenarios | **111 checks passed, 0 failed**, in lite mode and in full mode, both with mock vision | 3 Nov 2026 | `bash demo-scenarios/run-all.sh` |
-| Lite mode: build to healthy | 116 s (78 s `build --no-cache`, 38 s to start), then 75 s for `run-all.sh`; base images already present, about 5 MB/s connection, one laptop | 3 Nov 2026 | [README](../README.md#quick-review-lite-mode) |
-| Frontend and portal builds; Python compile | Pass | 3 Nov 2026 | `npm ci && npm run build`, `npm run build:portal`, `python -m compileall` |
+| Backend tests | **437 passed**, 0 failed, 0 skipped (fnol-api 155, fnol-agents 126, fnol-orchestrator 97, fnol-mock-guidewire 31, fnol-enrichment 15, fnol-guardrails 13; fnol-common has none) | 4 Nov 2026 | `mvn -B clean verify` |
+| Instruction coverage (JaCoCo) | fnol-mock-guidewire 94%, fnol-orchestrator 92%, fnol-guardrails 91%, fnol-api 84%, fnol-agents 80%, fnol-enrichment 48%. JaCoCo counts each module's own tests. fnol-enrichment fell from 66% on 31 Oct because mock client code, at 7%, is exercised from other modules' tests or a running stack. fnol-agents fell from 88% on 3 Nov mainly because of replay and drafting code tested from fnol-api and the real Gemini drafting client, which no test calls | 4 Nov 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
+| Demo scenarios | Lite mode with replay: **129 passed, 0 failed**. Full mode with mock vision: **111 passed, 0 failed**. Full mode with India's clock on, direct intake only: 35 passed, 0 failed | 4 Nov 2026 | `bash demo-scenarios/run-all.sh` |
+| Lite mode: build to healthy | 160 s (121 s `build --no-cache`, 39 s to start), then 81 s for `run-all.sh`; base images already present, one laptop. On a clean machine: not measured | 4 Nov 2026 | [README](../README.md#quick-review-lite-mode) |
+| Frontend and portal builds; Python compile | Pass | 4 Nov 2026 | `npm ci && npm run build`, `npm run build:portal`, `python -m compileall` |
 
 Update these rows whenever the test suite changes.
 
@@ -282,11 +295,11 @@ Gemini's figure. Replay of the same 66 answers through both methods, before any 
 | Inside the published range | 17/41 | 20/41 |
 | AI's figure could move the base | n/a | 25 of 41 (moved 21; blocked 16: outside the range 12, models disagree 4) |
 
-**The new method is not closer to the ranges on the median; it is further away.** Gemini's figures mostly restate its
+**This is not an accuracy measure.** The ranges and both figures are estimates, so the distance between them says nothing about which is right. On this
+measure the table is not closer: it is further away on the median. Gemini's figures mostly restate its
 severity band, and they sit near the table's values for those bands ($1,500 / $3,500 / $12,000 most often, against $1,698 /
-$4,818 / $11,708), so both are in effect lookups by severity. What the table adds is not accuracy on this measure: each
-figure now has a source or a "synthetic" label, can be replaced by an insurer's own averages without touching a model, and
-the AI's influence is bounded and explained. Two caveats on the measure itself: the ranges are estimates, chosen by a
+$4,818 / $11,708), so both are in effect lookups by severity. The table is the slot for the insurer's own average reserves: each
+figure has a source or a "synthetic" label, can be replaced without touching a model, and the AI's influence is bounded and explained. Two caveats on the measure itself: the ranges are estimates, chosen by a
 visible-extent band that also depends on how close the photo was taken (a large part of the distance is a "severe" label
 against a "small" band), and nothing here measures the true cost. Tuning the table to this measure would be circular, since
 both come from the same sources, so it was not done.

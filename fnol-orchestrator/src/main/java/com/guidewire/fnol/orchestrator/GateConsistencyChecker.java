@@ -4,6 +4,7 @@ import com.guidewire.fnol.agents.OnPremiseVision;
 import com.guidewire.fnol.agents.RepairCostEstimator;
 import com.guidewire.fnol.agents.VisionConfidenceCalibrator;
 import com.guidewire.fnol.common.Models.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -19,7 +20,10 @@ import java.util.Set;
 @Component
 public class GateConsistencyChecker {
 
-    /** Vision's severity label disagrees with its own estimate (bands from the vision prompt). */
+    /**
+     * The AI's dollar figure is more than RepairCostEstimator.TOLERANCE outside the published repair-cost range for the severity it
+     * reported. A signal only: it sends the claim to a person and changes neither the reserve nor the severity (ADR-016).
+     */
     public static final String SEVERITY_ESTIMATE_MISMATCH = "SEVERITY_ESTIMATE_MISMATCH";
     /** The loss after the deductible is above the matched coverage limit (the reserve is capped at the limit). */
     public static final String RESERVE_EXCEEDS_COVERAGE_LIMIT = "RESERVE_EXCEEDS_COVERAGE_LIMIT";
@@ -68,8 +72,8 @@ public class GateConsistencyChecker {
     /** High vision confidence reported for a photo it rated blurry or unusable. */
     public static final String CONFIDENCE_PHOTO_QUALITY_MISMATCH = "CONFIDENCE_PHOTO_QUALITY_MISMATCH";
 
-    static final BigDecimal MINOR_MAX = new BigDecimal("2000");
-    static final BigDecimal MODERATE_MAX = new BigDecimal("10000");
+    /** Which published extent band a severity label reads against. This project's mapping, an assumption. */
+    private static final Map<String, String> BAND_FOR_SEVERITY = Map.of("MINOR", "SMALL", "MODERATE", "MEDIUM", "SEVERE", "LARGE");
 
     private static final Set<String> VEHICLE_DAMAGE = Set.of("FRONT_BUMPER", "REAR_BUMPER", "WINDSHIELD", "SIDE_PANEL");
     /** Causes of loss from the property prompt (GeminiVisionProvider.PROPERTY_ASSESSMENT_PROMPT). */
@@ -78,9 +82,16 @@ public class GateConsistencyChecker {
     private static final Set<String> POOR_PHOTOS = Set.of("BLURRY", "UNUSABLE");
 
     private final StpProperties stp;
+    private final RepairCostEstimator repairCosts;
 
     public GateConsistencyChecker(StpProperties stp) {
+        this(stp, new RepairCostEstimator());
+    }
+
+    @Autowired
+    public GateConsistencyChecker(StpProperties stp, RepairCostEstimator repairCosts) {
         this.stp = stp;
+        this.repairCosts = repairCosts;
     }
 
     public List<String> check(Policy policy, BranchAResult branchA) {
@@ -88,7 +99,7 @@ public class GateConsistencyChecker {
     }
 
     /** Flags that say the vision reading itself is in doubt. With any of these, the AI may not move the base reserve. */
-    static final Set<String> VISION_FLAGS = Set.of(SEVERITY_ESTIMATE_MISMATCH, DAMAGE_TYPE_LINE_MISMATCH, PHOTO_SUBJECT_MISMATCH,
+    static final Set<String> VISION_FLAGS = Set.of(DAMAGE_TYPE_LINE_MISMATCH, PHOTO_SUBJECT_MISMATCH,
             MODEL_DISAGREEMENT, ON_PREMISE_VISION, ESTIMATE_OUTSIDE_PUBLISHED_RANGE, AMBIGUOUS_DAMAGE_TYPE,
             CONFIDENCE_PHOTO_QUALITY_MISMATCH);
 
@@ -96,9 +107,9 @@ public class GateConsistencyChecker {
         List<String> flags = new ArrayList<>();
         DamageAssessment damage = branchA.damageAssessment();
 
-        String expectedSeverity = damage.estimatedDamage().compareTo(MINOR_MAX) < 0 ? "MINOR"
-                : damage.estimatedDamage().compareTo(MODERATE_MAX) <= 0 ? "MODERATE" : "SEVERE";
-        if (damage.severity() != null && !damage.severity().equals(expectedSeverity)) {
+        String band = damage.severity() == null ? null : BAND_FOR_SEVERITY.get(damage.severity());
+        if (band != null && !OnPremiseVision.isOnPremise(damage)
+                && RepairCostEstimator.farOutside(damage.estimatedDamage(), repairCosts.range(damage.damageType(), band))) {
             flags.add(SEVERITY_ESTIMATE_MISMATCH);
         }
 

@@ -322,7 +322,7 @@ public class GeminiVisionProvider implements VisionProvider {
 
         JsonNode assessment = objectMapper.readTree(text);
         String damageType   = assessment.path("damageType").asText("UNKNOWN");
-        String severity     = assessment.path("severity").asText("MODERATE");
+        String severity     = assessment.hasNonNull("severity") ? assessment.path("severity").asText() : null;   // no label routes to a person
         int estimatedDamage = assessment.path("estimatedDamage").asInt(3500);
         double confidence   = assessment.path("confidence").asDouble(0.75);
         String photoQuality = assessment.path("photoQuality").asText("UNKNOWN");

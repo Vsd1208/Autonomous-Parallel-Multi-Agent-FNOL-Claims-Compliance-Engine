@@ -64,8 +64,9 @@ is turned off, and `HUMAN_REVIEW` otherwise.
 2. **"What share of claims go straight through?"** We do not know for real claims. On the 66 replayed answers, 36 pass the vision checks,
    and coverage, intake flags and the severity gate come on top. Nothing has run on real claims, and by default a person still
    confirms every one.
-3. **"Does the severity gate depend on the AI's dollar figure?"** Yes. The reserve moved to a table in ADR-015, but the severity
-   gate and the fraud score still read the AI's estimate. That is a known open gap, and the dollar figure has no validation.
+3. **"Does the severity gate depend on the AI's dollar figure?"** No, since ADR-016: it comes from the vision label, and the more severe
+   reading stands if the second opinion's extent differs. The accuracy of the label is **not measured**, so the risk has moved rather than gone. The
+   fraud score's `claimRatio` still reads the dollars, and ADR-016 lists every remaining use and why.
 
 ---
 

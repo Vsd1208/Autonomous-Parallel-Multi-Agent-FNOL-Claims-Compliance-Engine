@@ -125,4 +125,21 @@ export const vehicleSampleSets: SampleSet[] = [
   },
 ];
 
-export const sampleSets: SampleSet[] = [...vehicleSampleSets, ...homeSampleSets];
+/**
+ * Photos with recorded model answers (demo-scenarios/replay): in lite mode these show the trust score and the vision checks
+ * working on real model output. One photo fills every slot, since the answer was recorded for that one photo.
+ */
+export const replaySampleSets: SampleSet[] = [
+  { folder: 'fnol-set-replay-pass-1', label: 'Recorded: rear bumper, passes the vision checks',
+    description: 'Another car backed into my rear bumper in a parking lot.', claimedAmount: '900', line: 'AUTO' },
+  { folder: 'fnol-set-replay-pass-2', label: 'Recorded: side panel, passes the vision checks',
+    description: 'A car scraped along the side of my vehicle while I was parked.', claimedAmount: '2500', line: 'AUTO' },
+  { folder: 'fnol-set-replay-pass-3', label: 'Recorded: side panel, passes the vision checks',
+    description: 'I hit a post while reversing, and the side panel was damaged.', claimedAmount: '2500', line: 'AUTO' },
+  { folder: 'fnol-set-replay-ambiguous', label: 'Recorded: the AI hedged, stopped by the margin check',
+    description: 'My car was damaged in a collision at an intersection.', claimedAmount: '3000', line: 'AUTO' },
+  { folder: 'fnol-set-replay-disagreement', label: 'Recorded: confident and wrong, stopped by the second opinion',
+    description: 'My car was hit and I need the damage repaired.', claimedAmount: '3000', line: 'AUTO' },
+];
+
+export const sampleSets: SampleSet[] = [...vehicleSampleSets, ...homeSampleSets, ...replaySampleSets];

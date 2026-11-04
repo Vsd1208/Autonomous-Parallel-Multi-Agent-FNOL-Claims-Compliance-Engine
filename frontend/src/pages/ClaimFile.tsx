@@ -11,7 +11,7 @@ import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionRe
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
 import { session } from '../services/session';
-import { AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion, ReserveApprovalView } from '../types';
+import { ClaimDraft, AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion, ReserveApprovalView } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 /** Inspectors report on inspections; only adjusters decide claims. */
@@ -256,7 +256,7 @@ const FLAG_TEXT: Record<string, string> = {
   INCIDENT_NEAR_POLICY_START: 'The loss happened within 30 days of the policy start.',
   INCOMPLETE_PHOTO_SET: 'Not every side of the vehicle (or the damage close-up) was photographed.',
   HIGH_CLAIM_FREQUENCY: 'The policy has a high recent claim frequency.',
-  SEVERITY_ESTIMATE_MISMATCH: 'The damage severity does not match the estimated amount.',
+  SEVERITY_ESTIMATE_MISMATCH: "The AI's rough dollar figure is far outside the published repair-cost range for this severity. Severity and reserve are unchanged; check the photos.",
   RESERVE_EXCEEDS_COVERAGE_LIMIT: 'The loss after the deductible is above the coverage limit; the reserve is capped.',
   RESERVE_TABLE_ENTRY_MISSING: 'The initial-reserve table has no row for this claim: set the reserve yourself.',
   CLAIMED_EXCEEDS_AI_ESTIMATE: 'The claimant asks for more than the reserve supports. Not approved automatically.',
@@ -357,7 +357,7 @@ function Summary({ claim, docs, onChanged }: { claim: DashboardClaim; docs: Clai
       <Panel title="Key Figures">
         <DetailView columns={2} rows={[
           ['Amount claimed', money(claim.branchA?.reserve.claimedAmount ?? r?.claimedAmount)],
-          ['AI estimate (from photos)', money(claim.branchA?.damageAssessment.estimatedDamage ?? r?.estimatedDamage)],
+          [aiEstimateLabel(claim.branchA?.reserve.breakdown), money(claim.branchA?.damageAssessment.estimatedDamage ?? r?.estimatedDamage)],
           ['Deductible', money(claim.branchA?.reserve.deductible ?? r?.deductible)],
           ['Recommended reserve', money(claim.branchA?.reserve.recommendedReserve ?? r?.reserve)],
           ['Adjuster reserve', r?.adjusterReserve != null ? money(r.adjusterReserve) : null],
@@ -463,8 +463,8 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
             ['Damage type', humanize(d.damageType)],
             ['Severity', onPremise ? 'Not assessed' : humanize(d.severity)],
             ['Visible damage extent', extent
-              ? `${humanize(extent.band)} (about ${Math.round(extent.share * 100)}% of the photo; not a cost)` : null],
-            ['Estimated damage', onPremise
+              ? `${humanize(extent.band)}${extent.share != null ? ` (about ${Math.round(extent.share * 100)}% of the photo; not a cost)` : ' (not a cost)'}` : null],
+            [onPremise ? 'Estimated damage' : aiEstimateLabel(claim.branchA?.reserve.breakdown), onPremise
               ? (cost ? `${money(d.estimatedDamage)} (from the repair-cost range below; confirm it)`
                 : `${money(d.estimatedDamage)} (placeholder: set it from the photos)`)
               : <span key="e">{money(d.estimatedDamage)} <span className="muted">(rough: {cost ? 'compare with the range below' : 'no published range for this reading'}. Gemini's figures mostly follow its severity label, not a costing of the damage)</span></span>],
@@ -711,6 +711,7 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
               : b.deadline.decisionNote ?? null],
             ['Recover from at-fault party by', b.deadline.recoverBy
               ? `${isoDate(b.deadline.recoverBy)} — ${b.deadline.recoveryCitation ?? ''}` : null],
+            ...(b.deadline.milestones ?? []).map((m): [string, string] => [m.action, `${isoDate(m.dueBy)} — ${m.citation}`]),
             ['Urgency', <StatusChip value={b.deadline.urgencyFlag} />],
             ['Rule set', b.deadline.rulesVersion ? `Cited rules, version ${b.deadline.rulesVersion}` : b.deadline.ruleSource],
           ]} />
@@ -724,6 +725,7 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
         </MessageBar>
       )}
       <AcknowledgementLetterPanel claimId={claim.claimId} />
+      <DraftsPanel claimId={claim.claimId} />
       <Panel title="Subrogation">
         <DetailView columns={2} rows={[
           ['Score', `${b.subrogation.score} / 100`],
@@ -742,6 +744,57 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
         )}
       </Panel>
     </>
+  );
+}
+
+/**
+ * Drafts from the drafting agent, for a person to accept, edit or discard. Shown only when fnol.drafting-agent.enabled is on:
+ * with it off the request fails and nothing appears.
+ */
+function DraftsPanel({ claimId }: { claimId: string }) {
+  const [drafts, setDrafts] = useState<ClaimDraft[] | null>(null);
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const load = () => apiClient.listDrafts(claimId).then(setDrafts).catch(() => setDrafts(null));
+  useEffect(() => { load(); }, [claimId]);
+  if (drafts == null) return null;
+  const act = async (work: () => Promise<unknown>) => {
+    setBusy(true);
+    setError('');
+    try {
+      await work();
+      await load();
+    } catch (err: any) {
+      setError(err.message || 'That did not work');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Panel title="AI drafts">
+      <p>
+        <Button disabled={busy} onClick={() => act(() => apiClient.createDraft(claimId, 'ADVISORY_NOTE'))}>Draft advisory note</Button>{' '}
+        <Button disabled={busy} onClick={() => act(() => apiClient.createDraft(claimId, 'ACKNOWLEDGEMENT_LETTER'))}>Draft letter</Button>
+      </p>
+      {error && <p className="muted" role="alert">{error}</p>}
+      {drafts.map((d) => (
+        <div key={d.draftId}>
+          <p><strong>{d.status === 'DRAFT' ? 'AI draft — review before sending' : humanize(d.status)}</strong>
+            {' '}<span className="muted">{humanize(d.kind)}{d.fromModel ? '' : ` (template: ${d.fallbackReason})`}</span></p>
+          {d.status === 'DRAFT' ? (
+            <>
+              <textarea aria-label="Draft text" rows={8} style={{ width: '100%' }} value={edits[d.draftId] ?? d.body}
+                onChange={(e) => setEdits((x) => ({ ...x, [d.draftId]: e.target.value }))} />
+              <p>
+                <Button variant="primary" disabled={busy} onClick={() => act(() => apiClient.acceptDraft(claimId, d.draftId, edits[d.draftId] ?? d.body))}>Accept</Button>{' '}
+                <Button disabled={busy} onClick={() => act(() => apiClient.discardDraft(claimId, d.draftId))}>Discard</Button>
+              </p>
+            </>
+          ) : <pre className="letter">{d.body}</pre>}
+        </div>
+      ))}
+    </Panel>
   );
 }
 
@@ -769,7 +822,15 @@ function AcknowledgementLetterPanel({ claimId }: { claimId: string }) {
   );
 }
 
-/** How the recommended reserve was reached: lower of claimed and AI estimate, less the deductible. */
+/** The AI's dollars are for reference. When its reading held up they may also have moved the table's base, within the band: say so. */
+function aiEstimateLabel(b?: { method?: string; adjustmentAllowed?: boolean } | null): string {
+  if (b?.method && b.method !== 'AVERAGE_TABLE') return 'AI estimate (from photos)';
+  return b?.adjustmentAllowed
+    ? "AI rough estimate, for reference; not used for severity, and for the reserve only within the bounded adjustment"
+    : 'AI rough estimate, for reference; not used for severity or reserve';
+}
+
+/** How the recommended reserve was reached: from the table, or with AI_ESTIMATE the lower of claimed and AI estimate, less the deductible. */
 function SettlementPanel({ claim }: { claim: DashboardClaim }) {
   const r = claim.record;
   const res = claim.branchA?.reserve;
@@ -800,7 +861,7 @@ function SettlementPanel({ claim }: { claim: DashboardClaim }) {
           ['Amount claimed', claimed != null ? money(claimed) : 'Not stated'],
           ['Caps applied', b!.capsApplied.length ? b!.capsApplied.join('. ') : 'None'],
           ['Recommended reserve (amount owed)', <strong key="pay">{money(res?.recommendedReserve ?? r?.reserve)}</strong>],
-          ['AI estimate (shown, not relied on)', money(estimate)],
+          [aiEstimateLabel(b), money(estimate)],
           ['Rule', over ? 'Claimed more than the reserve supports: adjuster decides' : 'Within what the reserve supports: claimed amount used'],
         ]} />
       </Panel>

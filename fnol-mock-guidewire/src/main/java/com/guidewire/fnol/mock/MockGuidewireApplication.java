@@ -294,6 +294,10 @@ final class Seed {
                 "Riley Smith", "TX", "Single family property",
                 List.of(new Coverage("DWELLING", bd("350000"), bd("2500")),
                         new Coverage("PERSONAL_PROPERTY", bd("100000"), bd("1000")))));
+        // Synthetic Indian motor policy: amounts in rupees, and its claim clock is India's (fnol.claim-clock.india.enabled).
+        p.put("POL-AUTO-778899", new Policy("POL-AUTO-778899", "AUTO", "ACTIVE", effective(), effective().plusYears(1),
+                "Asha Kulkarni", "MH", "2024 Maruti Swift (synthetic)",
+                List.of(new Coverage("COLLISION", bd("800000"), bd("2500"))), "IN", "INR"));
         return p;
     }
 

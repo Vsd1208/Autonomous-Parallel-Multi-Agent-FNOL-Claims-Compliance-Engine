@@ -2,7 +2,7 @@
 
 ## Database Engine
 - **Target**: PostgreSQL 16 (docker-compose image `postgres:16-alpine`)
-- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V22; Hibernate runs with `ddl-auto: validate`
+- **Migrations**: Flyway, `fnol-api/src/main/resources/db/migration`, V1–V23; Hibernate runs with `ddl-auto: validate`
 - **ORM**: Spring Data JPA / Hibernate 6
 - **Tests**: H2 in PostgreSQL mode with `ddl-auto: create-drop` (Flyway disabled); the migrations are exercised by `docker compose up`
 
@@ -32,6 +32,7 @@
 | V20 | `V20__add_feedback_usage.sql` | `ai_feedback`: how long a decision took and how useful the advisory was |
 | V21 | `V21__add_reserve_approvals.sql` | `reserve_approvals`: decisions held above the person's authority |
 | V22 | `V22__add_claim_segment_and_assignment.sql` | `claims.segment`, `assignment_group`, `assigned_to`, `assigned_at` |
+| V23 | `V23__add_claim_drafts.sql` | `claim_drafts`: text from the drafting agent or its template, waiting for a person. Unused while the switch is off |
 
 ## `claims`
 
@@ -43,7 +44,7 @@
 | `incident_date` | `DATE` | no | Date of loss |
 | `state` | `VARCHAR(255)` | no | US state code (`CA`, `NY`, `TX`, `FL`, `IL`) |
 | `estimated_damage` | `NUMERIC(14,2)` | no, `>= 0` | Vision estimate in USD (0 for REJ- claims) |
-| `reserve` | `NUMERIC(14,2)` | no, `>= 0` | Recommended reserve (amount owed): min(claimed, AI estimate) − deductible, capped at the limit (0 for REJ- claims) |
+| `reserve` | `NUMERIC(14,2)` | no, `>= 0` | Recommended reserve (amount owed): the lower of the amount claimed and what the reserve table supports, less the deductible, capped at the limit (ADR-015; 0 for REJ- claims) |
 | `claimed_amount` | `NUMERIC(14,2)` | yes, `>= 0` | What the claimant asked for |
 | `analysis_json` | `TEXT` | yes | Full AI analysis (branch A/B results, notes, flags) for any adjuster's browser; stored **without** the redacted description text and without audit records. Not in the `/status` JSON |
 | `deductible` | `NUMERIC(14,2)` | yes | Policy deductible applied to the reserve |

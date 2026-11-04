@@ -8,7 +8,7 @@ Recorded Gemini answers on labelled car-damage photos (Humans in the Loop, CC0),
 |---|---|---|---|
 | Confidence factor only (>= 0.85) | 32/33 | 3 / 10 | 1 |
 | + AMBIGUOUS_DAMAGE_TYPE (margin >= 0.30) | 25/33 | 1 / 3 | 6 |
-| + SEVERITY_ESTIMATE_MISMATCH | 25/33 | 1 / 3 | 6 |
+| + SEVERITY_ESTIMATE_MISMATCH | 20/33 | 1 / 2 | 11 |
 
 Wrong answers (lenient) and the checks that stop them:
 
@@ -22,8 +22,8 @@ Wrong answers (lenient) and the checks that stop them:
 |---|---|---|---|
 | Confidence factor only (>= 0.85) | 65/66 | 11 / 27 | 0 |
 | + AMBIGUOUS_DAMAGE_TYPE (margin >= 0.30) | 42/66 | 2 / 4 | 14 |
-| + SEVERITY_ESTIMATE_MISMATCH | 42/66 | 2 / 4 | 14 |
-| + PHOTO_SUBJECT_MISMATCH (subject = VEHICLE) | 42/66 | 2 / 4 | 14 |
+| + SEVERITY_ESTIMATE_MISMATCH | 37/66 | 2 / 4 | 19 |
+| + PHOTO_SUBJECT_MISMATCH (subject = VEHICLE) | 37/66 | 2 / 4 | 19 |
 
 Photo subject reported: VEHICLE 66 (every photo is a car).
 

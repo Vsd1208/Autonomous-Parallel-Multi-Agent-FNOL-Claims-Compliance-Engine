@@ -1,0 +1,7 @@
+{
+  "photo": "photos/06342bb9811d3ffa.jpg",
+  "sha256": "06342bb9811d3ffaa903be87189c63ed91d30a6ecc552c90e35135f8d50085b3",
+  "recordedDamageType": "MULTIPLE",
+  "recordedSeverity": "MODERATE",
+  "expectedGateFlag": "AMBIGUOUS_DAMAGE_TYPE"
+}

@@ -2,6 +2,7 @@ package com.guidewire.fnol.agents;
 
 import com.guidewire.fnol.common.Models.DeadlineResult;
 import com.guidewire.fnol.common.Models.FNOLPayload;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -9,9 +10,15 @@ import java.time.LocalDate;
 @Component
 public class StatutoryDeadlineAgent implements FNOLAgent<FNOLPayload, DeadlineResult> {
     private final DeadlineRuleProvider provider;
+    private IndianClaimClock india;      // only with fnol.claim-clock.india.enabled
 
     public StatutoryDeadlineAgent(DeadlineRuleProvider provider) {
         this.provider = provider;
+    }
+
+    @Autowired(required = false)
+    public void setIndia(IndianClaimClock india) {
+        this.india = india;
     }
 
     @Override
@@ -31,6 +38,13 @@ public class StatutoryDeadlineAgent implements FNOLAgent<FNOLPayload, DeadlineRe
      * As above, for a claim the insurer received on {@code noticeDate}, which may be before today: the clocks run from when the
      * claim was received, not from when it was analysed (the engine may have been down in between).
      */
+    public DeadlineResult execute(FNOLPayload input, String lineOfBusiness, boolean proofOfLossComplete, LocalDate noticeDate, String jurisdiction) {
+        if ("IN".equals(jurisdiction) && india != null) {
+            return india.deadline(input.state(), noticeDate);
+        }
+        return execute(input, lineOfBusiness, proofOfLossComplete, noticeDate);
+    }
+
     public DeadlineResult execute(FNOLPayload input, String lineOfBusiness, boolean proofOfLossComplete, LocalDate noticeDate) {
         return provider.deadline(input.state(), input.incidentDate(), lineOfBusiness, noticeDate,
                 proofOfLossComplete ? noticeDate : null);

@@ -8,12 +8,13 @@ Writes: results/gate-ablation.md
 The checks mirror the app (fnol-orchestrator GateConsistencyChecker and the STP confidence factor):
   1. confidence factor     - Gemini's confidence >= 0.85 (the only vision check before the gate existed)
   2. AMBIGUOUS_DAMAGE_TYPE - gap between the two highest damage-type probabilities >= 0.30
-  3. SEVERITY_ESTIMATE_MISMATCH - the severity label agrees with the estimate band
+  3. SEVERITY_ESTIMATE_MISMATCH - the dollars are within 2x of the published range for the severity label
   4. PHOTO_SUBJECT_MISMATCH - the photos are reported as a VEHICLE (only runs whose prompt asks for photoSubject)
 Only the vision-related part of the STP decision is replayed: coverage, claimed amount, intake flags and the
 severity gate are not part of a single-photo evaluation, so real claims face more checks than this.
 """
 import argparse
+import json
 import os
 import sys
 
@@ -22,13 +23,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from calibrate import RESULTS, STP_CONFIDENCE, correctness, load, margin
 
 MIN_MARGIN = 0.30          # fnol.stp.min-probability-margin
-MINOR_MAX, MODERATE_MAX = 2000, 10000
+TOLERANCE = 2.0            # RepairCostEstimator.TOLERANCE
+BAND_FOR_SEVERITY = {"MINOR": "SMALL", "MODERATE": "MEDIUM", "SEVERE": "LARGE"}
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "fnol-agents", "src", "main", "resources",
+                       "repair-cost-ranges.json"), encoding="utf-8") as _f:
+    RANGES = json.load(_f)["ranges"]
 
 
 def severity_ok(p):
+    """GateConsistencyChecker (ADR-016): the dollars are within 2x of the published range for the severity label."""
+    cell = RANGES.get(p.get("damageType"), {}).get(BAND_FOR_SEVERITY.get(p.get("severity")))
+    if cell is None:
+        return True
     est = float(p.get("estimatedDamage") or 0)
-    expected = "MINOR" if est < MINOR_MAX else "MODERATE" if est <= MODERATE_MAX else "SEVERE"
-    return p.get("severity") in (None, expected)
+    return cell["low"] / TOLERANCE <= est <= cell["high"] * TOLERANCE
 
 
 CHECKS = [

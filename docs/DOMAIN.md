@@ -29,7 +29,7 @@ A claim moves through these stages. The engine covers the first four and support
 | **Exclusion** | Damage a policy does not cover. Standard homeowners policies exclude flood (it needs separate flood insurance) | `POSSIBLE_FLOOD_EXCLUSION` in `GateConsistencyChecker` sends the claim to an adjuster; it never denies |
 | **Reserve** | Money set aside for the expected cost of the claim; a liability on the insurer's books, not a payment | `ReserveCalculatorAgent`: a table row by line, coverage and severity, moved by the AI only within a band and only when its reading holds up; then `min(amount claimed, that) − deductible`, capped at the limit; the adjuster sets the final reserve |
 | **Exposure** | In ClaimCenter, one coverage × one claimant within a claim; reserves are held per exposure | `MockClaimCenterClient` creates one exposure per matched coverage |
-| **Severity** | How big the loss is | `StpProperties`: LOW ≤ $5,000, MEDIUM ≤ $20,000, HIGH above (always to a person) |
+| **Severity** | How big the loss is | From the vision label, not the AI's dollars ([ADR-016](architecture-decisions.md)): MINOR is LOW, MODERATE is MEDIUM, SEVERE is HIGH (always to a person). If the second opinion's visible extent reads differently (SMALL, MEDIUM, LARGE), or there is no label, the more severe reading stands. A table-based reserve above $20,000 is HIGH |
 | **Straight-through processing (STP)** | Handling a simple claim end to end without a person | Six factors in `ExplanationBuilder` plus no flags; by default even STP-eligible claims wait for an adjuster (`fnol.stp.require-advisory-review`, ADR-009) |
 | **Leakage** | Money paid that should not have been (over-payment, missed fraud, missed recovery) | The reserve cap at the AI estimate and `CLAIMED_EXCEEDS_AI_ESTIMATE`; the governance page reports the difference kept (`AiGovernanceService`) |
 | **Statutory deadlines / unfair claims practices** | State regulations require insurers to acknowledge a claim and accept or deny it within set times | `StatutoryDeadlineAgent`, `CitedDeadlineRuleProvider`, `claim-regulations.json`; [legal-compliance.md](legal-compliance.md) |
@@ -55,7 +55,7 @@ A claim moves through these stages. The engine covers the first four and support
    the lower of that and the claimed amount, minus the deductible, within the limit.
 4. **What does the law require?** The legal branch removes personal data, computes the acknowledge-by and decide-by
    dates, scores the recovery chance and spots representation.
-5. **Does it all agree?** The gate cross-checks (severity against estimate, reserve against limit, damage against line
+5. **Does it all agree?** The gate cross-checks (the AI's rough dollars against the published range for its severity, reserve against limit, damage against line
    of business, photo subject, the two vision models, the flood exclusion, the claimed amount against the estimate) and
    explains the recommendation in six factors.
 6. **Who decides?** A licensed adjuster, always by default. The engine recommends and explains.

@@ -44,7 +44,7 @@ output is written to the claim's tamper-evident audit chain.
 | **Type** | A lookup table (`repair-cost-ranges.json`, `RepairCostEstimator`) of published US figures with sources (AAA, Consumer Reports, CCC); estimate = the range's geometric mean. Replaced cell by cell by costs learned from this insurer's claims once that is more accurate out of sample (`tools/cost-eval/fit_costs.py`). |
 | **Evidence** | Every figure is quoted from its source with a link. Which figure applies to which extent band is an assumption. No real repair costs exist in the project yet, so its accuracy is **unknown**; the decision form and inspections now collect them. |
 | **Known failure modes** | Ranges are wide (a front bumper with LARGE damage: $4,818-$11,708). Vehicle make, ADAS sensors and local labour rates are not used. The extent depends on photo framing. Gemini's estimates average 2.7x the midpoints: one of the two is off, and only real costs will tell which. |
-| **Reserve (ADR-015)** | The reserve no longer rests on the AI's dollar figure: it starts from `initial-reserves.json` by line, coverage and severity, and this range only limits how far the AI's figure can move it. Severity accuracy is not measured. On 41 recorded answers the new method is **not** closer to these ranges (median 3.57x from the midpoint, against 2.69x); see [metrics §8](metrics.md#8-repair-cost-estimates) |
+| **Reserve (ADR-015)** | The reserve no longer rests on the AI's dollar figure: it starts from `initial-reserves.json` by line, coverage and severity, and this range only limits how far the AI's figure can move it. Severity accuracy is not measured, and severity no longer reads the dollars (ADR-016). The table is not presented as more accurate; see [metrics §8](metrics.md#8-repair-cost-estimates) |
 | **Human decision** | The range and its sources are shown to the adjuster, who sets the final reserve. A repair cost they record with evidence (invoice, body-shop estimate, inspection) teaches the next version; their judgement alone is kept but not learned from. On a claim sent to investigation, figures are held and the investigator's offline cost is what it learns. |
 
 ## 3. Trust score (calibrated AI confidence)
@@ -92,6 +92,19 @@ output is written to the claim's tamper-evident audit chain.
 | **Human decision** | `FRAUD_ANOMALY` only routes the claim to an adjuster with its top contributing details and an SIU-referral suggestion. It never denies, never changes the reserve, and the adjuster decides whether to refer. Turn it off with `fnol.stp.fraud-anomaly-enabled=false`; override the threshold with `fnol.stp.fraud-anomaly-threshold`. |
 
 ---
+
+## 7. Drafting agent (off by default)
+
+| | |
+|---|---|
+| **Purpose** | Drafts the adjuster advisory note and the acknowledgement letter, for a person to accept, edit or discard. `fnol.drafting-agent.enabled`, default **false**; never in lite mode; outside the intake path |
+| **Type** | Gemini 2.5 Flash, text only, with function calling. The one LLM-planned component in this project |
+| **Inputs sent** | The task and rules, then whichever of five read-only tools the model asks for: claim summary, WHY panel, claim clock, coverage result, letter template. They hold no description text and no name. Never a photo |
+| **Bounds** | No tool writes anything. At most 6 tool calls and 8 seconds. Any error, timeout, missing key or guardrail rejection gives the template text, still as a draft |
+| **Guardrail** | `DraftGuard`: rejects raw personal data, a statement of a decision, payment or liability finding, and any date, amount or period not returned by a tool the model actually read. Prototype patterns in English: it can miss a rewording, which is why a person must accept every draft |
+| **Audit** | Hash of the inputs and of the output, with the tool calls listed; then the person's acceptance or discard, in the claim's hash chain |
+| **Measured** | **Quality not measured.** Tests use a mock model. One live call on 3 Nov 2026, with made-up facts, confirmed the request format: the model read 2 tools and its draft passed the guardrail. That is a format check, not an evaluation |
+| **Known limits** | A name typed into an edited draft cannot be detected. The accepted letter is filed on the claim, not sent |
 
 ## Mapping to AI governance expectations
 

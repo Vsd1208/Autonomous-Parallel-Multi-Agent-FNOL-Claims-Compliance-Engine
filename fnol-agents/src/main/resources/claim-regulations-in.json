@@ -1,0 +1,49 @@
+{
+  "version": "2026-11-03-IN",
+  "jurisdiction": "IN",
+  "disclaimer": "Prototype compiled on 2026-11-03 from the official IRDAI text. Not reviewed by a lawyer; an Indian insurance-law specialist must confirm it. Later amendments were searched for and none was found, but that search was not exhaustive.",
+  "source": {
+    "title": "IRDAI, Master Circular on Protection of Policyholders' Interests, 2024",
+    "reference": "IRDAI/PP&GR/CIR/MISC/117/9/2024",
+    "date": "2024-09-05",
+    "url": "https://irdai.gov.in/document-detail?documentId=5625747",
+    "note": "The circular's cover page reads '2025' in its English title; IRDAI's page and the date say 2024.",
+    "parent": "IRDAI (Protection of Policyholders' Interests, Operations and Allied Matters of Insurers) Regulations, 2024, regulation 22(1)(b), F. No. IRDAI/Reg/11/205/2024"
+  },
+  "scope": "Retail general insurance policies only.",
+  "milestones": [
+    {
+      "id": "SURVEYOR_ALLOCATION",
+      "action": "Allocate a surveyor and tell the insured the appointment, role and duties",
+      "startsFrom": "CLAIM_REPORTED",
+      "amount": 24,
+      "unit": "HOURS",
+      "citation": "Master Circular IRDAI/PP&GR/CIR/MISC/117/9/2024, Part C, V.4, paras 2-3",
+      "appliesWhen": "A survey by a registered surveyor is mandatory above Rs 50,000 (motor) or Rs 1 lakh (other) (para 1). The text does not say whether the 24 hours also applies below those amounts.",
+      "effectiveDate": "2024-09-05",
+      "verification": "regulation text"
+    },
+    {
+      "id": "SURVEY_REPORT",
+      "action": "Obtain the survey report from the surveyor (Rs 500 per day to the claimant if it is late)",
+      "startsFrom": "SURVEYOR_ALLOCATED",
+      "amount": 15,
+      "unit": "DAYS",
+      "citation": "Master Circular IRDAI/PP&GR/CIR/MISC/117/9/2024, Part C, V.4, para 4",
+      "appliesWhen": "The text says 'fifteen days' without saying calendar or business; counted here as calendar days, an assumption.",
+      "effectiveDate": "2024-09-05",
+      "verification": "regulation text"
+    },
+    {
+      "id": "DECISION",
+      "action": "Decide on the claim",
+      "startsFrom": "SURVEYOR_ALLOCATED",
+      "amount": 15,
+      "unit": "DAYS",
+      "citation": "Master Circular IRDAI/PP&GR/CIR/MISC/117/9/2024, Part C, V.4, para 5",
+      "appliesWhen": "Within seven days of receiving the survey report, or after expiry of fifteen days from allocation, whichever is earlier. At first notice the receipt date is unknown, so this date is the outer limit; an earlier report brings it forward. Not for property or building policies on a reinstatement value basis. This reading is this project's.",
+      "effectiveDate": "2024-09-05",
+      "verification": "regulation text"
+    }
+  ]
+}

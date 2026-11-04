@@ -20,9 +20,7 @@ public class StpProperties {
     private BigDecimal reserveCeiling = new BigDecimal("25000");
     /** Subrogation score must be strictly below this for the Subrogation Risk factor. */
     private int subrogationMax = 70;
-    /** Estimated damage up to this is LOW severity. */
-    private BigDecimal lowSeverityMax = new BigDecimal("5000");
-    /** Estimated damage up to this is MEDIUM severity; above is HIGH and always goes to a human. */
+    /** A table-based reserve above this makes severity HIGH, whatever the vision label says; HIGH always goes to a human. */
     private BigDecimal mediumSeverityMax = new BigDecimal("20000");
     /** Minimum PII redaction confidence for a claim with detected PII to pass the Compliance factor. */
     private BigDecimal piiRedactionConfidence = new BigDecimal("0.90");
@@ -32,8 +30,8 @@ public class StpProperties {
      */
     private boolean requireAdvisoryReview = true;
     /**
-     * How far the claimed amount may exceed the AI estimate before the claim goes to an adjuster
-     * (0.10 = 10%). Within it, the AI estimate is still the most that is reserved automatically.
+     * How far the claimed amount may exceed what the reserve supports before the claim goes to an adjuster
+     * (0.10 = 10%). Within it, what the reserve supports is still the most that is reserved automatically.
      */
     private BigDecimal claimedAmountTolerance = new BigDecimal("0.10");
     /**
@@ -61,8 +59,6 @@ public class StpProperties {
     public int getSubrogationMax() { return subrogationMax; }
     public void setSubrogationMax(int subrogationMax) { this.subrogationMax = subrogationMax; }
 
-    public BigDecimal getLowSeverityMax() { return lowSeverityMax; }
-    public void setLowSeverityMax(BigDecimal lowSeverityMax) { this.lowSeverityMax = lowSeverityMax; }
 
     public BigDecimal getMediumSeverityMax() { return mediumSeverityMax; }
     public void setMediumSeverityMax(BigDecimal mediumSeverityMax) { this.mediumSeverityMax = mediumSeverityMax; }

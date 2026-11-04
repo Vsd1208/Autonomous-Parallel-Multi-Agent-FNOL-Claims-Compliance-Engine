@@ -5,22 +5,11 @@
 [![CI](https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-**Problem.** When a policyholder reports a loss (First Notice of Loss, FNOL), an adjuster has to check coverage, judge
-the damage from photos, set a reserve, meet state claim-handling deadlines and look for fraud and recovery chances,
-mostly by hand and under time pressure.
+**Problem.** When a loss is reported (First Notice of Loss, FNOL), an adjuster has to check coverage, judge the damage from
+photos, set a reserve, meet state deadlines and look for fraud and recovery chances, mostly by hand and under time pressure.
 
-**Solution.** This engine takes the FNOL, then runs an operational branch (photo damage assessment with Google Gemini,
-checked by an on-premise vision model trained here that also takes over when Gemini is unavailable; a sourced
-repair-cost range; coverage; reserve) and a legal branch (PII redaction, a cited state claim clock,
-subrogation) in parallel under one deadline. A reconciliation gate cross-checks the two and explains its recommendation
-in a six-factor WHY panel. A licensed adjuster makes every decision, and every step is written to a tamper-evident audit
-chain.
-
-**It works as an extension of the claims system, not beside it.** ClaimCenter (mocked here) owns the claim, the work
-queue and the decision. A signed event wakes the engine, which writes its results back onto that claim; a decision made
-anywhere reaches its feedback loop. How this maps to App Events, Integration Gateway and the Cloud API, and where a real
-tenant would differ: [docs/guidewire-integration.md](docs/guidewire-integration.md) (modelled from public documentation,
-not verified against a tenant).
+**Solution.** Parallel specialist agents analyse each claim, a reconciliation gate cross-checks them and explains its recommendation, and
+a person decides. **Guidewire is simulated here, modelled on public documentation and not verified against a tenant;** [how it maps](docs/guidewire-integration.md).
 
 ```mermaid
 flowchart LR
@@ -46,13 +35,15 @@ flowchart LR
 | Component | Real or simulated | Why | Where in code |
 |---|---|---|---|
 | Damage assessment | **Real** Gemini 2.5 Flash API calls when a key is set; a deterministic mock for demos and tests | Demos and CI must run without a key | `GeminiVisionProvider.java`, `MockVisionProvider.java` (`fnol-agents`) |
+| Replay mode (lite) | **Real recorded model output** for 66 CC0 photos; not live analysis, and a photo outside the set goes to a person | A review with no model or key still shows the checks working | `ReplayVisionProvider.java`, `demo-scenarios/replay/` |
 | Second-opinion vision model | **Real**, trained in this project on 734 car photos (441 CC0 + 293 CC BY 4.0) and 307 public-domain FEMA property photos, every photo reviewed by eye (CLIP + DINOv2 encoders, chosen by benchmark); runs on-premise, so photos never leave | An independent check on a third-party model, and the reader of last resort when Gemini is down | `fnol-vision-ml/`, `tools/second-opinion/` |
 | On-premise vision when Gemini is unavailable | **Real**: the second-opinion model reads vehicle photos in place of Gemini's placeholder and the claim is priced from the repair-cost range; flag `ON_PREMISE_VISION`, always an adjuster | Quotas and outages happen; the claim still gets a measured reading | `OnPremiseVision.java` |
-| Repair-cost ranges | **Real published figures** (AAA, Consumer Reports, CCC, each linked); the band mapping is an assumption; accuracy on real claims unknown | Repair cost drives the reserve; no photo dataset has repair costs | `repair-cost-ranges.json`, `RepairCostEstimator.java`, `tools/cost-eval/` |
+| Repair-cost ranges | **Real published figures** (AAA, Consumer Reports, CCC, each linked); the band mapping is an assumption; accuracy on real claims unknown | They bound the AI's figure and price on-premise readings; no photo dataset has repair costs | `repair-cost-ranges.json`, `RepairCostEstimator.java`, `tools/cost-eval/` |
 | Learning repair costs from real claims | **Real pipeline**: each decision stores the repair cost and its evidence (invoice, body-shop estimate, inspection; an adjuster's judgement is kept but never learned from; on a claim sent to investigation only the investigator's offline cost is learned); a learned table replaces the published one only when it is more accurate out of sample (50+ claims) | The way to a validated dollar estimate | `AiGovernanceService.java`, `tools/cost-eval/fit_costs.py` |
 | Trust score (calibrated confidence) | **Real**, fitted and measured on 66 labelled Gemini answers | Gemini's own confidence does not separate right from wrong | `TrustScorer.java`, `tools/vision-eval/trust_score.py` |
 | Face and licence-plate blurring | **Real** (OpenCV, YuNet) | Photos leave for an external model | `fnol-vision-ml/redaction/` |
 | PII redaction in text | **Real**, rule-based | Personal data must not reach models or logs | `PiiRedactionAgent.java`, `PIIGuardrail.java` |
+| India claim clock (off by default) | **Real citations** to the official IRDAI text; a prototype not reviewed by a lawyer | Shows the rules are data, not code | `claim-regulations-in.json`, `IndianClaimClock.java`, [docs/legal-compliance.md](docs/legal-compliance.md) |
 | State claim clock (CA, NY, TX, FL, IL) | **Real citations**; a prototype not reviewed by a lawyer; 3 recovery limits unverified | Deadlines are what regulators examine | `claim-regulations.json`, `CitedDeadlineRuleProvider.java`, [docs/legal-compliance.md](docs/legal-compliance.md) |
 | Coverage rules, subrogation weights | **Simulated** (synthetic prototype values) | No insurer's real rules are available | `SyntheticCoverageRuleProvider.java`, `DeterministicSubrogationScorer.java` |
 | Event-driven extension (signed events from a transactional outbox, retries, write-back, decisions first in the claims system) | **Real code, tested and run**, against the mock claims system | How an AI engine should sit on a core system | `ClaimEventController.java`, `ClaimDecisionRecorder.java`, `ClaimEventOutbox.java` |
@@ -66,17 +57,16 @@ flowchart LR
 
 ### Key results
 
-All from small public datasets, not real claims. Every number, with its run, date, sample and caveat, is in
-[docs/metrics.md](docs/metrics.md).
+All from small public datasets, not real claims. Runs, dates, samples and caveats: [docs/metrics.md](docs/metrics.md).
 
 | Result | Value | Source |
 |---|---|---|
-| Wrong Gemini answers that could go straight through: confidence check only → all vision checks | **11 → 1** of 66 in sample, about **11 → 3** with the thresholds chosen out of sample | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
-| Trust score calibration: how far its confidence is from how often Gemini is actually right (calibration error) | **0.063** out of sample, range 0.030–0.153 (Gemini's own confidence 0.090; 66 photos; AUC 0.79 against 0.57) | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
-| Gemini damaged area right, lenient / strict | 82% / 58% (66 photos); dollar estimates not validated (median 2.7x the published range midpoint, see [metrics §8](docs/metrics.md#8-repair-cost-estimates)) | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle) |
-| Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Our own on-premise vision model: damaged area right, strict / lenient | **78% / 87%** out-of-fold on 734 car photos, each reviewed (CLIP alone 65% / 81%); property cause of loss **93%** and property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests; demo scenario checks | 409 passing; 111 passing in lite and in full mode | [metrics §6](docs/metrics.md#6-engineering) |
+| Wrong Gemini answers that could go straight through: confidence only → all vision checks | **11 → 1** of 66 in sample, about **11 → 3** out of sample | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
+| Trust score: separating right from wrong, calibration error | AUC **0.79**, error **0.063** out of sample (range 0.030–0.153); Gemini's own 0.57, 0.090; 66 photos | [metrics §2](docs/metrics.md#2-trust-score-calibrated-ai-confidence-vehicle-claims) |
+| Gemini damaged area right, lenient / strict | 82% / 58% (66 photos). **Dollar estimates not validated**: no true costs exist, so they are for reference | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle), [§8](docs/metrics.md#8-repair-cost-estimates) |
+| Severity gate: answers read as LOW / MEDIUM / HIGH, of 66 | 6 / 36 / 24 from the label and second opinion; 45 / 21 / 0 from the AI's dollars. No ground truth: routing, not accuracy | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
+| Our on-premise model: damaged area right, strict / lenient | **78% / 87%** out of fold on 734 reviewed car photos; property cause of loss **93%** on 307 | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
+| Backend tests; demo scenario checks | 437 passing; 129 in lite mode, 111 in full mode | [metrics §6](docs/metrics.md#6-engineering) |
 
 ### Quick review (lite mode)
 
@@ -88,17 +78,68 @@ docker compose --env-file .env.lite -f docker-compose.yml -f docker-compose.lite
 bash demo-scenarios/run-all.sh
 ```
 
-**Measured on 3 Nov 2026, one laptop:** 116 s from build to healthy (78 s for `build --no-cache`, 38 s to start), then 75 s for `run-all.sh`, with **111 checks passed, 0 failed**. The base images were already on this machine and the connection was about 5 MB/s, so a first run also has to pull those images (Maven alone is 775 MB). On a very slow connection it takes far longer: at under 76 KB/s the same build had not finished after 39 minutes.
+Then open http://localhost:5173 and sign in as `ADJ-001`, password `demo-password`.
+
+**Replay:** lite mode replays real recorded model answers for 66 photos, so the trust score, second opinion and vision checks work on real output: under New Claim, try the "Recorded" sample sets, including a confident wrong answer that the second opinion stops. It is **not live analysis of new photos**: any other photo gets a placeholder and goes to a person, and no photo can reach an external model, because the engine refuses to start in lite mode with Gemini on.
+
+**Measured on 4 Nov 2026, one laptop:** 160 s from build to healthy with base images already present, then 81 s for `run-all.sh`, with **129 checks passed, 0 failed**. A first run also pulls the base images. See [metrics §6](docs/metrics.md#6-engineering).
+
+### Where to look next
+
+- [docs/DOMAIN.md](docs/DOMAIN.md): the insurance terms, and how a claim moves
+- [docs/REVIEW_QA.md](docs/REVIEW_QA.md): the hard questions, answered honestly
+- [docs/guidewire-integration.md](docs/guidewire-integration.md): how it maps to Guidewire Cloud, and where a real tenant would differ
+- [docs/metrics.md](docs/metrics.md): every number, with its run and caveat
+- [docs/MODULE_GUIDE.md](docs/MODULE_GUIDE.md): the code, area by area
+
+---
+
+## Reference
+
+Everything below is reference material.
+
+### The problem and the engine in full
+
+**Problem.** When a policyholder reports a loss (First Notice of Loss, FNOL), an adjuster has to check coverage, judge
+the damage from photos, set a reserve, meet state claim-handling deadlines and look for fraud and recovery chances,
+mostly by hand and under time pressure.
+
+**Solution.** This engine takes the FNOL, then runs an operational branch (photo damage assessment with Google Gemini,
+checked by an on-premise vision model trained here that also takes over when Gemini is unavailable; a sourced
+repair-cost range; coverage; reserve) and a legal branch (PII redaction, a cited state claim clock,
+subrogation) in parallel under one deadline. A reconciliation gate cross-checks the two and explains its recommendation
+in a six-factor WHY panel. A licensed adjuster makes every decision, and every step is written to a tamper-evident audit
+chain.
+
+### How it fits with the claims system
+
+**It works as an extension of the claims system, not beside it.** ClaimCenter (mocked here) owns the claim, the work
+queue and the decision. A signed event wakes the engine, which writes its results back onto that claim; a decision made
+anywhere reaches its feedback loop. How this maps to App Events, Integration Gateway and the Cloud API, and where a real
+tenant would differ: [docs/guidewire-integration.md](docs/guidewire-integration.md) (modelled from public documentation,
+not verified against a tenant).
+
+
+### More results
+
+All from small public datasets, with runs and caveats in [docs/metrics.md](docs/metrics.md).
+
+| Result | Value | Source |
+|---|---|---|
+| Wrong answers passing every other check that the second opinion caught | 2 of 2 (66 answers) | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
+| On-premise model, compared with CLIP alone; property type | 78% / 87% against 65% / 81%; property type 90% on 307 reviewed FEMA photos | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
+
+### Lite mode in detail
+
+**Measured on 4 Nov 2026, one laptop:** 160 s from build to healthy (121 s for `build --no-cache`, 39 s to start). The base images were already on this machine, so a first run also has to pull those images (Maven alone is 775 MB). On a very slow connection it takes far longer: at under 76 KB/s the same build had not finished after 39 minutes.
 
 **What is off in lite mode:**
 
 - Vision is mock: canned answers, no real photo analysis. To keep it that way, the engine refuses to start in lite mode with Gemini enabled, because photo blurring lives in `vision-ml`. No photo can reach an external model unblurred.
-- The second opinion is reported as "not available in lite mode", in `GET /api/v1/health` and in the claim's notes. So `MODEL_DISAGREEMENT` never fires, and the fraud score has no disagreement input.
-- There is no on-premise vision reading or visible damage extent.
+- The second opinion is the recorded one, for the recorded photos only, and health and each claim's notes say so. For any other photo there is none, so `MODEL_DISAGREEMENT` cannot fire on it, and the fraud score has no disagreement input.
+- There is no on-premise vision reading, and no photo blurring.
 
-**No scenario expectation changed for lite mode:** the scenarios use mock vision in both modes, so all of them give the same results. They therefore do not exercise the vision checks; the figures for those come from the [evaluation](docs/metrics.md), not from these runs.
-
-Sign-in and addresses are the same as in the quick start below.
+**No scenario expectation differs for lite mode:** the ten scenarios send `mock://` evidence, which keeps its canned answer in both modes. The five recorded-photo scenarios run only in lite mode, and they exercise the vision checks on recorded answers; a claim in them can also raise `PHOTO_REUSED` on a repeat run, so they check the vision flags and not the final route.
 
 ### Quick start, full mode (no API key needed)
 
@@ -114,7 +155,6 @@ Then open the adjuster workspace at http://localhost:5173 and the policyholder p
 More: [running locally](#running-locally), [the insurance terms explained](docs/DOMAIN.md), [roadmap and known
 limits](docs/ROADMAP.md).
 
----
 
 ## What we mean by "autonomous" and "agent"
 
@@ -126,6 +166,8 @@ insurer could turn on to let eligible claims skip the adjuster's confirmation.
 **Agent** means a specialist component with one job, typed inputs and outputs, and its own audit record. It does not mean
 an LLM agent choosing its own actions: the pipeline's order is fixed in code. (In insurance an "agent" is also a person who
 sells or services policies; we say "insurance agent" for that.)
+
+**The one LLM-planned agent** is the drafting agent (`DraftingAgent`), **off by default** (`fnol.drafting-agent.enabled`) and outside the intake path. A model chooses which of five read-only tools to read and drafts the advisory note or acknowledgement letter, for a person to accept, edit or discard. What bounds it: no tool can write a decision, reserve, status or assignment; at most 6 tool calls and 8 seconds; only redacted text is sent; `DraftGuard` rejects personal data, a decision, payment or liability statement, and any date, amount or period the tools it read did not return; and any failure gives the template text instead. Nothing reaches the claims system until a person accepts it, and both steps are audited.
 
 | Uses machine learning | Deliberately rule-based, because the decision must be explainable and auditable |
 |---|---|
@@ -173,8 +215,8 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs
 | Parallel branches on a bounded executor, one deadline, interrupting cancel | Done |
 | Vision: Gemini provider with SSRF-safe evidence loading; deterministic mock provider | Done |
 | Coverage by line of business (AUTO, HOME) | Done (synthetic rules) |
-| Recommended reserve (amount owed): min(amount claimed, AI estimate) − deductible, capped at the limit (BigDecimal), with confidence score | Done |
-| Claims above the AI estimate never auto-approved: adjuster can request more photos, assign an inspector, investigate or approve at the AI estimate | Done |
+| Recommended reserve (amount owed): from a sourced table by line, coverage and severity, the AI's figure moving it only within a bound; the lower of that and the amount claimed, less the deductible, capped at the limit ([ADR-015](docs/architecture-decisions.md)) | Done |
+| Claims above what the reserve supports never auto-approved: adjuster can request more photos, assign an inspector, investigate or approve at the recommended reserve | Done |
 | Standard photo set: front, rear, left, right and a damage close-up (home: overview and close-up), all sent to the AI together; an incomplete set is flagged `INCOMPLETE_PHOTO_SET` | Done |
 | Adjuster sets the final reserve (pre-filled with the AI or inspected recommendation; a different amount needs a reason) | Done |
 | Supplementary photos: adjuster sends a one-time, 7-day upload link; the claimant adds the requested views to the same claim, which returns to the adjuster | Done |
@@ -182,22 +224,22 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs
 | PII redaction (SSN, DOB, MRN, name, phone, email) + PII guardrail | Done |
 | State claim clock: acknowledge-by and decide-by from cited regulations (CA, NY, TX, FL, IL), urgency flag, acknowledgement letter | Done (prototype, not legally reviewed) |
 | Subrogation: Branch B liability assessment with compliance notes, finalised with Branch A's severity | Done |
-| Gate consistency checks (severity vs estimate, reserve vs limit, damage vs line, confidence vs photo) | Done |
+| Gate consistency checks (AI dollars vs the published range for the severity, reserve vs limit, damage vs line, confidence vs photo) | Done |
 | Six-factor WHY panel, configurable STP thresholds (`fnol.stp.*`) | Done |
 | Advisory review before STP counts as filed (Human Review Point 2) | Done, on by default |
 | Adjuster review with state checks, token, audit event, modify reserve, require investigation (Human Review Point 3) | Done |
 | Failed intakes persisted and escalated (`REJ-…`); duplicates flagged for verification | Done |
 | Fraud anomaly score over six intake features with its top contributors; `FRAUD_ANOMALY` routes to an adjuster and suggests an SIU referral, never denies | Done (calibrated on synthetic data) |
 | On-premise vision model (`fnol-vision-ml`): damaged car area, visible damage extent, property cause of loss and property type; checks Gemini (`MODEL_DISAGREEMENT`) and reads vehicle photos itself when Gemini is unavailable (`ON_PREMISE_VISION`, always an adjuster) | Done |
-| Repair-cost range per damaged area and extent from published AAA / Consumer Reports / CCC figures, with sources shown to the adjuster; prices on-premise readings; `ESTIMATE_OUTSIDE_PUBLISHED_RANGE` when Gemini's estimate is more than 4x outside | Done (published figures; accuracy on real claims unknown) |
+| Repair-cost range per damaged area and extent from published AAA / Consumer Reports / CCC figures, with sources shown to the adjuster; prices on-premise readings; `ESTIMATE_OUTSIDE_PUBLISHED_RANGE` when Gemini's estimate is more than 2x outside | Done (published figures; accuracy on real claims unknown) |
 | Repair-cost learning: each decision stores the repair cost and its evidence (invoice, body-shop estimate, inspection, investigation); judgements and figures entered during an investigation are never learned from; a learned table ships only when it beats the published one out of sample on 50+ claims | Done (no real costs collected yet) |
 | Hash-chained audit trail + `chainValid` + PDF report | Done |
 | Claim lifecycle draft → open → closed; reserve posted by the adjuster's decision; attachments, tracked review actions; sync status with a manual retry endpoint | Done (no scheduled retry job) |
 | Adjuster queue (API + console page) | Done |
 | Console wired to live data; internal intake (phone, agent) with channel selector and photo upload | Done |
 | Policyholder claims portal (separate app on 5174): report a loss, track it with claim + policy number, add requested photos; never sees AI findings, reserve or notes | Done |
-| Reproducible demo (`.env.demo`, `run-all.sh`, 10 scenarios) | Done |
-| Authentication | Sign-in with adjuster and inspector roles (local accounts; no insurer identity provider or SIU role yet) |
+| Reproducible demo (`.env.demo`, `run-all.sh`, 10 scenarios, 5 recorded-answer scenarios in lite mode) | Done |
+| Authentication | Sign-in with adjuster, senior adjuster, supervisor and inspector roles (local accounts; no insurer identity provider or SIU role yet) |
 
 ## Repository structure
 
@@ -208,19 +250,19 @@ fnol-enrichment/      PolicyCenter/ClaimCenter clients, ClaimHistoryEnricher
 fnol-agents/          Agents, vision providers, EvidenceImageLoader, rule providers
 fnol-guardrails/      Input, output, PII and coverage guardrails
 fnol-orchestrator/    FNOLOrchestrator, IntakeReviewService, ExplanationBuilder, STP settings
-fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V22, PDF
+fnol-api/             REST API, security filters, audit chain, evidence store, persistence, Flyway V1–V23, PDF
 fnol-vision-ml/       On-premise vision service (Python): second opinion, property heads, face and plate blurring
 frontend/             React + Vite adjuster workspace (src/) and policyholder portal (portal/)
 tools/                vision-eval (Gemini evaluation, trust score, photo collection and review), second-opinion
                       (training the on-premise model), cost-eval (repair costs), fraud-eval (fraud score)
-demo-scenarios/       Ten scenario payloads, run-all.sh, duplicate script, sample photos
+demo-scenarios/       Ten scenario payloads, run-all.sh, duplicate script, sample photos, replay set
 postman/              Request collection
 docs/                 Architecture, ADRs, agents, API, database, Guidewire, traceability
 ```
 
 ## Routing rules
 
-Severity from estimated damage: **LOW** ≤ $5,000, **MEDIUM** ≤ $20,000, **HIGH** above.
+Severity from the vision label, not the AI's dollars ([ADR-016](docs/architecture-decisions.md)): MINOR is **LOW**, MODERATE is **MEDIUM**, SEVERE is **HIGH**. If the second opinion's visible extent differs or there is no label, the more severe reading stands. A table-based reserve above $20,000 is HIGH.
 
 | Factor | Passes when |
 |---|---|
@@ -231,7 +273,7 @@ Severity from estimated damage: **LOW** ≤ $5,000, **MEDIUM** ≤ $20,000, **HI
 | Claim History | Claim frequency risk LOW or MEDIUM |
 | Subrogation Risk | Score < 70 |
 
-A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `PHOTO_REUSED`, `ATTORNEY_REPRESENTED`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `MODEL_DISAGREEMENT`, `ON_PREMISE_VISION`, `ESTIMATE_OUTSIDE_PUBLISHED_RANGE`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`, raised when the amount claimed is more than 10% above the AI estimate, `fnol.stp.claimed-amount-tolerance`; and `FRAUD_ANOMALY`, raised when the fraud anomaly score reaches its threshold, `fnol.stp.fraud-anomaly-threshold`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
+A claim is STP-eligible when severity is LOW or MEDIUM, all six factors pass, no intake flag is raised (`MISSING_EVIDENCE`, `INCOMPLETE_PHOTO_SET`, `PHOTO_REUSED`, `ATTORNEY_REPRESENTED`, `CLAIMANT_NAME_MISMATCH`, `INCIDENT_OUTSIDE_POLICY_PERIOD`, `INCIDENT_NEAR_POLICY_START`, `HIGH_CLAIM_FREQUENCY`) and no gate consistency flag is raised (`SEVERITY_ESTIMATE_MISMATCH`, `RESERVE_EXCEEDS_COVERAGE_LIMIT`, `DAMAGE_TYPE_LINE_MISMATCH`, `PHOTO_SUBJECT_MISMATCH`, `MODEL_DISAGREEMENT`, `ON_PREMISE_VISION`, `ESTIMATE_OUTSIDE_PUBLISHED_RANGE`, `POSSIBLE_FLOOD_EXCLUSION`, `CONFIDENCE_PHOTO_QUALITY_MISMATCH`, `AMBIGUOUS_DAMAGE_TYPE`, `CLAIMED_EXCEEDS_AI_ESTIMATE`, raised when the amount claimed is more than 10% above what the reserve supports, `fnol.stp.claimed-amount-tolerance`; and `FRAUD_ANOMALY`, raised when the fraud anomaly score reaches its threshold, `fnol.stp.fraud-anomaly-threshold`). HIGH severity always goes to a human. All thresholds are properties under `fnol.stp`.
 
 ## API
 
@@ -277,7 +319,7 @@ Prerequisites: Java 17+, Maven 3.9+, Node 18+, Docker.
 
 ```bash
 docker compose --env-file .env.demo up -d --build
-bash demo-scenarios/run-all.sh        # posts all 10 scenarios, exits non-zero on any mismatch
+bash demo-scenarios/run-all.sh        # posts all 10 scenarios (plus the recorded or India ones when active), exits non-zero on any mismatch
 ```
 
 If port 5432 is already in use on your machine, add `POSTGRES_HOST_PORT=5433` in front of the compose command.
@@ -341,6 +383,8 @@ licences: [demo-scenarios/sample-images/CREDITS.md](demo-scenarios/sample-images
 | `FNOL_RESERVE_METHOD` | `AVERAGE_TABLE` | Initial reserve from the sourced table, or `AI_ESTIMATE` for the old formula ([ADR-015](docs/architecture-decisions.md)) |
 | `FNOL_RESERVE_AI_ADJUSTMENT_MAX` | `0.40` | How far the AI may move the table's base, when its reading holds up |
 | `FNOL_AUTHORITY_ADJUSTER` / `FNOL_AUTHORITY_SENIOR_ADJUSTER` | `10000` / `50000` | Reserve each role may post: synthetic prototype values. A supervisor has no limit |
+| `FNOL_DRAFTING_AGENT_ENABLED` | `false` | The drafting agent ([ADR-017](docs/architecture-decisions.md)); needs a Gemini key, and is never used in lite mode |
+| `FNOL_CLAIM_CLOCK_INDIA_ENABLED` | `false` | India's claim clock for a policy with jurisdiction `IN` (prototype, [not reviewed by a lawyer](docs/legal-compliance.md)) |
 | `FNOL_LITE_MODE` | `false` | Quick review without `vision-ml`; refuses to start with Gemini on. Set by `docker-compose.lite.yml` |
 | `FNOL_SECOND_OPINION_URL` | `http://vision-ml:8090` in Compose | On-premise vision service; empty turns the second opinion and on-premise vision off |
 | `FNOL_REDACTION_URL` / `FNOL_REDACTION_REQUIRED` | `http://vision-ml:8090` / `true` | Face and plate blurring before photos leave; when required and unavailable, no photo is sent |

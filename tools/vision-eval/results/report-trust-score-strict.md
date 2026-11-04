@@ -25,14 +25,14 @@ Feature set picked inside the training folds: margin + agreement + named area (e
 | Vision checks | Pass | Wrong among them | Right answers held back | What saw these answers |
 |---|---|---|---|---|
 | Gemini's confidence only | 65/66 | 11 | 0 | Nothing fitted |
-| All checks at the shipped thresholds (0.30, 0.10) | 36/66 | 1 (rate up to 15%, exact 95%) | 19 | Both thresholds were set after looking at recorded answers, including these |
-| Thresholds chosen inside each fold, one wrong through = 2 right held back | 44.5/66 | **4.6** (repeats 3-7) | 14.1 | Nothing from the held-out answers |
-| Thresholds chosen inside each fold, one wrong through = 5 right held back | 40.6/66 | **3.0** (repeats 3-3) | 16.4 | Nothing from the held-out answers |
-| Thresholds chosen inside each fold, one wrong through = 10 right held back | 40.6/66 | **3.0** (repeats 3-3) | 16.4 | Nothing from the held-out answers |
-| Thresholds chosen inside each fold, one wrong through = 20 right held back | 40.6/66 | **3.0** (repeats 3-3) | 16.4 | Nothing from the held-out answers |
+| All checks at the shipped thresholds (0.30, 0.10) | 32/66 | 1 (rate up to 16%, exact 95%) | 23 | Both thresholds were set after looking at recorded answers, including these |
+| Thresholds chosen inside each fold, one wrong through = 2 right held back | 39.5/66 | **4.6** (repeats 3-7) | 19.1 | Nothing from the held-out answers |
+| Thresholds chosen inside each fold, one wrong through = 5 right held back | 35.6/66 | **3.0** (repeats 3-3) | 21.4 | Nothing from the held-out answers |
+| Thresholds chosen inside each fold, one wrong through = 10 right held back | 35.6/66 | **3.0** (repeats 3-3) | 21.4 | Nothing from the held-out answers |
+| Thresholds chosen inside each fold, one wrong through = 20 right held back | 35.6/66 | **3.0** (repeats 3-3) | 21.4 | Nothing from the held-out answers |
 
 Thresholds picked most often (margin, agreement) at each cost: 2: (0.3, 0.0) x66, (0.1, 0.0) x14; 5: (0.3, 0.05) x64, (0.3, 0.0) x16; 10: (0.3, 0.05) x64, (0.3, 0.0) x16; 20: (0.3, 0.05) x64, (0.3, 0.0) x16.
 
 ## Sample size
 
-With 12 wrong answers the AUC range is about ±0.13. Ranges shrink with the square root of the sample, so ±0.05 needs about 474 answers at the same 18% wrong rate (rough scaling, not a power calculation). Showing that the wrong-through rate is below 5% takes 72 answers that pass with none wrong (exact two-sided 95%), or 110 with one wrong: about 132 and 202 answers at today's pass rate of 55%.
+With 12 wrong answers the AUC range is about ±0.13. Ranges shrink with the square root of the sample, so ±0.05 needs about 474 answers at the same 18% wrong rate (rough scaling, not a power calculation). Showing that the wrong-through rate is below 5% takes 72 answers that pass with none wrong (exact two-sided 95%), or 110 with one wrong: about 149 and 227 answers at today's pass rate of 48%.

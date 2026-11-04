@@ -131,7 +131,7 @@
 - **Consequences**:
   - One stock dollar figure can no longer carry the reserve. Severity still comes from the vision label, whose accuracy is **not measured**, so the table moves the risk from a dollar figure to a severity band rather than removing it.
   - `CLAIMED_EXCEEDS_AI_ESTIMATE` now compares the claim with what the reserve supports (the name is kept so stored flags stay valid).
-  - The severity gate (LOW, MEDIUM, HIGH) and the fraud score still read the AI's dollar figure; they are unchanged.
+  - The severity gate still read the AI's dollar figure; [ADR-016](#adr-016-severity-from-the-label-and-the-table-reserve-not-the-ais-dollars) changed that.
 
 ---
 
@@ -141,3 +141,34 @@
 - **Decision**: People sign in with their own account (salted PBKDF2 passwords, hashed session tokens, 8-hour sessions, a lockout after 5 failures). Their identity replaces any name in a request. Roles separate duties: an inspector can read and file their own assigned report but cannot decide; an adjuster can decide but cannot file a report, so whoever decides does not also write the evidence that teaches the cost model. `X-Adjuster-Token` stays as the service credential for integrations and scripts, and is in no browser bundle.
 - **Alternatives**: OIDC is what an insurer would use, but needs an identity provider this project does not have. Spring Security was not needed for this small a surface.
 - **Consequences**: A local login, to be replaced by the insurer's identity provider. No SIU role yet (supervisor and senior adjuster roles came with authority limits). A service-token caller still states its own actor name.
+
+---
+
+## ADR-016: Severity from the Label and the Table Reserve, Not the AI's Dollars
+- **Status**: Accepted
+- **Context**: After ADR-015 the severity gate still read Gemini's dollar figure, which has no validation and mostly restates its severity band. On the 66 recorded answers it never reached HIGH: 45 LOW, 21 MEDIUM, 0 HIGH, although Gemini labelled 18 of them SEVERE ([metrics §3](metrics.md#3-vision-checks-replayed-gate-ablation-vehicle)).
+- **Decision**:
+  - MINOR is LOW, MODERATE is MEDIUM, SEVERE is HIGH. The second opinion's visible extent is read the same way (SMALL, MEDIUM, LARGE). When the two differ, or there is no usable label, the more severe reading stands, with a note to the adjuster.
+  - A table-based reserve, after the bounded adjustment and before the claimed amount and deductible, above `fnol.stp.medium-severity-max` is HIGH. `fnol.stp.low-severity-max` is removed: nothing reads it.
+  - `SEVERITY_ESTIMATE_MISMATCH` now compares the dollar figure with the published range for the label, using SMALL, MEDIUM and LARGE as the band for MINOR, MODERATE and SEVERE (this project's mapping, an assumption), with the same 2x tolerance. It routes to a person only. It no longer blocks the AI's adjustment, so it cannot change the reserve or the severity.
+- **Alternatives**: The label alone sends fewer claims to people (18 HIGH of 66, against 24), but gives one model's unmeasured label the final word. Using only the second opinion's extent would rest severity on how close the photo was taken.
+- **Consequences**:
+  - More people-work: of 32 answers passing the vision checks, 10 are now HIGH, including the 1 wrong answer left. That is in sample, on the same 66 answers, and severity itself has no ground truth, so this is a change in routing and not a measured improvement.
+  - Label and extent disagree on 34 of 66 answers, so the note is common. Extent also depends on how close the photo was taken, so some HIGH readings are only close-ups. It errs towards a person looking.
+  - Home claims have no published range, so `SEVERITY_ESTIMATE_MISMATCH` no longer fires on them.
+  - **What still reads the AI's dollar figure, and why:**
+    - the bounded, blockable adjustment (ADR-015);
+    - `ESTIMATE_OUTSIDE_PUBLISHED_RANGE` and `SEVERITY_ESTIMATE_MISMATCH`, which only route;
+    - the fraud score's `claimRatio` (claimed amount / AI estimate), since a claim far above what the photos suggest is the signal it looks for, and it only routes, on synthetic calibration;
+    - the reference figure when the table has no row, which a person must replace before approving;
+    - `fnol.reserve.method=AI_ESTIMATE`, kept only so the methods can be compared;
+    - the estimate written to the claim and the governance page's figures, shown and never used to route.
+
+---
+
+## ADR-017: One Bounded LLM Agent, for Drafting Text Only
+- **Status**: Accepted; **off by default** (`fnol.drafting-agent.enabled`)
+- **Context**: Every other "agent" here runs in a fixed order. Writing a clear note or letter is a task where a model choosing what to read helps, and where a mistake can be caught by a person before it matters.
+- **Decision**: A model plans its own read-only tool calls and drafts text. It runs on request from the claim file, not during intake, so it cannot slow or change routing. Its tools only return text computed beforehand. A deterministic guard checks the draft against the tools it read; any failure gives the template. Nothing reaches the claims system until a person accepts it, and a service credential cannot accept.
+- **Alternatives**: Calling the model during intake would make every claim depend on it. Letting it write to the claim directly would break the rule that only a person acts.
+- **Consequences**: A new table (V23), unused while off. Quality is **not measured**; the guard uses English patterns and can miss a rewording, so the person's review is the real control. The letter template used here holds no claimant name, since the engine stores none.

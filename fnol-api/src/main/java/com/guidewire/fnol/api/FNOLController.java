@@ -161,12 +161,22 @@ public class FNOLController {
     }
     static final Set<String> ADJUSTER_DECISIONS = CLAIMCENTER_STATUS.keySet();
 
+    @org.springframework.beans.factory.annotation.Value("${fnol.claim-clock.india.enabled:false}")
+    private boolean indiaClock;
+
     // ── Health ──────────────────────────────────────────────────────────────
     @GetMapping("/health")
     Map<String, String> health() {
         // intake: CLAIMS_SYSTEM (losses are filed in the claims system, analysis follows its event) or DIRECT
-        return Map.of("status", "UP", "intake", reportsToClaimsSystem() ? ClaimsSystemIntake.CLAIMS_SYSTEM
-                : ClaimsSystemIntake.DIRECT, "secondOpinion", liteMode == null ? "CONFIGURED" : liteMode.secondOpinion());
+        Map<String, String> health = new LinkedHashMap<>(Map.of("status", "UP", "intake", reportsToClaimsSystem() ? ClaimsSystemIntake.CLAIMS_SYSTEM
+                : ClaimsSystemIntake.DIRECT, "secondOpinion", liteMode == null ? "CONFIGURED" : liteMode.secondOpinion()));
+        if (liteMode != null && liteMode.vision() != null) {
+            health.put("vision", liteMode.vision());
+        }
+        if (indiaClock) {
+            health.put("indiaClock", "ON");
+        }
+        return health;
     }
 
     // ── Report a loss (agent taking a phone call, partner channel) ────────────

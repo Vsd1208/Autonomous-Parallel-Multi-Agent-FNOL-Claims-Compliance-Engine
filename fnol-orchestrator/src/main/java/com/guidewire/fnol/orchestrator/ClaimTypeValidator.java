@@ -29,23 +29,17 @@ public class ClaimTypeValidator {
             "SIDE_PANEL", "MINOR_COLLISION"
     );
 
-    private final StpProperties stp;
-
-    public ClaimTypeValidator(StpProperties stp) {
-        this.stp = stp;
-    }
-
     /**
      * Requirements:
      * 1. Damage type (mapped to a claim type) must be in the safe list
-     * 2. Estimated damage must be LOW severity (at most fnol.stp.low-severity-max)
+     * 2. The severity gate must be LOW (from the vision label, not the AI's dollars: ADR-016)
      * 3. Claim history frequency risk must NOT be HIGH
      */
-    public boolean isEligibleForAdvisoryPrefill(DamageAssessment damage, PolicyHistoryContext history) {
+    public boolean isEligibleForAdvisoryPrefill(DamageAssessment damage, PolicyHistoryContext history, String severityGate) {
         if (!ELIGIBLE_CLAIM_TYPES.contains(claimTypeFor(damage.damageType()))) {
             return false;
         }
-        if (damage.estimatedDamage().compareTo(stp.getLowSeverityMax()) > 0) {
+        if (!"LOW".equals(severityGate)) {
             return false;
         }
         return !"HIGH".equals(history.claimFrequencyRisk());
