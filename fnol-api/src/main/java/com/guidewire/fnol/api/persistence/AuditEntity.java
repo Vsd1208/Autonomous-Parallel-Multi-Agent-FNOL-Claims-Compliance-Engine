@@ -28,6 +28,26 @@ public class AuditEntity {
     @Column(length = 128)
     public String actor;
 
+    /** How chainHash was computed; null on rows from before version 2. */
+    @Column(name = "hash_algorithm", length = 32)
+    public String hashAlgorithm;
+
+    @Column(name = "previous_hash", length = 64)
+    public String previousHash;
+
+    /** HUMAN_ACTOR, SERVICE_ACTOR or SYSTEM_ACTOR. */
+    @Column(name = "actor_type", length = 20)
+    public String actorType;
+
+    @Column(name = "actor_role", length = 32)
+    public String actorRole;
+
+    @Column(name = "model_version", length = 160)
+    public String modelVersion;
+
+    @Column(name = "ruleset_version", length = 64)
+    public String rulesetVersion;
+
     public static AuditEntity from(AuditRecord a) {
         var e = new AuditEntity();
         e.eventId = a.eventId();
@@ -37,6 +57,8 @@ public class AuditEntity {
         e.inputHash = a.inputHash();
         e.outputHash = a.outputHash();
         e.status = a.status();
+        e.modelVersion = a.modelVersion();
+        e.rulesetVersion = a.rulesetVersion();
         return e;
     }
 }

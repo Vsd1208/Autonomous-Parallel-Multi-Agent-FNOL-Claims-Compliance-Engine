@@ -762,11 +762,13 @@ public class FNOLOrchestrator {
         // Inputs are hashed from the sanitized intake only, never the raw payload (SSN, DOB, name).
         SanitizedIntake intake = SanitizedIntake.of(payload, branchB.pii().redactedDescription());
         List<AuditRecord> records = new ArrayList<>(List.of(
-                audit.record(claimId, "VisionDamageAgent",      intake,                     branchA.damageAssessment(), "SUCCESS"),
+                audit.record(claimId, "VisionDamageAgent",      intake,                     branchA.damageAssessment(), "SUCCESS")
+                        .withVersions(branchA.damageAssessment().visionSource(), null),
                 audit.record(claimId, "PolicyValidatorAgent",   payload.policyNumber(),     branchA.coverage(),         "SUCCESS"),
                 audit.record(claimId, "ReserveCalculatorAgent", branchA.damageAssessment(), branchA.reserve(),          "SUCCESS"),
                 audit.record(claimId, "PiiRedactionAgent",      intake,                     branchB.pii(),              "SUCCESS"),
-                audit.record(claimId, "StatutoryDeadlineAgent", intake,                     branchB.deadline(),         "SUCCESS"),
+                audit.record(claimId, "StatutoryDeadlineAgent", intake,                     branchB.deadline(),         "SUCCESS")
+                        .withVersions(null, branchB.deadline().rulesVersion()),
                 audit.record(claimId, "SubrogationScorerAgent", intake,                     subrogation,                "SUCCESS"),
                 audit.record(claimId, "ReconciliationGate",     explanation,
                         "status=" + status + ";requiresHumanValidation=" + requiresHumanValidation

@@ -441,8 +441,18 @@ public final class Models {
             Instant timestamp,
             String inputHash,
             String outputHash,
-            String status
-    ) {}
+            String status,
+            String modelVersion,        // the model or prompt behind this step, where one was used
+            String rulesetVersion       // the rule set behind this step, where one was used
+    ) {
+        public AuditRecord(String eventId, String claimId, String agentName, Instant timestamp, String inputHash, String outputHash, String status) {
+            this(eventId, claimId, agentName, timestamp, inputHash, outputHash, status, null, null);
+        }
+
+        public AuditRecord withVersions(String model, String ruleset) {
+            return new AuditRecord(eventId, claimId, agentName, timestamp, inputHash, outputHash, status, model, ruleset);
+        }
+    }
 
     /**
      * What happened to the claim photos before they went to the external vision model: how many were sent, how many
