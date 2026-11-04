@@ -256,6 +256,33 @@ class DurableInboxTest {
     }
 
     @Test
+    @DisplayName("A worker that died before telling anyone: the next attempt to fail tells a person, though it is not the first attempt")
+    void failureAfterACrashStillTellsAPerson() throws Exception {
+        String id = claim();
+        String eventId = UUID.randomUUID().toString();
+        doThrow(new ResourceAccessException("model away")).when(vision).assess(any(FNOLPayload.class), anyString());
+        send(body(eventId, id)).andExpect(status().isAccepted());
+        EventInboxEntity died = row(eventId);
+        died.status = EventInboxEntity.PROCESSING;
+        died.attemptCount = 1;
+        died.leaseOwner = "worker-that-died";
+        died.leaseExpiresAt = Instant.now().minusSeconds(1);
+        inbox.save(died);
+        assertThat(claims.existsById(id)).isFalse();
+
+        worker.runOnce("worker-2");
+
+        assertThat(row(eventId).attemptCount).isEqualTo(2);
+        assertThat(row(eventId).status).isEqualTo(EventInboxEntity.RETRY_PENDING);
+        assertThat(claims.findById(id).orElseThrow().status).isEqualTo("HUMAN_REVIEW");
+        verify(claimCenter).addActivity(eq(id), any());
+
+        worker.runOnce("worker-2");
+
+        assertThat(row(eventId).status).isEqualTo(EventInboxEntity.DEAD_LETTER);
+    }
+
+    @Test
     @DisplayName("A person who decided while the analysis was retrying is not overwritten by the retry")
     void retryDoesNotOverwriteADecision() throws Exception {
         String id = claim();

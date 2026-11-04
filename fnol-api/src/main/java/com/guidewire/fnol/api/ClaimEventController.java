@@ -213,10 +213,11 @@ class ClaimEventController {
 
     /**
      * Reads the FNOL from the claims system, analyses it and writes the results back onto that claim. Safe to run again: a claim already
-     * analysed is left alone. A transient failure throws {@link RetryLaterException} to try again later, but a person hears of it on the first
-     * failure: retrying must not leave a claim out of sight for minutes. The person can act at once, and a later success adds the analysis.
+     * analysed is left alone. A transient failure throws {@link RetryLaterException} to try again later, but a person hears of it the first
+     * time one is seen: retrying must not leave a claim out of sight for minutes. That is judged by whether a person has been told, not by
+     * the attempt number, since an attempt can die before saying anything. The person can act at once, and a later success adds the analysis.
      */
-    void analyse(String claimId, LocalDate noticeDate, com.guidewire.fnol.orchestrator.BranchCheckpoint checkpoint, boolean firstAttempt, boolean lastAttempt) {
+    void analyse(String claimId, LocalDate noticeDate, com.guidewire.fnol.orchestrator.BranchCheckpoint checkpoint, boolean lastAttempt) {
         // Already analysed, by an attempt that died before saying so; or a person decided while it was retrying, which a retry must not
         // overwrite. A row that only records a failure may be analysed again.
         if (claims.findById(claimId).filter(c -> c.failureReason == null || c.adjusterDecision != null).isPresent()) {
@@ -255,7 +256,7 @@ class ClaimEventController {
             idempotency.release(policy, date.toString(), fnol.state());
             String[] outcome = classify(e);
             if (transientFailure(e) && !lastAttempt) {
-                if (firstAttempt) {
+                if (!claims.existsById(claimId)) {
                     failedIntakes.record(claimId, fnol, outcome[0], outcome[1], outcome[2] + ". Retrying automatically");
                     flagForAdjuster(claimId, outcome[0], "AI analysis is delayed (" + outcome[1] + "): " + outcome[2]
                             + ". It will be retried automatically. You can handle this claim now; the analysis is added if a retry succeeds first.");
