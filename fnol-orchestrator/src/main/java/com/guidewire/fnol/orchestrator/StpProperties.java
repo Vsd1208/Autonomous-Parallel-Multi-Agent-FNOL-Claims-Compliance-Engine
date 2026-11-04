@@ -14,6 +14,8 @@ import java.math.BigDecimal;
 @ConfigurationProperties(prefix = "fnol.stp")
 public class StpProperties {
 
+    /** When a real model is meant to answer: an answer that does not say which model and prompt gave it is an abstention. */
+    private boolean requireModelVersion = false;
     /** Minimum vision confidence for the AI Confidence factor. */
     private BigDecimal confidence = new BigDecimal("0.85");
     /** Maximum recommended reserve for the Reserve Amount factor. */
@@ -49,6 +51,9 @@ public class StpProperties {
      * well above the wrong answers' 0.01-0.02. Out-of-fold, small sample: tools/second-opinion/results/disagreement.md.
      */
     private BigDecimal secondOpinionMinProbability = new BigDecimal("0.10");
+
+    public boolean isRequireModelVersion() { return requireModelVersion; }
+    public void setRequireModelVersion(boolean requireModelVersion) { this.requireModelVersion = requireModelVersion; }
 
     public BigDecimal getConfidence() { return confidence; }
     public void setConfidence(BigDecimal confidence) { this.confidence = confidence; }

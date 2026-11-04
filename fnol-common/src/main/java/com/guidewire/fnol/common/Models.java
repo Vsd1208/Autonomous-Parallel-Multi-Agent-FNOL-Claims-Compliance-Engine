@@ -271,6 +271,14 @@ public final class Models {
             PhotoPrivacy privacy,                         // what left the system for the external model; null = nothing was sent
             String visionSource                           // which model answered: "<model> prompt <sha16> thinking <n>"; null = mock or fallback
     ) {
+        /** In visionSource, between the model that answered and the one asked for, when the provider substituted one. */
+        public static final String INSTEAD_OF = " instead of ";
+
+        /** The provider answered with a model other than the one asked for: nothing fitted on the requested model applies. */
+        public boolean servedBySubstituteModel() {
+            return visionSource != null && visionSource.contains(INSTEAD_OF);
+        }
+
         public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
                                 String photoQuality, Map<String, BigDecimal> damageTypeProbabilities) {
             this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, null, null, null);
@@ -588,16 +596,28 @@ public final class Models {
             List<String> inputFlags,           // Human Review Point 1 flags, e.g. MISSING_EVIDENCE
             String ccSyncStatus,               // SYNCED | FAILED: were the advisory and evidence attached in ClaimCenter
             List<String> gateFlags,            // reconciliation-gate consistency flags, e.g. RESERVE_EXCEEDS_COVERAGE_LIMIT
-            FraudAnomaly fraudAnomaly          // advisory anomaly score with its top contributors; null when off
+            FraudAnomaly fraudAnomaly,         // advisory anomaly score with its top contributors; null when off
+            Abstention abstention              // whether the AI declined to give an answer worth relying on, and why
     ) {
+        public FNOLResponse(String claimId, String status, BranchAResult branchA, BranchBResult branchB,
+                            PolicyHistoryContext policyContext, ExplanationObject explanation, String severityGate,
+                            Boolean eligibleForAdvisoryPrefill, Boolean requiresHumanValidation, List<String> notes,
+                            List<String> inputFlags, String ccSyncStatus, List<String> gateFlags, FraudAnomaly fraudAnomaly) {
+            this(claimId, status, branchA, branchB, policyContext, explanation, severityGate, eligibleForAdvisoryPrefill,
+                    requiresHumanValidation, notes, inputFlags, ccSyncStatus, gateFlags, fraudAnomaly, null);
+        }
+
         public FNOLResponse(String claimId, String status, BranchAResult branchA, BranchBResult branchB,
                             PolicyHistoryContext policyContext, ExplanationObject explanation, String severityGate,
                             Boolean eligibleForAdvisoryPrefill, Boolean requiresHumanValidation, List<String> notes,
                             List<String> inputFlags, String ccSyncStatus, List<String> gateFlags) {
             this(claimId, status, branchA, branchB, policyContext, explanation, severityGate, eligibleForAdvisoryPrefill,
-                    requiresHumanValidation, notes, inputFlags, ccSyncStatus, gateFlags, null);
+                    requiresHumanValidation, notes, inputFlags, ccSyncStatus, gateFlags, null, null);
         }
     }
+
+    /** The AI has no answer worth relying on: the claim goes to a person. Never a rejection, and nothing against the claim. */
+    public record Abstention(boolean abstained, List<String> reasons) {}
 
     /** One feature's share of the fraud anomaly score: its value and the points it added. */
     public record FraudContribution(

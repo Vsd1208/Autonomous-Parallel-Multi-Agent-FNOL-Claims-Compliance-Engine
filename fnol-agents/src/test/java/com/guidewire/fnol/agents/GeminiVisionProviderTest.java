@@ -70,6 +70,41 @@ class GeminiVisionProviderTest {
     }
 
     @Test
+    @DisplayName("A retired model routed to another one is noticed: marked as a substitute, whatever name was asked for")
+    void assess_substituteModelIsMarked() {
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(geminiResponse("FRONT_BUMPER", "MODERATE", 4200, 0.91)
+                        .replaceFirst("\\{", "{\"modelVersion\": \"gemini-other-lite\",")));
+
+        DamageAssessment result = provider.assess(payloadWithUri("data:image/jpeg;base64,/9j/4AAQSkZJRg=="));
+
+        assertThat(result.servedBySubstituteModel()).isTrue();
+        assertThat(result.visionSource()).startsWith("gemini-other-lite instead of gemini-2.5-flash");
+        assertThat(result.rawConfidence()).as("no calibration was applied").isNull();
+    }
+
+    @Test
+    @DisplayName("The model asked for, or a dated version of it, is not a substitute")
+    void assess_sameModelIsNotASubstitute() {
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(geminiResponse("FRONT_BUMPER", "MODERATE", 4200, 0.91)
+                        .replaceFirst("\\{", "{\"modelVersion\": \"gemini-2.5-flash-001\",")));
+
+        assertThat(provider.assess(payloadWithUri("data:image/jpeg;base64,/9j/4AAQSkZJRg==")).servedBySubstituteModel()).isFalse();
+    }
+
+    @Test
+    @DisplayName("An answer that reports no confidence is given none, not an invented one")
+    void assess_missingConfidenceIsZero() {
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("""
+                        {"candidates": [{"content": {"parts": [{"text": "{ \\"damageType\\": \\"FRONT_BUMPER\\", \\"photoQuality\\": \\"CLEAR\\" }"}]}}]}
+                        """));
+
+        assertThat(provider.assess(payloadWithUri("data:image/jpeg;base64,/9j/4AAQSkZJRg==")).confidence()).isEqualByComparingTo("0");
+    }
+
+    @Test
     @DisplayName("Parses Gemini response into correct DamageAssessment for base64 image")
     void assess_withBase64Image_parsesResponseCorrectly() {
         when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))

@@ -44,6 +44,8 @@ fnol:
   stp:
     # true: STP-eligible claims are pre-filed but wait as PENDING_ADVISORY_REVIEW for an adjuster.
     require-advisory-review: ${FNOL_STP_REQUIRE_ADVISORY_REVIEW:true}
+    # With Gemini on, an answer that does not name its model and prompt is an abstention and goes to a person.
+    require-model-version: ${GEMINI_VISION_ENABLED:true}
     # Advisory fraud anomaly score (FRAUD_ANOMALY routes to an adjuster; never denies). Empty threshold = the fitted one.
     fraud-anomaly-enabled: ${FNOL_STP_FRAUD_ANOMALY_ENABLED:true}
     fraud-anomaly-threshold: ${FNOL_STP_FRAUD_ANOMALY_THRESHOLD:}

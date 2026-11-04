@@ -76,7 +76,7 @@ public class TrustScorer {
 
     /** The assessment with its confidence replaced by the trust score, or unchanged when the scorer does not apply. */
     public DamageAssessment apply(DamageAssessment d, SecondOpinion second, String lineOfBusiness) {
-        if (!isActive() || !"AUTO".equalsIgnoreCase(lineOfBusiness)
+        if (!isActive() || !"AUTO".equalsIgnoreCase(lineOfBusiness) || d.servedBySubstituteModel()
                 || d.damageTypeProbabilities() == null || d.damageTypeProbabilities().isEmpty()) {
             return d;   // not configured, a home claim, or a fallback assessment without probabilities
         }

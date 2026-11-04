@@ -594,6 +594,10 @@ public class FNOLOrchestrator {
         if (fraud != null && fraud.anomalous()) {
             checked.add(FraudAnomalyScorer.FRAUD_ANOMALY);
         }
+        Abstention abstention = AbstentionPolicy.evaluate(branchA.damageAssessment(), checked, stp.getConfidence(), stp.isRequireModelVersion());
+        if (abstention.abstained() && checked.isEmpty()) {
+            checked.add(AbstentionPolicy.AI_ABSTAINED);
+        }
         List<String> gateFlags = List.copyOf(checked);
         List<String> reviewFlags = new ArrayList<>(inputFlags);
         reviewFlags.addAll(gateFlags);
@@ -674,6 +678,10 @@ public class FNOLOrchestrator {
                 explanation.decision(), status, inputFlags, gateFlags, payload.policyNumber(), claimId);
 
         List<String> notes = new ArrayList<>(severityReading.notes());
+        if (abstention.abstained()) {
+            notes.add("AI ABSTAINED (" + String.join(", ", abstention.reasons()) + "): the AI's reading should not be relied on here, "
+                    + "so a person decides. This is not a finding against the claim.");
+        }
         Map<String, String> flagReasons = new LinkedHashMap<>();   // flag → note text, for ClaimCenter activities
         if (highRiskEscalation) {
             notes.add("⚠ HIGH-RISK POLICY: This claim has been flagged for mandatory human validation " +
@@ -817,7 +825,8 @@ public class FNOLOrchestrator {
                 inputFlags,
                 ccSyncStatus,
                 gateFlags,
-                fraud
+                fraud,
+                abstention
         );
     }
 

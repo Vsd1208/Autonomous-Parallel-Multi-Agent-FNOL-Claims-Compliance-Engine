@@ -64,4 +64,4 @@ jobs:
       - run: python -m compileall -q fnol-vision-ml tools
       # Photo redaction needs only OpenCV and its small committed face model, so its tests do run here.
       - run: pip install opencv-python-headless==4.10.0.84 pytest
-      - run: python -m pytest -q fnol-vision-ml/redaction/test_redact.py
+      - run: python -m pytest -q fnol-vision-ml/redaction/test_redact.py tools/test_evaluation.py
