@@ -15,6 +15,7 @@ import {
   QueuePage,
   ReserveApprovalView,
   ClaimDraft,
+  InspectionView,
 } from '../types';
 
 import { Session, session } from './session';
@@ -156,6 +157,9 @@ export const apiClient = {
     ),
 
   getInspectors: () => request<Inspector[]>('/api/v1/inspectors', {}, true),
+
+  getInspectionView: (claimId: string) =>
+    request<InspectionView>(`/api/v1/fnol/${encodeURIComponent(claimId)}/inspection-view`, {}, true),
 
   getInspections: (claimId: string) =>
     request<Inspection[]>(`/api/v1/fnol/${encodeURIComponent(claimId)}/inspections`, {}, true),

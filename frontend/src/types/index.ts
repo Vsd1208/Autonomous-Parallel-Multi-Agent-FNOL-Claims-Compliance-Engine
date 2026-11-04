@@ -477,3 +477,12 @@ export interface ClaimDraft {
   fromModel: boolean;
   fallbackReason?: string | null;
 }
+
+/** What an inspector sees of an assigned claim: the server sends nothing more. */
+export interface InspectionView {
+  claimId: string;
+  lineOfBusiness: string;
+  incidentDate?: string | null;
+  state?: string | null;
+  inspections: Inspection[];
+}

@@ -7,6 +7,8 @@ fnol:
     timeout-seconds: 10
   security:
     adjuster-token: test-adjuster-token
+    password-iterations: 1000
+    users: "ADJ-001|ADJUSTER|p|Test Adjuster;ADJ-002|ADJUSTER|p|Second Adjuster;ADJ-007|ADJUSTER|p|Seventh Adjuster;ADJ-009|ADJUSTER|p|Ninth Adjuster;SEN-007|SENIOR_ADJUSTER|p|Seventh Senior;SEN-001|SENIOR_ADJUSTER|p|Test Senior;SUP-001|SUPERVISOR|p|Test Supervisor;INS-101|INSPECTOR|p|Inspector A;INS-102|INSPECTOR|p|Inspector B"
 # Disable Gemini Vision in tests — MockVisionProvider is used instead.
 # This keeps the tests fast, offline, and API-key-free.
 gemini:

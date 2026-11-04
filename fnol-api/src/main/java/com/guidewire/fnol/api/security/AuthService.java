@@ -47,7 +47,8 @@ public class AuthService implements ApplicationRunner {
     static final Duration SESSION_LENGTH = Duration.ofHours(8);
     static final int MAX_FAILURES = 5;
     static final Duration LOCKOUT = Duration.ofMinutes(15);
-    private static final int ITERATIONS = 210_000;
+    /** PBKDF2 iterations for new hashes; each hash records its own. Lowered only in tests, where hundreds of sign-ins run. */
+    private static volatile int iterations = 210_000;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public record Session(String token, Actor actor, Instant expiresAt) {}
@@ -60,7 +61,9 @@ public class AuthService implements ApplicationRunner {
     private final Map<String, Failures> failures = new ConcurrentHashMap<>();
 
     public AuthService(AppUserRepository users, UserSessionRepository sessions,
-                       @Value("${fnol.security.users:}") String configured) {
+                       @Value("${fnol.security.users:}") String configured,
+                       @Value("${fnol.security.password-iterations:210000}") int passwordIterations) {
+        iterations = passwordIterations;
         this.users = users;
         this.sessions = sessions;
         this.configured = configured == null ? "" : configured;
@@ -155,8 +158,8 @@ public class AuthService implements ApplicationRunner {
     static String hash(String password) {
         byte[] salt = new byte[16];
         RANDOM.nextBytes(salt);
-        return "pbkdf2$" + ITERATIONS + "$" + HexFormat.of().formatHex(salt) + "$"
-                + HexFormat.of().formatHex(derive(password, salt, ITERATIONS));
+        return "pbkdf2$" + iterations + "$" + HexFormat.of().formatHex(salt) + "$"
+                + HexFormat.of().formatHex(derive(password, salt, iterations));
     }
 
     static boolean verify(String password, String stored) {

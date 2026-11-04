@@ -117,25 +117,26 @@ class AuthAndRolesTest {
         assertThat(row.advisoryRating).isEqualTo(4);
         assertThat(audit.findByClaimIdOrderBySeqAscTimestampAsc(id)).anyMatch(a -> "ADJ-A".equals(a.actor));
 
-        // A service-token script states its own name, and its timing never counts as evidence.
+        // A service-token script cannot decide at all, whatever name it states.
         String scripted = "CLM-2026-0A0002";
         claim(scripted);
         mockMvc.perform(post("/api/v1/fnol/" + scripted + "/review").header("X-Adjuster-Token", "test-adjuster-token")
                         .contentType(MediaType.APPLICATION_JSON).content("""
                         {"decision":"NEEDS_MORE_INFO","adjusterId":"BATCH-JOB","handlingSeconds":1,"advisoryRating":5}"""))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.adjusterId").value("BATCH-JOB"));
-        assertThat(feedback.findByClaimIdOrderByDecidedAtAsc(scripted).get(0).handlingSeconds).isNull();
+                .andExpect(status().isForbidden());
+        assertThat(feedback.findByClaimIdOrderByDecidedAtAsc(scripted)).isEmpty();
+        assertThat(claims.findById(scripted).orElseThrow().adjusterId).isNull();
     }
 
     @Test
-    @DisplayName("Separation of duties: an inspector reads and reports but cannot decide; an adjuster decides but cannot file a report")
+    @DisplayName("Separation of duties: an inspector reports on assigned work only and cannot decide; an adjuster decides but cannot file a report")
     void rolesSeparateDuties() throws Exception {
         String id = "CLM-2026-0A0003";
         claim(id);
         String inspector = token("INS-101", "pass-i");
         String adjuster = token("ADJ-A", "pass-a");
 
-        mockMvc.perform(get("/api/v1/fnol/status/" + id).header("Authorization", inspector)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/fnol/status/" + id).header("Authorization", inspector)).andExpect(status().isNotFound());
         mockMvc.perform(post("/api/v1/fnol/" + id + "/review").header("Authorization", inspector)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"decision\":\"APPROVED_BY_ADJUSTER\",\"adjusterId\":\"INS-101\"}"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.error").value("FORBIDDEN"));
@@ -156,7 +157,7 @@ class AuthAndRolesTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/fnol/" + id + "/inspections/" + inspection + "/report").header("Authorization", inspector)
                         .contentType(MediaType.APPLICATION_JSON).content(report))
-                .andExpect(status().isConflict());   // INS-101 is signed in; the inspection is INS-102's
+                .andExpect(status().isNotFound());   // INS-101 is signed in; the inspection is INS-102's, so this claim is not visible to them
     }
 
     @Test

@@ -8,6 +8,8 @@ import com.guidewire.fnol.api.persistence.InspectionRepository;
 import com.guidewire.fnol.common.Models.ClaimUpdateRequest;
 import com.guidewire.fnol.enrichment.ClaimCenterClient;
 import com.guidewire.fnol.api.security.Actor;
+import com.guidewire.fnol.api.security.AuthService;
+import com.guidewire.fnol.api.security.ClaimAccessPolicy;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -90,7 +92,38 @@ class InspectionController {
         if (!claims.existsById(claimId)) {
             return ResponseEntity.notFound().build();
         }
+        Actor caller = Actor.caller();
+        if (caller != null && AuthService.INSPECTOR.equals(caller.role())) {
+            return ResponseEntity.ok(inspections.findByClaimIdAndInspectorIdOrderByAssignedAtAsc(claimId, caller.id()).stream().map(InspectorView::of).toList());
+        }
         return ResponseEntity.ok(inspections.findByClaimIdOrderByAssignedAtAsc(claimId));
+    }
+
+    /** An inspection as its inspector sees it: their own work, without the reserve figure derived from it. */
+    record InspectorView(String inspectionId, String claimId, String inspectorId, String inspectorName, String inspectionType, String reason,
+                         String status, Instant assignedAt, LocalDate dueBy, Instant completedAt, BigDecimal accidentRelatedAmount,
+                         Boolean priorDamageFound, String findings, String recommendation) {
+        static InspectorView of(InspectionEntity i) {
+            return new InspectorView(i.inspectionId, i.claimId, i.inspectorId, i.inspectorName, i.inspectionType, i.reason, i.status, i.assignedAt,
+                    i.dueBy, i.completedAt, i.accidentRelatedAmount, i.priorDamageFound, i.findings, i.recommendation);
+        }
+    }
+
+    /** What an inspector needs for assigned work: the basic facts and their own inspections. No analysis, reserve, fraud signal or notes. */
+    record ClaimInspectionView(String claimId, String lineOfBusiness, LocalDate incidentDate, String state, List<InspectorView> inspections) {}
+
+    @GetMapping("/fnol/{claimId}/inspection-view")
+    ResponseEntity<?> inspectionView(@PathVariable("claimId") String claimId) {
+        ClaimEntity claim = claims.findById(claimId).orElse(null);
+        if (claim == null) {
+            return ResponseEntity.notFound().build();
+        }
+        Actor caller = Actor.caller();
+        List<InspectionEntity> own = caller != null && AuthService.INSPECTOR.equals(caller.role())
+                ? inspections.findByClaimIdAndInspectorIdOrderByAssignedAtAsc(claimId, caller.id())
+                : inspections.findByClaimIdOrderByAssignedAtAsc(claimId);
+        String line = claim.policyNumber != null && claim.policyNumber.startsWith("POL-HOME") ? "HOME" : "AUTO";
+        return ResponseEntity.ok(new ClaimInspectionView(claimId, line, claim.incidentDate, claim.state, own.stream().map(InspectorView::of).toList()));
     }
 
     /** Assigns an inspector; only from a status where the adjuster could otherwise decide. */
@@ -157,6 +190,9 @@ class InspectionController {
         if (!"ASSIGNED".equals(i.status)) {
             throw new InvalidStateException("Inspection " + inspectionId + " is " + i.status + "; it cannot be reported");
         }
+        if (Actor.current().isEmpty()) {
+            throw new ClaimAccessPolicy.PermissionDeniedException("An inspection report needs the signed-in inspector");
+        }
         String reporter = Actor.idOr(request.inspectorId());
         if (!i.inspectorId.equals(reporter)) {
             throw new InvalidStateException("Inspection " + inspectionId + " is assigned to " + i.inspectorId
@@ -196,7 +232,7 @@ class InspectionController {
                 "Inspection report: accident-related damage $" + i.accidentRelatedAmount
                         + (Boolean.TRUE.equals(i.priorDamageFound) ? " (earlier damage excluded)" : "")
                         + "; recommendation " + recommendation, null);
-        return ResponseEntity.ok(i);
+        return ResponseEntity.ok(InspectorView.of(i));
     }
 
     /** Withdraws an open assignment (wrong inspector, claimant withdrew); the claim goes back to HUMAN_REVIEW. */

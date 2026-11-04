@@ -63,6 +63,13 @@ api_get() {   # api_get <path>  ->  body (empty on an error status)
   curl -sf --max-time 10 -H "X-Adjuster-Token: $ADJUSTER_TOKEN" "$API_URL$1"
 }
 
+post_as() {   # post_as <bearer token> <json> <path>  ->  sets HTTP_CODE and BODY
+  local out
+  out=$(curl -s --max-time 40 -w $'\n%{http_code}' -X POST "$API_URL$3" -H "Content-Type: application/json" -H "Authorization: Bearer $1" -d "$2")
+  HTTP_CODE="${out##*$'\n'}"
+  BODY="${out%$'\n'*}"
+}
+
 check() {   # check <scenario> <what> <expected> <actual>
   if [[ -z "$3" ]]; then return; fi
   if [[ "$3" == "$4" ]]; then
@@ -210,7 +217,12 @@ check_decisions() {
     "$(json_string "$(api_get "/api/v1/fnol/queue?status=HUMAN_REVIEW&size=1")" source)"
 
   if [[ -n "${DECIDE_IN_WORKSPACE:-}" ]]; then
-    post '{"decision":"APPROVED_BY_ADJUSTER","adjusterId":"ADJ-DEMO","notes":"Demo approval"}' \
+    # A decision needs a signed-in person: the service credential is refused, whatever name it sends.
+    post '{"decision":"APPROVED_BY_ADJUSTER","adjusterId":"ADJ-DEMO"}' "/api/v1/fnol/$DECIDE_IN_WORKSPACE/review"
+    check "decisions" "service credential tries to decide" "403" "$HTTP_CODE"
+    local person; person=$(json_string "$(curl -s --max-time 10 -X POST "$API_URL/api/v1/auth/login" -H "Content-Type: application/json" \
+      -d "{\"username\":\"ADJ-001\",\"password\":\"$DEMO_PASSWORD\"}")" token)
+    post_as "$person" '{"decision":"APPROVED_BY_ADJUSTER","adjusterId":"ADJ-001","notes":"Demo approval"}' \
       "/api/v1/fnol/$DECIDE_IN_WORKSPACE/review"
     check "decisions" "workspace decision HTTP status" "200" "$HTTP_CODE"
     check "decisions" "claims system status after it" "OPEN" \
@@ -218,7 +230,7 @@ check_decisions() {
     if curl -s --max-time 5 "$CC_URL/cc/rest/claim/v1/claims/$DECIDE_IN_WORKSPACE/exposures" | grep -qE '"reserve":[0-9]'; then
       PASSES=$((PASSES + 1))
     else FAILURES=$((FAILURES + 1)); echo "  FAIL [decisions] approving did not post the reserve"; fi
-    post '{"decision":"REJECTED_BY_ADJUSTER","adjusterId":"ADJ-DEMO"}' "/api/v1/fnol/$DECIDE_IN_WORKSPACE/review"
+    post_as "$person" '{"decision":"REJECTED_BY_ADJUSTER","adjusterId":"ADJ-001"}' "/api/v1/fnol/$DECIDE_IN_WORKSPACE/review"
     check "decisions" "second decision HTTP status" "409" "$HTTP_CODE"
   fi
 

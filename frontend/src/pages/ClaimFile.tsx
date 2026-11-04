@@ -11,7 +11,7 @@ import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionRe
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
 import { session } from '../services/session';
-import { ClaimDraft, AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion, ReserveApprovalView } from '../types';
+import { ClaimDraft, InspectionView, AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion, ReserveApprovalView } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 /** Inspectors report on inspections; only adjusters decide claims. */
@@ -41,6 +41,41 @@ const DECISIONS: [AdjusterDecision, string, 'primary' | 'secondary' | 'danger'][
 
 /** Loads a claim (stored intake result merged with the saved row) and shows it as a claim file. */
 export default function ClaimFile() {
+  // The server gives an inspector only assigned work, so an inspector gets their own limited screen.
+  return session.isInspector() ? <InspectorClaimFile /> : <AdjusterClaimFile />;
+}
+
+/** An inspector's assigned claim: basic facts, the photos and their own report. No analysis, reserve, fraud signal or notes. */
+function InspectorClaimFile() {
+  const { claimId = '' } = useParams<{ claimId: string }>();
+  const [view, setView] = useState<InspectionView | null>(null);
+  const [docs, setDocs] = useState<ClaimDocument[]>([]);
+  const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    apiClient.getInspectionView(claimId).then(setView).catch((err) => setError(err.message || 'This claim is not assigned to you'));
+    apiClient.getDocuments(claimId).then(setDocs).catch(() => undefined);
+  }, [claimId, reload]);
+  if (error) return <MessageBar tone="error" title="Not available">{error}</MessageBar>;
+  if (!view) return <p className="muted">Loading the claim…</p>;
+  return (
+    <>
+      <Panel title={`Claim ${view.claimId}`}>
+        <DetailView columns={2} rows={[
+          ['Line of business', view.lineOfBusiness],
+          ['Date of loss', view.incidentDate ?? null],
+          ['State', view.state ?? null],
+        ]} />
+      </Panel>
+      <Panel title="Photos"><EvidenceGallery docs={docs} /></Panel>
+      {view.inspections.filter((i) => i.status === 'ASSIGNED').map((i) => (
+        <InspectionReportForm key={i.inspectionId} claimId={view.claimId} inspection={i} onChanged={() => setReload((r) => r + 1)} />
+      ))}
+    </>
+  );
+}
+
+function AdjusterClaimFile() {
   const navigate = useNavigate();
   const { claimId = '', section = 'summary' } = useParams<{ claimId: string; section: string }>();
   const [claim, setClaim] = useState<DashboardClaim | null>(null);
