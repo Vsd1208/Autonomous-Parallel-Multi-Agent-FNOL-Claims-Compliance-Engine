@@ -803,6 +803,12 @@ class ApiExceptionHandler {
                 new ApiError(Instant.now(), 409, "CLAIM_ID_CONFLICT", e.getMessage(), r.getRequestURI()));
     }
 
+    @ExceptionHandler(PortalProtection.TooManyAttemptsException.class)
+    ResponseEntity<ApiError> tooManyAttempts(PortalProtection.TooManyAttemptsException e, HttpServletRequest r) {
+        return ResponseEntity.status(429).header("Retry-After", String.valueOf(e.retryAfterSeconds))
+                .body(new ApiError(Instant.now(), 429, "TOO_MANY_ATTEMPTS", e.getMessage(), r.getRequestURI()));
+    }
+
     @ExceptionHandler(ClaimAccessPolicy.ClaimNotVisibleException.class)
     ResponseEntity<ApiError> claimNotVisible(ClaimAccessPolicy.ClaimNotVisibleException e, HttpServletRequest r) {
         return ResponseEntity.status(404).body(new ApiError(Instant.now(), 404, "NOT_FOUND", e.getMessage(), r.getRequestURI()));

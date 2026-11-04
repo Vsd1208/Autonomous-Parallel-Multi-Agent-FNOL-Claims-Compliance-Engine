@@ -55,6 +55,11 @@ fnol:
     # Adjuster workspace (5173) and policyholder portal (5174)
     allowed-origins: ${FNOL_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
   portal:
+    # Public portal and upload routes. With no token secret, tokens last only until a restart and do not work across instances.
+    max-failures: ${FNOL_PORTAL_MAX_FAILURES:10}
+    window-seconds: ${FNOL_PORTAL_WINDOW_SECONDS:900}
+    token-minutes: ${FNOL_PORTAL_TOKEN_MINUTES:30}
+    token-secret: ${FNOL_PORTAL_TOKEN_SECRET:}
     # Where the policyholder portal runs; one-time upload links sent to claimants point here.
     base-url: ${FNOL_PORTAL_BASE_URL:http://localhost:5174}
   evidence:
