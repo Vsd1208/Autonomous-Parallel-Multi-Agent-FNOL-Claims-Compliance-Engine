@@ -70,6 +70,26 @@ class GeminiVisionProviderTest {
     }
 
     @Test
+    @DisplayName("Each call's duration and outcome are reported, success or failure")
+    void assess_reportsProviderLatency() {
+        List<String> outcomes = new java.util.ArrayList<>();
+        provider.setProcessingObserver(new com.guidewire.fnol.common.ProcessingObserver() {
+            @Override
+            public void provider(String name, long millis, String outcome) {
+                outcomes.add(name + ":" + outcome);
+            }
+        });
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok(geminiResponse("FRONT_BUMPER", "MODERATE", 4200, 0.91)))
+                .thenThrow(new org.springframework.web.client.ResourceAccessException("down"));
+
+        provider.assess(payloadWithUri("data:image/jpeg;base64,/9j/4AAQSkZJRg=="));
+        provider.assess(payloadWithUri("data:image/jpeg;base64,/9j/4AAQSkZJRg=="));
+
+        assertThat(outcomes).containsExactly("gemini:OK", "gemini:FAILED");
+    }
+
+    @Test
     @DisplayName("A retired model routed to another one is noticed: marked as a substitute, whatever name was asked for")
     void assess_substituteModelIsMarked() {
         when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))

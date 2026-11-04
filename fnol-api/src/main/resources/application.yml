@@ -49,6 +49,8 @@ fnol:
     # Advisory fraud anomaly score (FRAUD_ANOMALY routes to an adjuster; never denies). Empty threshold = the fitted one.
     fraud-anomaly-enabled: ${FNOL_STP_FRAUD_ANOMALY_ENABLED:true}
     fraud-anomaly-threshold: ${FNOL_STP_FRAUD_ANOMALY_THRESHOLD:}
+  # production: refuses to start on demo settings or a mock claims system (StartupConfigValidator).
+  environment: ${FNOL_ENVIRONMENT:development}
   security:
     # Shared secret for adjuster-only endpoints (review, audit, audit/pdf, explanation, queue).
     # Empty means those endpoints reject every request.
@@ -97,3 +99,22 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus   # health for probes; prometheus needs a credential (AdjusterTokenFilter)
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+logging:
+  pattern:
+    # Key-value lines with the trace. The replacements are a last defence for identifiers that reach a message; the code should not log them.
+    console: >-
+      %d{ISO8601} %5p [%t] correlationId=%X{correlationId:-none} claimId=%X{claimId:-none} eventId=%X{eventId:-none} %c{1} -
+      %replace(%replace(%replace(%replace(%msg){'POL-[A-Z]+-\d+','[POLICY]'}){'\b\d{3}-\d{2}-\d{4}\b','[SSN]'}){'[\w.+-]+@[\w-]+\.[\w.-]+','[EMAIL]'}){'\(?\b\d{3}\)?[ .-]\d{3}[ .-]\d{4}\b','[PHONE]'}%n%ex

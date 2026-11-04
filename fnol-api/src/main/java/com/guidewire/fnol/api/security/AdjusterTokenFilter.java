@@ -29,9 +29,9 @@ public class AdjusterTokenFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Adjuster-Token";
 
     private static final Pattern PROTECTED = Pattern.compile(
-            "^/api/v1/(auth/(me|logout)|inspectors|ai/(metrics|feedback)|fnol/(queue|intake|report|status/[^/]+|[^/]+/(review|claimcenter|claimcenter-sync|audit|audit/pdf|explanation|analysis|documents"
+            "^(/actuator/prometheus|/api/v1/(auth/(me|logout)|inspectors|ai/(metrics|feedback)|fnol/(queue|intake|report|status/[^/]+|[^/]+/(review|claimcenter|claimcenter-sync|audit|audit/pdf|explanation|analysis|documents"
                     + "|documents/[^/]+/content|inspections|inspections/[^/]+/(report|cancel)|upload-requests"
-                    + "|upload-requests/[^/]+/cancel|reserve-approvals|reserve-approvals/[^/]+/decide|drafts|drafts/[^/]+/(accept|discard)|inspection-view))|admin/.*)/?$");
+                    + "|upload-requests/[^/]+/cancel|reserve-approvals|reserve-approvals/[^/]+/decide|drafts|drafts/[^/]+/(accept|discard)|inspection-view))|admin/.*))/?$");
 
     /** The inspector's report is the only change an inspector may make; only an inspector may make it. */
     private static final Pattern INSPECTOR_REPORT = Pattern.compile("^/api/v1/fnol/[^/]+/inspections/[^/]+/report/?$");

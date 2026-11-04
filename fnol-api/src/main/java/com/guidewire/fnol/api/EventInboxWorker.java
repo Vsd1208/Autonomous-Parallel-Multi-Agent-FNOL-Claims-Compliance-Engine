@@ -1,6 +1,7 @@
 package com.guidewire.fnol.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guidewire.fnol.api.observability.CorrelationIdFilter;
 import com.guidewire.fnol.api.persistence.EventInboxEntity;
 import com.guidewire.fnol.api.persistence.EventInboxRepository;
 import com.guidewire.fnol.common.Models.BranchAResult;
@@ -10,6 +11,7 @@ import com.guidewire.fnol.orchestrator.BranchCheckpoint;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -83,6 +85,10 @@ class EventInboxWorker {
     }
 
     void process(EventInboxEntity row) {
+        // The event's ID traces every attempt, so a retry can be followed across restarts.
+        MDC.put(CorrelationIdFilter.CORRELATION_ID, row.eventId);
+        MDC.put("eventId", row.eventId);
+        MDC.put(CorrelationIdFilter.CLAIM_ID, row.aggregateId);
         try {
             ClaimEvent event = mapper.readValue(row.payload, ClaimEvent.class);
             LocalDate notice = event.time() == null ? LocalDate.now() : LocalDate.ofInstant(event.time(), ZoneId.systemDefault());
@@ -93,6 +99,8 @@ class EventInboxWorker {
         } catch (Exception e) {
             log.error("[Inbox] Event {} failed unexpectedly", row.eventId, e);
             inbox.failed(row.id, e.getClass().getSimpleName());
+        } finally {
+            MDC.clear();
         }
     }
 

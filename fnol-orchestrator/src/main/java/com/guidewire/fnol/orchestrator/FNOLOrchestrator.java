@@ -3,6 +3,7 @@ package com.guidewire.fnol.orchestrator;
 import com.guidewire.fnol.agents.*;
 import com.guidewire.fnol.common.CoverageNotEligibleException;
 import com.guidewire.fnol.common.Models.*;
+import com.guidewire.fnol.common.ProcessingObserver;
 import com.guidewire.fnol.common.ProcessingTimeoutException;
 import com.guidewire.fnol.enrichment.*;
 import com.guidewire.fnol.guardrails.*;
@@ -10,6 +11,7 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.slf4j.MDC;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
@@ -68,6 +70,7 @@ public class FNOLOrchestrator {
     private PhotoHistory photoHistory = PhotoHistory.NONE;
     /** Calibrated AI confidence (tools/vision-eval/trust_score.py); passes confidence through unless configured. */
     private TrustScorer trustScorer = TrustScorer.none();
+    private ProcessingObserver observer = ProcessingObserver.NONE;
     private FraudAnomalyScorer fraudScorer = FraudAnomalyScorer.none();
     /** Independent vision model (fnol-vision-ml), asked in parallel with Gemini; disabled unless configured. */
     private SecondOpinionAgent secondOpinion = SecondOpinionAgent.disabled();
@@ -231,7 +234,7 @@ public class FNOLOrchestrator {
         BranchAResult savedA = checkpoint.savedA();
         BranchBResult savedB = checkpoint.savedB();
         try {
-            futureA = savedA != null ? CompletableFuture.completedFuture(savedA) : executor.submit(() -> timed(operationalMs, () -> {
+            futureA = savedA != null ? CompletableFuture.completedFuture(savedA) : executor.submit(traced("operational", operationalMs, () -> {
                 BranchAResult done = runOperationalAI(payload, policyRecord.policyType(), policyRecord.currency(), deadlineNanos);
                 checkpoint.saveA(done);
                 return done;
@@ -240,7 +243,7 @@ public class FNOLOrchestrator {
             throw capacityExceeded(payload, e);
         }
         try {
-            futureB = savedB != null ? CompletableFuture.completedFuture(savedB) : executor.submit(() -> timed(legalMs, () -> {
+            futureB = savedB != null ? CompletableFuture.completedFuture(savedB) : executor.submit(traced("legal", legalMs, () -> {
                 BranchBResult done = runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete, noticeDate, policyRecord.jurisdiction());
                 checkpoint.saveB(done);
                 return done;
@@ -363,13 +366,25 @@ public class FNOLOrchestrator {
     }
 
     /** Runs a branch and records how long it took, also when it fails. */
-    private static <T> T timed(java.util.concurrent.atomic.AtomicLong ms, Callable<T> branch) throws Exception {
-        long started = System.nanoTime();
-        try {
-            return branch.call();
-        } finally {
-            ms.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
-        }
+    /** A branch that times itself, reports the result, and logs with the trace of the thread that started it. */
+    private <T> Callable<T> traced(String name, java.util.concurrent.atomic.AtomicLong ms, Callable<T> branch) {
+        Map<String, String> trace = MDC.getCopyOfContextMap();
+        return () -> {
+            if (trace != null) {
+                MDC.setContextMap(trace);
+            }
+            long started = System.nanoTime();
+            boolean failed = true;
+            try {
+                T result = branch.call();
+                failed = false;
+                return result;
+            } finally {
+                ms.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+                observer.branch(name, ms.get(), failed);
+                MDC.clear();
+            }
+        };
     }
 
     private static long remainingNanos(long deadline) {
@@ -406,6 +421,11 @@ public class FNOLOrchestrator {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setReplay(com.guidewire.fnol.agents.ReplayAnswers replay) {
         this.replay = replay;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setProcessingObserver(ProcessingObserver observer) {
+        this.observer = observer;
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)

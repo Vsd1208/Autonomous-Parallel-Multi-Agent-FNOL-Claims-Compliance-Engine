@@ -27,6 +27,8 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class EventInboxService {
 
+    private com.guidewire.fnol.common.ProcessingObserver observer = com.guidewire.fnol.common.ProcessingObserver.NONE;
+
     public enum Accepted { NEW, DUPLICATE, CONFLICT }
 
     private static final Logger log = LoggerFactory.getLogger(EventInboxService.class);
@@ -157,9 +159,11 @@ public class EventInboxService {
             e.updatedAt = now;
             if (e.attemptCount >= maxAttempts) {
                 e.status = EventInboxEntity.DEAD_LETTER;
+                observer.inbox("dead_letter");
                 log.error("[Inbox] Event {} for claim {} moved to dead letter after {} attempts: {}", e.eventId, e.aggregateId, e.attemptCount, e.lastError);
             } else {
                 e.status = EventInboxEntity.RETRY_PENDING;
+                observer.inbox("retry");
                 e.nextAttemptAt = now.plus(backoff(e.attemptCount, baseBackoff, maxBackoff));
                 log.warn("[Inbox] Event {} for claim {} will retry at {}: {}", e.eventId, e.aggregateId, e.nextAttemptAt, e.lastError);
             }
@@ -193,6 +197,11 @@ public class EventInboxService {
             inbox.save(e);
             return true;
         }).orElse(false);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setProcessingObserver(com.guidewire.fnol.common.ProcessingObserver observer) {
+        this.observer = observer;
     }
 
     /** Queue depth by status, for operations. */

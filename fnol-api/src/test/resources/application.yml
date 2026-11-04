@@ -30,3 +30,16 @@ spring:
     open-in-view: false
   flyway:
     enabled: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus   # health for probes; prometheus needs a credential (AdjusterTokenFilter)
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
