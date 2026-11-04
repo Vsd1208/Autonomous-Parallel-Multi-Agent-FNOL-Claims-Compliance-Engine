@@ -441,7 +441,7 @@ public class FNOLOrchestrator {
         validation.requireCovered(coverage);    // hard stop: no uncovered claim proceeds
         log.debug("[Branch A] Coverage verified — type={}, covered={}", coverage.coverageType(), coverage.covered());
 
-        // Step A3: Reserve = what the insurer owes: min(claimed, AI estimate) − deductible, capped at the limit
+        // Step A3: an interim figure, whose confidence the later steps read; Step A8 sets the reserve by the configured method
         ReserveResult res = reserve.calculate(damage, coverage, payload.claimedAmount());
         log.debug("[Branch A — Operational AI] Completed — reserve={}", res.recommendedReserve());
 

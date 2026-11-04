@@ -44,7 +44,7 @@
 | `incident_date` | `DATE` | no | Date of loss |
 | `state` | `VARCHAR(255)` | no | US state code (`CA`, `NY`, `TX`, `FL`, `IL`) |
 | `estimated_damage` | `NUMERIC(14,2)` | no, `>= 0` | Vision estimate in USD (0 for REJ- claims) |
-| `reserve` | `NUMERIC(14,2)` | no, `>= 0` | Recommended reserve (amount owed): min(claimed, AI estimate) − deductible, capped at the limit (0 for REJ- claims) |
+| `reserve` | `NUMERIC(14,2)` | no, `>= 0` | Recommended reserve (amount owed): the lower of the amount claimed and what the reserve table supports, less the deductible, capped at the limit (ADR-015; 0 for REJ- claims) |
 | `claimed_amount` | `NUMERIC(14,2)` | yes, `>= 0` | What the claimant asked for |
 | `analysis_json` | `TEXT` | yes | Full AI analysis (branch A/B results, notes, flags) for any adjuster's browser; stored **without** the redacted description text and without audit records. Not in the `/status` JSON |
 | `deductible` | `NUMERIC(14,2)` | yes | Policy deductible applied to the reserve |

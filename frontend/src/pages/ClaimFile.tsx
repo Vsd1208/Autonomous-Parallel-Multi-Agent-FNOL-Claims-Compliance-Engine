@@ -830,7 +830,7 @@ function aiEstimateLabel(b?: { method?: string; adjustmentAllowed?: boolean } | 
     : 'AI rough estimate, for reference; not used for severity or reserve';
 }
 
-/** How the recommended reserve was reached: lower of claimed and AI estimate, less the deductible. */
+/** How the recommended reserve was reached: from the table, or with AI_ESTIMATE the lower of claimed and AI estimate, less the deductible. */
 function SettlementPanel({ claim }: { claim: DashboardClaim }) {
   const r = claim.record;
   const res = claim.branchA?.reserve;

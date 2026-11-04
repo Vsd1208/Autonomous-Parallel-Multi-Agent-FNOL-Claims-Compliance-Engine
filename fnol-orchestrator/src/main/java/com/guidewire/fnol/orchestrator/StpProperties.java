@@ -30,8 +30,8 @@ public class StpProperties {
      */
     private boolean requireAdvisoryReview = true;
     /**
-     * How far the claimed amount may exceed the AI estimate before the claim goes to an adjuster
-     * (0.10 = 10%). Within it, the AI estimate is still the most that is reserved automatically.
+     * How far the claimed amount may exceed what the reserve supports before the claim goes to an adjuster
+     * (0.10 = 10%). Within it, what the reserve supports is still the most that is reserved automatically.
      */
     private BigDecimal claimedAmountTolerance = new BigDecimal("0.10");
     /**

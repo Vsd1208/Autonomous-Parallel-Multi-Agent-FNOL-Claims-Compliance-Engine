@@ -223,11 +223,11 @@ unknown.
 
 | Metric | Value | Date | Command |
 |---|---|---|---|
-| Backend tests | **409 passed**, 0 failed, 0 skipped (fnol-api 143, fnol-agents 115, fnol-orchestrator 92, fnol-mock-guidewire 31, fnol-enrichment 15, fnol-guardrails 13; fnol-common has none) | 3 Nov 2026 | `mvn -B clean verify` |
-| Instruction coverage (JaCoCo) | fnol-guardrails 96%, fnol-mock-guidewire 94%, fnol-orchestrator 93%, fnol-agents 88%, fnol-api 84%, fnol-enrichment 48% (down from 66% on 31 Oct: JaCoCo counts each module's own tests, and mock client code added since, at 7%, is exercised from other modules' tests or a running stack) | 3 Nov 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
-| Demo scenarios | **111 checks passed, 0 failed**, in lite mode and in full mode, both with mock vision | 3 Nov 2026 | `bash demo-scenarios/run-all.sh` |
-| Lite mode: build to healthy | 116 s (78 s `build --no-cache`, 38 s to start), then 75 s for `run-all.sh`; base images already present, about 5 MB/s connection, one laptop | 3 Nov 2026 | [README](../README.md#quick-review-lite-mode) |
-| Frontend and portal builds; Python compile | Pass | 3 Nov 2026 | `npm ci && npm run build`, `npm run build:portal`, `python -m compileall` |
+| Backend tests | **437 passed**, 0 failed, 0 skipped (fnol-api 155, fnol-agents 126, fnol-orchestrator 97, fnol-mock-guidewire 31, fnol-enrichment 15, fnol-guardrails 13; fnol-common has none) | 4 Nov 2026 | `mvn -B clean verify` |
+| Instruction coverage (JaCoCo) | fnol-mock-guidewire 94%, fnol-orchestrator 92%, fnol-guardrails 91%, fnol-api 84%, fnol-agents 80%, fnol-enrichment 48%. JaCoCo counts each module's own tests. fnol-enrichment fell from 66% on 31 Oct because mock client code, at 7%, is exercised from other modules' tests or a running stack. fnol-agents fell from 88% on 3 Nov mainly because of replay and drafting code tested from fnol-api and the real Gemini drafting client, which no test calls | 4 Nov 2026 | `mvn -B clean verify`, then `*/target/site/jacoco/index.html` |
+| Demo scenarios | Lite mode with replay: **129 passed, 0 failed**. Full mode with mock vision: **111 passed, 0 failed**. Full mode with India's clock on, direct intake only: 35 passed, 0 failed | 4 Nov 2026 | `bash demo-scenarios/run-all.sh` |
+| Lite mode: build to healthy | 160 s (121 s `build --no-cache`, 39 s to start), then 81 s for `run-all.sh`; base images already present, one laptop. On a clean machine: not measured | 4 Nov 2026 | [README](../README.md#quick-review-lite-mode) |
+| Frontend and portal builds; Python compile | Pass | 4 Nov 2026 | `npm ci && npm run build`, `npm run build:portal`, `python -m compileall` |
 
 Update these rows whenever the test suite changes.
 

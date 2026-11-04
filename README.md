@@ -38,7 +38,7 @@ flowchart LR
 | Replay mode (lite) | **Real recorded model output** for 66 CC0 photos; not live analysis, and a photo outside the set goes to a person | A review with no model or key still shows the checks working | `ReplayVisionProvider.java`, `demo-scenarios/replay/` |
 | Second-opinion vision model | **Real**, trained in this project on 734 car photos (441 CC0 + 293 CC BY 4.0) and 307 public-domain FEMA property photos, every photo reviewed by eye (CLIP + DINOv2 encoders, chosen by benchmark); runs on-premise, so photos never leave | An independent check on a third-party model, and the reader of last resort when Gemini is down | `fnol-vision-ml/`, `tools/second-opinion/` |
 | On-premise vision when Gemini is unavailable | **Real**: the second-opinion model reads vehicle photos in place of Gemini's placeholder and the claim is priced from the repair-cost range; flag `ON_PREMISE_VISION`, always an adjuster | Quotas and outages happen; the claim still gets a measured reading | `OnPremiseVision.java` |
-| Repair-cost ranges | **Real published figures** (AAA, Consumer Reports, CCC, each linked); the band mapping is an assumption; accuracy on real claims unknown | Repair cost drives the reserve; no photo dataset has repair costs | `repair-cost-ranges.json`, `RepairCostEstimator.java`, `tools/cost-eval/` |
+| Repair-cost ranges | **Real published figures** (AAA, Consumer Reports, CCC, each linked); the band mapping is an assumption; accuracy on real claims unknown | They bound the AI's figure and price on-premise readings; no photo dataset has repair costs | `repair-cost-ranges.json`, `RepairCostEstimator.java`, `tools/cost-eval/` |
 | Learning repair costs from real claims | **Real pipeline**: each decision stores the repair cost and its evidence (invoice, body-shop estimate, inspection; an adjuster's judgement is kept but never learned from; on a claim sent to investigation only the investigator's offline cost is learned); a learned table replaces the published one only when it is more accurate out of sample (50+ claims) | The way to a validated dollar estimate | `AiGovernanceService.java`, `tools/cost-eval/fit_costs.py` |
 | Trust score (calibrated confidence) | **Real**, fitted and measured on 66 labelled Gemini answers | Gemini's own confidence does not separate right from wrong | `TrustScorer.java`, `tools/vision-eval/trust_score.py` |
 | Face and licence-plate blurring | **Real** (OpenCV, YuNet) | Photos leave for an external model | `fnol-vision-ml/redaction/` |
@@ -66,7 +66,7 @@ All from small public datasets, not real claims. Runs, dates, samples and caveat
 | Gemini damaged area right, lenient / strict | 82% / 58% (66 photos). **Dollar estimates not validated**: no true costs exist, so they are for reference | [metrics §1](docs/metrics.md#1-gemini-damage-assessment-vehicle), [§8](docs/metrics.md#8-repair-cost-estimates) |
 | Severity gate: answers read as LOW / MEDIUM / HIGH, of 66 | 6 / 36 / 24 from the label and second opinion; 45 / 21 / 0 from the AI's dollars. No ground truth: routing, not accuracy | [metrics §3](docs/metrics.md#3-vision-checks-replayed-gate-ablation-vehicle) |
 | Our on-premise model: damaged area right, strict / lenient | **78% / 87%** out of fold on 734 reviewed car photos; property cause of loss **93%** on 307 | [metrics §4](docs/metrics.md#4-second-opinion-model-trained-in-this-project) |
-| Backend tests; demo scenario checks | 420 passing; 129 in lite mode | [metrics §6](docs/metrics.md#6-engineering) |
+| Backend tests; demo scenario checks | 437 passing; 129 in lite mode, 111 in full mode | [metrics §6](docs/metrics.md#6-engineering) |
 
 ### Quick review (lite mode)
 
@@ -82,7 +82,7 @@ Then open http://localhost:5173 and sign in as `ADJ-001`, password `demo-passwor
 
 **Replay:** lite mode replays real recorded model answers for 66 photos, so the trust score, second opinion and vision checks work on real output: under New Claim, try the "Recorded" sample sets, including a confident wrong answer that the second opinion stops. It is **not live analysis of new photos**: any other photo gets a placeholder and goes to a person, and no photo can reach an external model, because the engine refuses to start in lite mode with Gemini on.
 
-**Measured:** 129 checks passed, 0 failed. Build time is re-measured at the end of this work. See [metrics §6](docs/metrics.md#6-engineering).
+**Measured on 4 Nov 2026, one laptop:** 160 s from build to healthy with base images already present, then 81 s for `run-all.sh`, with **129 checks passed, 0 failed**. A first run also pulls the base images. See [metrics §6](docs/metrics.md#6-engineering).
 
 ### Where to look next
 
@@ -131,7 +131,7 @@ All from small public datasets, with runs and caveats in [docs/metrics.md](docs/
 
 ### Lite mode in detail
 
-**Measured on 3 Nov 2026, one laptop:** 116 s from build to healthy (78 s for `build --no-cache`, 38 s to start). The base images were already on this machine and the connection was about 5 MB/s, so a first run also has to pull those images (Maven alone is 775 MB). On a very slow connection it takes far longer: at under 76 KB/s the same build had not finished after 39 minutes.
+**Measured on 4 Nov 2026, one laptop:** 160 s from build to healthy (121 s for `build --no-cache`, 39 s to start). The base images were already on this machine, so a first run also has to pull those images (Maven alone is 775 MB). On a very slow connection it takes far longer: at under 76 KB/s the same build had not finished after 39 minutes.
 
 **What is off in lite mode:**
 
@@ -319,7 +319,7 @@ Prerequisites: Java 17+, Maven 3.9+, Node 18+, Docker.
 
 ```bash
 docker compose --env-file .env.demo up -d --build
-bash demo-scenarios/run-all.sh        # posts all 10 scenarios, exits non-zero on any mismatch
+bash demo-scenarios/run-all.sh        # posts all 10 scenarios (plus the recorded or India ones when active), exits non-zero on any mismatch
 ```
 
 If port 5432 is already in use on your machine, add `POSTGRES_HOST_PORT=5433` in front of the compose command.
