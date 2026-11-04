@@ -29,8 +29,16 @@ class AdminEventInboxController {
 
     @GetMapping
     Map<String, Object> list(@RequestParam(name = "status", defaultValue = EventInboxEntity.DEAD_LETTER) String status) {
-        List<EventInboxEntity> items = rows.findByStatusOrderByReceivedAtAsc(status, PageRequest.of(0, 100));
+        List<EventInboxItem> items = rows.findByStatusOrderByReceivedAtAsc(status, PageRequest.of(0, 100)).stream().map(EventInboxItem::of).toList();
         return Map.of("depth", inbox.depth(), "items", items);
+    }
+
+    /** What an operator needs. Not the event's payload or the saved branch results, which hold claim content. */
+    record EventInboxItem(String id, String eventId, String eventType, String aggregateId, String status, int attemptCount, String lastError,
+                          java.time.Instant nextAttemptAt, java.time.Instant receivedAt) {
+        static EventInboxItem of(EventInboxEntity e) {
+            return new EventInboxItem(e.id, e.eventId, e.eventType, e.aggregateId, e.status, e.attemptCount, e.lastError, e.nextAttemptAt, e.receivedAt);
+        }
     }
 
     @PostMapping("/{id}/replay")

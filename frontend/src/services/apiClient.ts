@@ -16,6 +16,7 @@ import {
   ReserveApprovalView,
   ClaimDraft,
   InspectionView,
+  EventInboxView,
 } from '../types';
 
 import { Session, session } from './session';
@@ -157,6 +158,12 @@ export const apiClient = {
     ),
 
   getInspectors: () => request<Inspector[]>('/api/v1/inspectors', {}, true),
+
+  getEventInbox: (status: string) =>
+    request<EventInboxView>(`/api/v1/admin/event-inbox?status=${encodeURIComponent(status)}`, {}, true),
+
+  replayEvent: (id: string) =>
+    request<unknown>(`/api/v1/admin/event-inbox/${encodeURIComponent(id)}/replay`, { method: 'POST' }, true),
 
   getInspectionView: (claimId: string) =>
     request<InspectionView>(`/api/v1/fnol/${encodeURIComponent(claimId)}/inspection-view`, {}, true),

@@ -79,8 +79,9 @@ export function AppHeader({ onSignedOut }: { onSignedOut: () => void }) {
               aria-label={`Close claim ${openClaim}`} title="Close claim">×</button>
           </span>
         )}
-        <NavLink to="/new" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>New Claim</NavLink>
-        <NavLink to="/governance" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>AI Governance</NavLink>
+        {session.may('NEW_CLAIM') && <NavLink to="/new" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>New Claim</NavLink>}
+        {session.may('GOVERNANCE') && <NavLink to="/governance" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>AI Governance</NavLink>}
+        {session.may('OPERATIONS') && <NavLink to="/operations" className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>Operations</NavLink>}
       </nav>
       <form className="header-search" onSubmit={goToClaim} role="search">
         <input

@@ -43,6 +43,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm test
       - run: npm run build
       - run: npm run build:portal
       # The policyholder portal must never carry the adjuster token or call adjuster endpoints.
