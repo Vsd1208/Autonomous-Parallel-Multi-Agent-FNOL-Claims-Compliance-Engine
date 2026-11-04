@@ -1,0 +1,37 @@
+{
+  "version": "2026-11-04",
+  "note": "Used only by rules naming a calendar, and only for the years listed. Outside them a rule counts weekends only and says so, which gives an earlier date. Maintained by hand: a person must add each new year.",
+  "calendars": {
+    "NY": {
+      "authority": "11 NYCRR 216.1 excludes New York State legal holidays from business days; the list is General Construction Law § 24.",
+      "source": "https://www.cs.ny.gov/attendance_leave/2026_legal_holidays.cfm",
+      "retrieved": "2026-11-04",
+      "years": [
+        2026
+      ],
+      "dates": [
+        "2026-01-01",
+        "2026-01-19",
+        "2026-02-12",
+        "2026-02-16",
+        "2026-05-25",
+        "2026-06-19",
+        "2026-07-04",
+        "2026-09-07",
+        "2026-10-12",
+        "2026-11-03",
+        "2026-11-11",
+        "2026-11-26",
+        "2026-12-25"
+      ]
+    },
+    "TX": {
+      "authority": "Tex. Ins. Code § 542.051(1): a business day is not a Saturday, Sunday or holiday recognized by this state.",
+      "source": "https://hr.sao.texas.gov/Holidays",
+      "retrieved": null,
+      "years": [],
+      "dates": [],
+      "blocker": "The State Auditor's schedule could not be opened on 2026-11-04 (connection refused), so no Texas dates are loaded."
+    }
+  }
+}

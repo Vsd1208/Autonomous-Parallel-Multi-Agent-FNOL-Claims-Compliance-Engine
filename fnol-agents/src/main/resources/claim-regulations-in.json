@@ -21,7 +21,10 @@
       "citation": "Master Circular IRDAI/PP&GR/CIR/MISC/117/9/2024, Part C, V.4, paras 2-3",
       "appliesWhen": "A survey by a registered surveyor is mandatory above Rs 50,000 (motor) or Rs 1 lakh (other) (para 1). The text does not say whether the 24 hours also applies below those amounts.",
       "effectiveDate": "2024-09-05",
-      "verification": "regulation text"
+      "verification": "regulation text",
+      "ruleId": "IN-SURVEYOR_ALLOCATION",
+      "category": "EXPERIMENTAL",
+      "verificationStatus": "PRIMARY_TEXT_READ"
     },
     {
       "id": "SURVEY_REPORT",
@@ -32,7 +35,10 @@
       "citation": "Master Circular IRDAI/PP&GR/CIR/MISC/117/9/2024, Part C, V.4, para 4",
       "appliesWhen": "The text says 'fifteen days' without saying calendar or business; counted here as calendar days, an assumption.",
       "effectiveDate": "2024-09-05",
-      "verification": "regulation text"
+      "verification": "regulation text",
+      "ruleId": "IN-SURVEY_REPORT",
+      "category": "EXPERIMENTAL",
+      "verificationStatus": "PRIMARY_TEXT_READ"
     },
     {
       "id": "DECISION",
@@ -43,7 +49,11 @@
       "citation": "Master Circular IRDAI/PP&GR/CIR/MISC/117/9/2024, Part C, V.4, para 5",
       "appliesWhen": "Within seven days of receiving the survey report, or after expiry of fifteen days from allocation, whichever is earlier. At first notice the receipt date is unknown, so this date is the outer limit; an earlier report brings it forward. Not for property or building policies on a reinstatement value basis. This reading is this project's.",
       "effectiveDate": "2024-09-05",
-      "verification": "regulation text"
+      "verification": "regulation text",
+      "ruleId": "IN-DECISION",
+      "category": "EXPERIMENTAL",
+      "verificationStatus": "PRIMARY_TEXT_READ"
     }
-  ]
+  ],
+  "legalReview": "NOT_REVIEWED"
 }

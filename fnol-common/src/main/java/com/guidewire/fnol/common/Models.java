@@ -422,8 +422,16 @@ public final class Models {
             String rulesVersion,        // version of the rule set used (claim-regulations.json)
             LocalDate recoverBy,        // last day to start a recovery action against an at-fault party (subrogation)
             String recoveryCitation,
-            List<ClockMilestone> milestones   // steps a jurisdiction has beyond acknowledge and decide; empty for the US states
+            List<ClockMilestone> milestones,  // steps a jurisdiction has beyond acknowledge and decide; empty for the US states
+            List<AppliedRule> appliedRules    // which version of which rule set each date, and how far it was verified
     ) {
+        public DeadlineResult(String state, LocalDate deadline, String ruleSource, String disclaimer, LocalDate acknowledgeBy, LocalDate decisionBy,
+                              String urgencyFlag, String acknowledgeCitation, String decisionCitation, String decisionNote, String rulesVersion,
+                              LocalDate recoverBy, String recoveryCitation, List<ClockMilestone> milestones) {
+            this(state, deadline, ruleSource, disclaimer, acknowledgeBy, decisionBy, urgencyFlag, acknowledgeCitation, decisionCitation,
+                    decisionNote, rulesVersion, recoverBy, recoveryCitation, milestones, List.of());
+        }
+
         public DeadlineResult(String state, LocalDate deadline, String ruleSource, String disclaimer, LocalDate acknowledgeBy, LocalDate decisionBy,
                               String urgencyFlag, String acknowledgeCitation, String decisionCitation, String decisionNote, String rulesVersion,
                               LocalDate recoverBy, String recoveryCitation) {
@@ -437,6 +445,13 @@ public final class Models {
                     null, null, null, null, null, null);
         }
     }
+
+    /**
+     * One rule version behind a date. category: STATUTORY | INSURER_POLICY | INTERNAL_TARGET | EXPERIMENTAL. verificationStatus: what this
+     * project read (PRIMARY_TEXT_READ | SECONDARY_SOURCE | UNVERIFIED), which is not a lawyer's review. A null effectiveFrom means the start was not researched.
+     */
+    public record AppliedRule(String ruleId, int ruleVersion, String category, String verificationStatus, LocalDate effectiveFrom,
+                              LocalDate effectiveTo, String citation, String sourceUrl) {}
 
     public record SubrogationResult(
             int score,
