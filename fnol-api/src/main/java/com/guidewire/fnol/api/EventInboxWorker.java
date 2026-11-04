@@ -92,7 +92,7 @@ class EventInboxWorker {
         try {
             ClaimEvent event = mapper.readValue(row.payload, ClaimEvent.class);
             LocalDate notice = event.time() == null ? LocalDate.now() : LocalDate.ofInstant(event.time(), ZoneId.systemDefault());
-            events.analyse(event.subject(), notice, checkpoint(row), inbox.lastAttempt(row));
+            events.analyse(event.subject(), notice, checkpoint(row), row.attemptCount <= 1, inbox.lastAttempt(row));
             inbox.complete(row.id);
         } catch (ClaimEventController.RetryLaterException e) {
             inbox.failed(row.id, e.getMessage());

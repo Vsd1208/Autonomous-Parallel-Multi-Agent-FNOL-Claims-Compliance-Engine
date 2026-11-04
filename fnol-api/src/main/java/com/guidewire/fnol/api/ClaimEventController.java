@@ -213,11 +213,13 @@ class ClaimEventController {
 
     /**
      * Reads the FNOL from the claims system, analyses it and writes the results back onto that claim. Safe to run again: a claim already
-     * analysed is left alone. A transient failure throws {@link RetryLaterException} until the last attempt, when the claim goes to a person.
+     * analysed is left alone. A transient failure throws {@link RetryLaterException} to try again later, but a person hears of it on the first
+     * failure: retrying must not leave a claim out of sight for minutes. The person can act at once, and a later success adds the analysis.
      */
-    void analyse(String claimId, LocalDate noticeDate, com.guidewire.fnol.orchestrator.BranchCheckpoint checkpoint, boolean lastAttempt) {
-        // Already analysed, by an attempt that died before saying so. A row that only records a failure may be analysed again.
-        if (claims.findById(claimId).filter(c -> c.failureReason == null).isPresent()) {
+    void analyse(String claimId, LocalDate noticeDate, com.guidewire.fnol.orchestrator.BranchCheckpoint checkpoint, boolean firstAttempt, boolean lastAttempt) {
+        // Already analysed, by an attempt that died before saying so; or a person decided while it was retrying, which a retry must not
+        // overwrite. A row that only records a failure may be analysed again.
+        if (claims.findById(claimId).filter(c -> c.failureReason == null || c.adjusterDecision != null).isPresent()) {
             return;
         }
         FNOLPayload fnol;
@@ -238,7 +240,7 @@ class ClaimEventController {
         }
         String policy = fnol.policyNumber();
         LocalDate date = fnol.incidentDate();
-        if (!idempotency.tryAcquire(policy, date, fnol.state())) {
+        if (!idempotency.tryAcquire(policy, date, fnol.state(), claimId)) {
             Optional<String> original = duplicates.record(fnol);
             failedIntakes.record(claimId, fnol, "HUMAN_REVIEW", "DUPLICATE_FNOL",
                     "Possible duplicate of " + original.orElse("a claim still being processed"));
@@ -251,10 +253,15 @@ class ClaimEventController {
             response = orchestrator.process(fnol, claimId, noticeDate, checkpoint);
         } catch (RuntimeException e) {
             idempotency.release(policy, date.toString(), fnol.state());
+            String[] outcome = classify(e);
             if (transientFailure(e) && !lastAttempt) {
+                if (firstAttempt) {
+                    failedIntakes.record(claimId, fnol, outcome[0], outcome[1], outcome[2] + ". Retrying automatically");
+                    flagForAdjuster(claimId, outcome[0], "AI analysis is delayed (" + outcome[1] + "): " + outcome[2]
+                            + ". It will be retried automatically. You can handle this claim now; the analysis is added if a retry succeeds first.");
+                }
                 throw new RetryLaterException(String.valueOf(e.getMessage()));
             }
-            String[] outcome = classify(e);
             failedIntakes.record(claimId, fnol, outcome[0], outcome[1], outcome[2]);
             flagForAdjuster(claimId, outcome[0], "AI analysis could not complete (" + outcome[1] + "): " + outcome[2]
                     + ". Handle this claim manually.");

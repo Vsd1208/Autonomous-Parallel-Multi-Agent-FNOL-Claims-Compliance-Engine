@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
@@ -229,6 +230,49 @@ class DurableInboxTest {
         mockMvc.perform(post("/api/v1/admin/event-inbox/" + dead.id + "/replay").header("Authorization", HumanSession.bearer(mockMvc, "SUP-001"))).andExpect(status().isAccepted());
         assertThat(row(eventId).status).isEqualTo(EventInboxEntity.RETRY_PENDING);
         assertThat(row(eventId).attemptCount).isZero();
+    }
+
+    @Test
+    @DisplayName("A failing analysis reaches a person on the first failure, is flagged once, and a later success replaces the failure")
+    void firstFailureTellsAPerson() throws Exception {
+        String id = claim();
+        String eventId = UUID.randomUUID().toString();
+        doThrow(new ResourceAccessException("model away")).doCallRealMethod().when(vision).assess(any(FNOLPayload.class), anyString());
+        send(body(eventId, id)).andExpect(status().isAccepted());
+
+        worker.runOnce("worker-1");
+
+        assertThat(row(eventId).status).isEqualTo(EventInboxEntity.RETRY_PENDING);
+        assertThat(claims.findById(id).orElseThrow().failureReason).contains("Retrying automatically");
+        assertThat(claims.findById(id).orElseThrow().status).isEqualTo("HUMAN_REVIEW");
+        verify(claimCenter).addActivity(eq(id), any());
+        verify(claimCenter).patchClaim(eq(id), eq(new ClaimPatch(null, null, null, "HUMAN_REVIEW")));
+
+        worker.runOnce("worker-1");
+
+        assertThat(row(eventId).status).isEqualTo(EventInboxEntity.COMPLETED);
+        assertThat(claims.findById(id).orElseThrow().failureReason).isNull();
+        assertThat(claims.findById(id).orElseThrow().analysisJson).isNotNull();
+    }
+
+    @Test
+    @DisplayName("A person who decided while the analysis was retrying is not overwritten by the retry")
+    void retryDoesNotOverwriteADecision() throws Exception {
+        String id = claim();
+        String eventId = UUID.randomUUID().toString();
+        doThrow(new ResourceAccessException("model away")).doCallRealMethod().when(vision).assess(any(FNOLPayload.class), anyString());
+        send(body(eventId, id)).andExpect(status().isAccepted());
+        worker.runOnce("worker-1");
+        var flagged = claims.findById(id).orElseThrow();
+        flagged.adjusterDecision = "REJECTED_BY_ADJUSTER";
+        flagged.status = "REJECTED_BY_ADJUSTER";
+        claims.save(flagged);
+
+        worker.runOnce("worker-1");
+
+        assertThat(row(eventId).status).isEqualTo(EventInboxEntity.COMPLETED);
+        assertThat(claims.findById(id).orElseThrow().adjusterDecision).isEqualTo("REJECTED_BY_ADJUSTER");
+        assertThat(claims.findById(id).orElseThrow().status).isEqualTo("REJECTED_BY_ADJUSTER");
     }
 
     @Test

@@ -46,6 +46,22 @@ public class IdempotencyStore {
         return true;
     }
 
+    /**
+     * As {@link #tryAcquire(String, LocalDate, String)} for a claim the claims system already holds: its own failure row, saved so a person
+     * could see it while the analysis retries, does not make it a duplicate of itself.
+     */
+    public boolean tryAcquire(String policyNumber, LocalDate incidentDate, String state, String ownClaimId) {
+        String key = buildKey(policyNumber, incidentDate.toString(), state);
+        if (!inFlightKeys.add(key)) {
+            return false;
+        }
+        if (claimRepository.existsByPolicyNumberAndIncidentDateAndStateAndClaimIdNot(policyNumber, incidentDate, state, ownClaimId)) {
+            inFlightKeys.remove(key);
+            return false;
+        }
+        return true;
+    }
+
     /** Release the in-memory slot on processing failure so the claim can be retried. */
     public void release(String policyNumber, String incidentDate, String state) {
         inFlightKeys.remove(buildKey(policyNumber, incidentDate, state));
