@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guidewire.fnol.agents.EvidenceImageLoader.EvidenceRejectedException;
 import com.guidewire.fnol.agents.EvidenceImageLoader.ImageData;
 import com.guidewire.fnol.common.Models.DamageAssessment;
+import com.guidewire.fnol.common.ProcessingObserver;
 import com.guidewire.fnol.common.Models.FNOLPayload;
 import com.guidewire.fnol.common.Models.PhotoPrivacy;
 import org.slf4j.Logger;
@@ -20,6 +21,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.Map;
 
 /**
@@ -136,6 +138,8 @@ public class GeminiVisionProvider implements VisionProvider {
 
     @Value("${gemini.api-key:}")
     private String apiKey;
+
+    private ProcessingObserver observer = ProcessingObserver.NONE;
 
     @Value("${gemini.vision.model:gemini-2.5-flash}")
     private String model;
@@ -269,11 +273,25 @@ public class GeminiVisionProvider implements VisionProvider {
             headers.set("x-goog-api-key", apiKey);
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 
-            ResponseEntity<String> response = restTemplate.postForEntity(GEMINI_API_URL.formatted(model), request, String.class);
+            long calledAt = System.nanoTime();
+            ResponseEntity<String> response;
+            try {
+                response = restTemplate.postForEntity(GEMINI_API_URL.formatted(model), request, String.class);
+                observer.provider("gemini", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - calledAt), "OK");
+            } catch (RestClientException e) {
+                observer.provider("gemini", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - calledAt), "FAILED");
+                throw e;
+            }
+            // A provider can retire a model and route its name to another one. Calibration fitted on the requested model says nothing
+            // about the model that answered, so the answer keeps its own confidence and is marked (the claim then goes to a person).
+            String substitute = substituteModel(response.getBody());
+            if (substitute != null) {
+                log.warn("[GeminiVision] Asked for {} but {} answered; calibration not applied, the claim goes to an adjuster.", model, substitute);
+            }
             // The calibration map was measured on the vehicle prompt only; property answers keep Gemini's confidence.
             return parseGeminiResponse(response.getBody(),
-                    prompt == DAMAGE_ASSESSMENT_PROMPT ? calibrator : VisionConfidenceCalibrator.none()).withPrivacy(privacy)
-                    .withVisionSource(visionSource(prompt));
+                    prompt == DAMAGE_ASSESSMENT_PROMPT && substitute == null ? calibrator : VisionConfidenceCalibrator.none()).withPrivacy(privacy)
+                    .withVisionSource((substitute == null ? "" : substitute + DamageAssessment.INSTEAD_OF) + visionSource(prompt));
 
         } catch (RestClientException e) {
             log.error("[GeminiVision] Gemini API call failed — using fallback assessment. Cause: {}", e.getClass().getSimpleName());
@@ -282,6 +300,17 @@ public class GeminiVisionProvider implements VisionProvider {
             log.error("[GeminiVision] Unexpected error during vision assessment — using fallback. Cause: {}", e.getMessage());
             return fallback("PARSE_ERROR");
         }
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setProcessingObserver(ProcessingObserver observer) {
+        this.observer = observer;
+    }
+
+    /** The model that really answered, when the response names one other than the model asked for; otherwise null. */
+    private String substituteModel(String responseBody) throws Exception {
+        String served = objectMapper.readTree(responseBody).path("modelVersion").asText("");
+        return served.isBlank() || model == null || served.startsWith(model) ? null : served;
     }
 
     /** Model, prompt hash and thinking budget, so adjuster feedback can be matched to the prompt that produced it. */
@@ -324,7 +353,7 @@ public class GeminiVisionProvider implements VisionProvider {
         String damageType   = assessment.path("damageType").asText("UNKNOWN");
         String severity     = assessment.hasNonNull("severity") ? assessment.path("severity").asText() : null;   // no label routes to a person
         int estimatedDamage = assessment.path("estimatedDamage").asInt(3500);
-        double confidence   = assessment.path("confidence").asDouble(0.75);
+        double confidence   = assessment.path("confidence").asDouble(0);   // none reported: no claim to any confidence
         String photoQuality = assessment.path("photoQuality").asText("UNKNOWN");
         String photoSubject = assessment.hasNonNull("photoSubject") ? assessment.path("photoSubject").asText() : null;
 

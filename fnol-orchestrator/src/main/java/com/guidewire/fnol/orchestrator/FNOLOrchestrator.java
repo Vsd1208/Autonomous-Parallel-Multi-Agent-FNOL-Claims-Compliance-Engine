@@ -3,6 +3,7 @@ package com.guidewire.fnol.orchestrator;
 import com.guidewire.fnol.agents.*;
 import com.guidewire.fnol.common.CoverageNotEligibleException;
 import com.guidewire.fnol.common.Models.*;
+import com.guidewire.fnol.common.ProcessingObserver;
 import com.guidewire.fnol.common.ProcessingTimeoutException;
 import com.guidewire.fnol.enrichment.*;
 import com.guidewire.fnol.guardrails.*;
@@ -10,6 +11,7 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.slf4j.MDC;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
@@ -68,6 +70,7 @@ public class FNOLOrchestrator {
     private PhotoHistory photoHistory = PhotoHistory.NONE;
     /** Calibrated AI confidence (tools/vision-eval/trust_score.py); passes confidence through unless configured. */
     private TrustScorer trustScorer = TrustScorer.none();
+    private ProcessingObserver observer = ProcessingObserver.NONE;
     private FraudAnomalyScorer fraudScorer = FraudAnomalyScorer.none();
     /** Independent vision model (fnol-vision-ml), asked in parallel with Gemini; disabled unless configured. */
     private SecondOpinionAgent secondOpinion = SecondOpinionAgent.disabled();
@@ -182,6 +185,11 @@ public class FNOLOrchestrator {
 
     /** @param noticeDate the day the claim was received, which the regulatory clocks run from; it may be before today */
     public FNOLResponse process(FNOLPayload payload, String existingClaimId, LocalDate noticeDate) {
+        return process(payload, existingClaimId, noticeDate, BranchCheckpoint.NONE);
+    }
+
+    /** @param checkpoint keeps each finished branch, so a retry runs only what did not finish */
+    public FNOLResponse process(FNOLPayload payload, String existingClaimId, LocalDate noticeDate, BranchCheckpoint checkpoint) {
 
         // ── Stage 1: Input validation ──────────────────────────────────────────────────
         input.validate(payload);
@@ -223,15 +231,23 @@ public class FNOLOrchestrator {
                 && !inputFlags.contains(IntakeReviewService.INCOMPLETE_PHOTO_SET);
         // One overall deadline for both branches, from submission; Branch A also uses it to cap its waits.
         long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        BranchAResult savedA = checkpoint.savedA();
+        BranchBResult savedB = checkpoint.savedB();
         try {
-            futureA = executor.submit(() -> timed(operationalMs,
-                    () -> runOperationalAI(payload, policyRecord.policyType(), policyRecord.currency(), deadlineNanos)));
+            futureA = savedA != null ? CompletableFuture.completedFuture(savedA) : executor.submit(traced("operational", operationalMs, () -> {
+                BranchAResult done = runOperationalAI(payload, policyRecord.policyType(), policyRecord.currency(), deadlineNanos);
+                checkpoint.saveA(done);
+                return done;
+            }));
         } catch (RejectedExecutionException e) {
             throw capacityExceeded(payload, e);
         }
         try {
-            futureB = executor.submit(() -> timed(legalMs,
-                    () -> runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete, noticeDate, policyRecord.jurisdiction())));
+            futureB = savedB != null ? CompletableFuture.completedFuture(savedB) : executor.submit(traced("legal", legalMs, () -> {
+                BranchBResult done = runLegalAI(payload, policyRecord.policyType(), proofOfLossComplete, noticeDate, policyRecord.jurisdiction());
+                checkpoint.saveB(done);
+                return done;
+            }));
         } catch (RejectedExecutionException e) {
             futureA.cancel(true);
             throw capacityExceeded(payload, e);
@@ -350,13 +366,25 @@ public class FNOLOrchestrator {
     }
 
     /** Runs a branch and records how long it took, also when it fails. */
-    private static <T> T timed(java.util.concurrent.atomic.AtomicLong ms, Callable<T> branch) throws Exception {
-        long started = System.nanoTime();
-        try {
-            return branch.call();
-        } finally {
-            ms.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
-        }
+    /** A branch that times itself, reports the result, and logs with the trace of the thread that started it. */
+    private <T> Callable<T> traced(String name, java.util.concurrent.atomic.AtomicLong ms, Callable<T> branch) {
+        Map<String, String> trace = MDC.getCopyOfContextMap();
+        return () -> {
+            if (trace != null) {
+                MDC.setContextMap(trace);
+            }
+            long started = System.nanoTime();
+            boolean failed = true;
+            try {
+                T result = branch.call();
+                failed = false;
+                return result;
+            } finally {
+                ms.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+                observer.branch(name, ms.get(), failed);
+                MDC.clear();
+            }
+        };
     }
 
     private static long remainingNanos(long deadline) {
@@ -393,6 +421,11 @@ public class FNOLOrchestrator {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setReplay(com.guidewire.fnol.agents.ReplayAnswers replay) {
         this.replay = replay;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setProcessingObserver(ProcessingObserver observer) {
+        this.observer = observer;
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -437,7 +470,7 @@ public class FNOLOrchestrator {
         log.debug("[Branch A] Vision complete — severity={}, confidence={}", damage.severity(), damage.confidence());
 
         // Step A2: Coverage verification against the line-of-business coverage rule
-        PolicyValidationResult coverage = policy.execute(payload.policyNumber());
+        PolicyValidationResult coverage = policy.execute(payload.policyNumber(), payload.incidentDate());
         validation.requireCovered(coverage);    // hard stop: no uncovered claim proceeds
         log.debug("[Branch A] Coverage verified — type={}, covered={}", coverage.coverageType(), coverage.covered());
 
@@ -581,6 +614,10 @@ public class FNOLOrchestrator {
         if (fraud != null && fraud.anomalous()) {
             checked.add(FraudAnomalyScorer.FRAUD_ANOMALY);
         }
+        Abstention abstention = AbstentionPolicy.evaluate(branchA.damageAssessment(), checked, stp.getConfidence(), stp.isRequireModelVersion());
+        if (abstention.abstained() && checked.isEmpty()) {
+            checked.add(AbstentionPolicy.AI_ABSTAINED);
+        }
         List<String> gateFlags = List.copyOf(checked);
         List<String> reviewFlags = new ArrayList<>(inputFlags);
         reviewFlags.addAll(gateFlags);
@@ -661,6 +698,10 @@ public class FNOLOrchestrator {
                 explanation.decision(), status, inputFlags, gateFlags, payload.policyNumber(), claimId);
 
         List<String> notes = new ArrayList<>(severityReading.notes());
+        if (abstention.abstained()) {
+            notes.add("AI ABSTAINED (" + String.join(", ", abstention.reasons()) + "): the AI's reading should not be relied on here, "
+                    + "so a person decides. This is not a finding against the claim.");
+        }
         Map<String, String> flagReasons = new LinkedHashMap<>();   // flag → note text, for ClaimCenter activities
         if (highRiskEscalation) {
             notes.add("⚠ HIGH-RISK POLICY: This claim has been flagged for mandatory human validation " +
@@ -749,11 +790,13 @@ public class FNOLOrchestrator {
         // Inputs are hashed from the sanitized intake only, never the raw payload (SSN, DOB, name).
         SanitizedIntake intake = SanitizedIntake.of(payload, branchB.pii().redactedDescription());
         List<AuditRecord> records = new ArrayList<>(List.of(
-                audit.record(claimId, "VisionDamageAgent",      intake,                     branchA.damageAssessment(), "SUCCESS"),
+                audit.record(claimId, "VisionDamageAgent",      intake,                     branchA.damageAssessment(), "SUCCESS")
+                        .withVersions(branchA.damageAssessment().visionSource(), null),
                 audit.record(claimId, "PolicyValidatorAgent",   payload.policyNumber(),     branchA.coverage(),         "SUCCESS"),
                 audit.record(claimId, "ReserveCalculatorAgent", branchA.damageAssessment(), branchA.reserve(),          "SUCCESS"),
                 audit.record(claimId, "PiiRedactionAgent",      intake,                     branchB.pii(),              "SUCCESS"),
-                audit.record(claimId, "StatutoryDeadlineAgent", intake,                     branchB.deadline(),         "SUCCESS"),
+                audit.record(claimId, "StatutoryDeadlineAgent", intake,                     branchB.deadline(),         "SUCCESS")
+                        .withVersions(null, branchB.deadline().rulesVersion()),
                 audit.record(claimId, "SubrogationScorerAgent", intake,                     subrogation,                "SUCCESS"),
                 audit.record(claimId, "ReconciliationGate",     explanation,
                         "status=" + status + ";requiresHumanValidation=" + requiresHumanValidation
@@ -802,7 +845,8 @@ public class FNOLOrchestrator {
                 inputFlags,
                 ccSyncStatus,
                 gateFlags,
-                fraud
+                fraud,
+                abstention
         );
     }
 

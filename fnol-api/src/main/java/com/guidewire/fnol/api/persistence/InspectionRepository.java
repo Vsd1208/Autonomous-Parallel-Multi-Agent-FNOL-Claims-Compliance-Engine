@@ -9,6 +9,12 @@ public interface InspectionRepository extends JpaRepository<InspectionEntity, St
 
     List<InspectionEntity> findByClaimIdOrderByAssignedAtAsc(String claimId);
 
+    boolean existsByClaimIdAndInspectorId(String claimId, String inspectorId);
+
+    List<InspectionEntity> findByInspectorIdOrderByAssignedAtDesc(String inspectorId);
+
+    List<InspectionEntity> findByClaimIdAndInspectorIdOrderByAssignedAtAsc(String claimId, String inspectorId);
+
     Optional<InspectionEntity> findByInspectionIdAndClaimId(String inspectionId, String claimId);
 
     boolean existsByClaimIdAndStatus(String claimId, String status);

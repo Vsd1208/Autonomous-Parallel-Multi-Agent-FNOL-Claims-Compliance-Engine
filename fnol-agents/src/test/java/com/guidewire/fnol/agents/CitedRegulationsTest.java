@@ -46,7 +46,7 @@ class CitedRegulationsTest {
         assertThat(d.decisionBy()).isEqualTo(NOTICE.plusDays(40));
         assertThat(d.acknowledgeCitation()).isEqualTo("Cal. Code Regs. tit. 10, § 2695.5(e)");
         assertThat(d.decisionCitation()).isEqualTo("Cal. Code Regs. tit. 10, § 2695.7(b)");
-        assertThat(d.rulesVersion()).isEqualTo("2026-10-29");
+        assertThat(d.rulesVersion()).isEqualTo("2026-11-04");
         assertThat(d.recoverBy()).isEqualTo(LOSS.plusYears(3));
         assertThat(d.recoveryCitation()).contains("§ 338(c)").contains("not verified");
     }
@@ -55,13 +55,14 @@ class CitedRegulationsTest {
     @DisplayName("The decision clock waits for a complete proof of loss; New York counts business days")
     void proofOfLossAndBusinessDays() {
         DeadlineResult waiting = rules.deadline("NY", LOSS, "AUTO", NOTICE, null);
-        // 15 business days from Wed 28 Oct 2026 = Wed 18 Nov 2026 (weekends skipped)
-        assertThat(waiting.acknowledgeBy()).isEqualTo(LocalDate.of(2026, 11, 18));
+        // 15 business days from Wed 28 Oct 2026, skipping weekends, Election Day (3 Nov) and Veterans' Day (11 Nov) = Fri 20 Nov 2026
+        assertThat(waiting.acknowledgeBy()).isEqualTo(LocalDate.of(2026, 11, 20));
         assertThat(waiting.decisionBy()).isNull();
         assertThat(waiting.decisionNote()).contains("starts when the proof of loss is complete");
 
         DeadlineResult started = rules.deadline("NY", LOSS, "AUTO", NOTICE, LocalDate.of(2026, 11, 2));
-        assertThat(started.decisionBy()).isEqualTo(LocalDate.of(2026, 11, 23));
+        // From Mon 2 Nov, the same two holidays skipped = Wed 25 Nov 2026
+        assertThat(started.decisionBy()).isEqualTo(LocalDate.of(2026, 11, 25));
         assertThat(CitedDeadlineRuleProvider.add(LocalDate.of(2026, 10, 30), 1, "BUSINESS")).isEqualTo(LocalDate.of(2026, 11, 2));
     }
 

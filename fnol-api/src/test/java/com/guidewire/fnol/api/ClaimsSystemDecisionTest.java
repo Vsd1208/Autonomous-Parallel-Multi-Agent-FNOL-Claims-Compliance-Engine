@@ -83,7 +83,7 @@ class ClaimsSystemDecisionTest {
     }
 
     private ResultActions review(String id, String body) throws Exception {
-        return mockMvc.perform(post("/api/v1/fnol/" + id + "/review").header("X-Adjuster-Token", TOKEN)
+        return mockMvc.perform(post("/api/v1/fnol/" + id + "/review").header("Authorization", HumanSession.bearer(mockMvc, "ADJ-001"))
                 .contentType(MediaType.APPLICATION_JSON).content(body));
     }
 

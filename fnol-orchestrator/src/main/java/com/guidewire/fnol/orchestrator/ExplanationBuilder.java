@@ -60,17 +60,17 @@ public class ExplanationBuilder {
         factors.add(new ExplanationFactor("Coverage Status",
                 coverage.coverageType() != null ? coverage.coverageType() : "NONE",
                 status(coverage.covered()),
-                "Policy must be active with a coverage the line-of-business rule accepts"));
+                "Policy must have been in force at the date of loss, with a coverage the line-of-business rule accepts"));
 
         // Factor 3: Compliance (PII) — redacted PII is acceptable. The PII guardrail has already
         // blocked raw SSNs and MRNs before this point; here we also require confident redaction.
-        boolean redactedConfidently = pii.redactionConfidence() != null
+        boolean redactedConfidently = PIIResult.VALIDATED.equals(pii.validation()) || pii.redactionConfidence() != null
                 && pii.redactionConfidence().compareTo(stp.getPiiRedactionConfidence()) >= 0;
         boolean compliancePassed = !pii.piiDetected() || redactedConfidently;
         factors.add(new ExplanationFactor("Compliance (PII)",
                 pii.piiDetected() ? "REDACTED " + pii.detectedTypes() : "CLEAN",
                 status(compliancePassed),
-                "No PII detected, or PII redacted with confidence >= " + stp.getPiiRedactionConfidence()));
+                "No PII detected, or PII masked and a second scan found none left"));
 
         // Factor 4: Reserve Amount
         boolean reservePassed = reserve.recommendedReserve().compareTo(stp.getReserveCeiling()) <= 0;

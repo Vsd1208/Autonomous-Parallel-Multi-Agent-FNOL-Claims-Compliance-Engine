@@ -91,6 +91,18 @@ def main():
         a = (answer or {}).get("data", {}).get("attributes", {}) if isinstance(answer, dict) else {}
         report("read a claim", code, answer, a.keys())
 
+    if args.policy:
+        print("\nDocumented path, assumed fields: policy search (status, dates, product, jurisdiction, cancellation, endorsements)")
+        search = {"data": {"attributes": {"policyNumber": args.policy}}}
+        code, answer = call("POST", base + "/policy/v1/search/policies", token, body=search)
+        found = (answer or {}).get("data", []) if isinstance(answer, dict) else []
+        report("search for the policy", code, answer, found[0].get("attributes", {}).keys() if found else None)
+        print("\nDocumented path, assumed fields: claim search by policy number (the claim history)")
+        code, answer = call("POST", base + "/claim/v1/search/claims-v2", token, body=search)
+        found = (answer or {}).get("data", []) if isinstance(answer, dict) else []
+        report("search claims on the policy", code, answer, found[0].get("attributes", {}).keys() if found else None)
+        print("      Not checked: a coverages path. None was found in the public documentation; read the tenant's swagger.json and set guidewire.cloud.coverages-path.")
+
     if args.write:
         print("\nAssumption: draft, then submit (this creates a real claim in the sandbox)")
         draft = {"data": {"attributes": {"policyNumber": args.policy, "lossDate": args.loss_date + "T00:00:00.000Z"}}}

@@ -4,17 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.guidewire.fnol.common.Models.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
-import java.time.Instant;
+import java.time.Clock;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -35,50 +30,20 @@ public class GuidewireCloudClaimCenterClient implements ClaimCenterClient {
 
     private static final String CLAIMS = "/claim/v1/claims";
 
-    private final RestTemplate rest;
-    private final String baseUrl;
-    private final String tokenUrl;
-    private final String clientId;
-    private final String clientSecret;
-    private String token;
-    private Instant tokenExpires = Instant.EPOCH;
+    private final GuidewireCloudHttp http;
 
     public GuidewireCloudClaimCenterClient(RestTemplate rest,
                                            @Value("${guidewire.cloud.base-url:}") String baseUrl,
                                            @Value("${guidewire.cloud.token-url:}") String tokenUrl,
                                            @Value("${guidewire.cloud.client-id:}") String clientId,
                                            @Value("${guidewire.cloud.client-secret:}") String clientSecret) {
-        this.rest = rest;
-        this.baseUrl = baseUrl;
-        this.tokenUrl = tokenUrl;
-        this.clientId = clientId;
-        this.clientSecret = clientSecret;
-    }
-
-    /** OAuth2 client credentials, reused until shortly before the token expires. */
-    private synchronized String token() {
-        if (token == null || Instant.now().isAfter(tokenExpires)) {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            headers.setBasicAuth(clientId, clientSecret);
-            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-            form.add("grant_type", "client_credentials");
-            JsonNode answer = rest.postForObject(tokenUrl, new HttpEntity<>(form, headers), JsonNode.class);
-            if (answer == null || !answer.hasNonNull("access_token")) {
-                throw new IllegalStateException("The token endpoint did not return an access_token");
-            }
-            token = answer.get("access_token").asText();
-            tokenExpires = Instant.now().plusSeconds(Math.max(0, answer.path("expires_in").asLong(300) - 30));
-        }
-        return token;
+        GuidewireTokenProvider.requireConfigured("The Guidewire Cloud claims client", Map.of("guidewire.cloud.base-url", baseUrl,
+                "guidewire.cloud.token-url", tokenUrl, "guidewire.cloud.client-id", clientId, "guidewire.cloud.client-secret", clientSecret));
+        this.http = new GuidewireCloudHttp(rest, baseUrl, new GuidewireTokenProvider(rest, tokenUrl, clientId, clientSecret, Clock.systemUTC()), Thread::sleep);
     }
 
     private JsonNode call(HttpMethod method, String path, Map<String, Object> attributes, Object... uriVariables) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token());
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<?> entity = new HttpEntity<>(attributes == null ? null : Map.of("data", Map.of("attributes", attributes)), headers);
-        return rest.exchange(baseUrl + path, method, entity, JsonNode.class, uriVariables).getBody();
+        return http.call(method, path, attributes, uriVariables);
     }
 
     private static JsonNode attributes(JsonNode answer) {

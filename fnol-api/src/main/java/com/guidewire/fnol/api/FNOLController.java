@@ -24,6 +24,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import com.guidewire.fnol.api.persistence.ReserveApprovalEntity;
 import com.guidewire.fnol.api.security.Actor;
+import com.guidewire.fnol.api.security.AuthService;
+import com.guidewire.fnol.api.security.ClaimAccessPolicy;
 import com.guidewire.fnol.api.security.ReserveAuthority;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
@@ -163,6 +165,12 @@ public class FNOLController {
 
     @org.springframework.beans.factory.annotation.Value("${fnol.claim-clock.india.enabled:false}")
     private boolean indiaClock;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private ClaimAccessPolicy claimAccess;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.guidewire.fnol.api.persistence.InspectionRepository inspections;
 
     // ── Health ──────────────────────────────────────────────────────────────
     @GetMapping("/health")
@@ -419,10 +427,14 @@ public class FNOLController {
         if (statuses.isEmpty() || page < 0 || size < 1 || size > 100) {
             throw new IllegalArgumentException("status must be non-empty, page >= 0 and size between 1 and 100");
         }
+        Actor caller = Actor.caller();
+        if (caller != null && AuthService.INSPECTOR.equals(caller.role())) {
+            return inspectorQueue(caller, statuses, page, size);
+        }
         String source = QueuePage.ENGINE;
         if (reportsToClaimsSystem()) {
             try {
-                return queueFromClaimsSystem(statuses, segment, page, size);
+                return visibleTo(caller, queueFromClaimsSystem(statuses, segment, page, size));
             } catch (RuntimeException e) {
                 log.warn("[FNOL] Claims system unavailable; showing the queue from the analysis records: {}", e.getMessage());
                 source = QueuePage.CLAIMS_SYSTEM_UNAVAILABLE;
@@ -431,8 +443,29 @@ public class FNOLController {
         Page<ClaimEntity> result = segment == null || segment.isBlank()
                 ? claims.findByStatusInOrderByCreatedAtAsc(statuses, PageRequest.of(page, size))
                 : claims.findByStatusInAndSegmentOrderByCreatedAtAsc(statuses, segment, PageRequest.of(page, size));
-        return new QueuePage(result.getContent().stream().map(QueueItem::of).toList(),
-                page, size, result.getTotalElements(), result.getTotalPages(), source);
+        return visibleTo(caller, new QueuePage(result.getContent().stream().map(QueueItem::of).toList(),
+                page, size, result.getTotalElements(), result.getTotalPages(), source));
+    }
+
+    /** Restricted claims leave the list for those who may not see them. The page may hold fewer than its size. */
+    private QueuePage visibleTo(Actor caller, QueuePage queue) {
+        if (caller == null) {
+            return queue;
+        }
+        List<QueueItem> items = queue.items().stream().filter(i -> claimAccess.mayListClaim(caller, i.segment(), i.assignedTo())).toList();
+        return items.size() == queue.items().size() ? queue
+                : new QueuePage(items, queue.page(), queue.size(), queue.totalElements() - (queue.items().size() - items.size()), queue.totalPages(), queue.source());
+    }
+
+    /** An inspector's own assigned claims, with none of the internal figures. */
+    private QueuePage inspectorQueue(Actor inspector, Set<String> statuses, int page, int size) {
+        List<QueueItem> mine = inspections.findByInspectorIdOrderByAssignedAtDesc(inspector.id()).stream()
+                .filter(i -> statuses.contains(i.status) || "ASSIGNED".equals(i.status))
+                .map(i -> i.claimId).distinct()
+                .map(id -> new QueueItem(id, "INSPECTION_ASSIGNED", null, null, null, null, null, null, null, null, inspector.id()))
+                .toList();
+        List<QueueItem> shown = mine.stream().skip((long) page * size).limit(size).toList();
+        return new QueuePage(shown, page, size, mine.size(), (int) Math.ceil((double) mine.size() / size), QueuePage.ENGINE);
     }
 
     /**
@@ -532,6 +565,10 @@ public class FNOLController {
             @PathVariable("claimId") String claimId,
             @Valid @RequestBody AdjusterReviewRequest submitted) {
 
+        // A human decision needs a signed-in person. A service credential cannot make one, whatever the request says.
+        if (Actor.current().isEmpty()) {
+            throw new ClaimAccessPolicy.PermissionDeniedException("A decision needs a signed-in person; a service credential cannot make one");
+        }
         // A decision is recorded under who is signed in, whatever name the request carries.
         AdjusterReviewRequest request = new AdjusterReviewRequest(submitted.decision(), Actor.idOr(submitted.adjusterId()),
                 submitted.notes(), submitted.adjustedReserve(), submitted.overrideReason(), submitted.confirmedDamageType(),
@@ -764,6 +801,22 @@ class ApiExceptionHandler {
     ResponseEntity<ApiError> claimIdConflict(ClaimIdConflictException e, HttpServletRequest r) {
         return ResponseEntity.status(409).body(
                 new ApiError(Instant.now(), 409, "CLAIM_ID_CONFLICT", e.getMessage(), r.getRequestURI()));
+    }
+
+    @ExceptionHandler(PortalProtection.TooManyAttemptsException.class)
+    ResponseEntity<ApiError> tooManyAttempts(PortalProtection.TooManyAttemptsException e, HttpServletRequest r) {
+        return ResponseEntity.status(429).header("Retry-After", String.valueOf(e.retryAfterSeconds))
+                .body(new ApiError(Instant.now(), 429, "TOO_MANY_ATTEMPTS", e.getMessage(), r.getRequestURI()));
+    }
+
+    @ExceptionHandler(ClaimAccessPolicy.ClaimNotVisibleException.class)
+    ResponseEntity<ApiError> claimNotVisible(ClaimAccessPolicy.ClaimNotVisibleException e, HttpServletRequest r) {
+        return ResponseEntity.status(404).body(new ApiError(Instant.now(), 404, "NOT_FOUND", e.getMessage(), r.getRequestURI()));
+    }
+
+    @ExceptionHandler(ClaimAccessPolicy.PermissionDeniedException.class)
+    ResponseEntity<ApiError> permissionDenied(ClaimAccessPolicy.PermissionDeniedException e, HttpServletRequest r) {
+        return ResponseEntity.status(403).body(new ApiError(Instant.now(), 403, "FORBIDDEN", e.getMessage(), r.getRequestURI()));
     }
 
     @ExceptionHandler(InvalidStateException.class)

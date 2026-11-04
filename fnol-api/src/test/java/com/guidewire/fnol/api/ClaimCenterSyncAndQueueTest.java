@@ -182,7 +182,7 @@ class ClaimCenterSyncAndQueueTest {
 
     private org.springframework.test.web.servlet.ResultActions review(String claimId) throws Exception {
         return mockMvc.perform(post("/api/v1/fnol/" + claimId + "/review")
-                .header("X-Adjuster-Token", TOKEN)
+                .header("Authorization", HumanSession.bearer(mockMvc, "ADJ-001"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
                         new AdjusterReviewRequest("APPROVED_BY_ADJUSTER", "ADJ-001", "Photos match."))));

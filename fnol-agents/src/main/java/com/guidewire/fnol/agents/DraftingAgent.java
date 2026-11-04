@@ -44,6 +44,13 @@ public class DraftingAgent {
 
     public Draft draft(String instructions, Map<String, Tool> tools, String template) {
         List<String> calls = new ArrayList<>();
+        // Fail closed: if anything meant for the model holds personal data, the model is not called at all.
+        for (Tool tool : tools.values()) {
+            if (!DraftGuard.personalData(tool.output()).isEmpty()) {
+                log.warn("[Drafting] A tool's output held personal data; the model was not called");
+                return template(template, "a tool's output held personal data, so the model was not called", calls);
+            }
+        }
         try {
             List<DraftingModel.ToolSpec> specs = new ArrayList<>();
             tools.forEach((name, tool) -> specs.add(new DraftingModel.ToolSpec(name, tool.description())));

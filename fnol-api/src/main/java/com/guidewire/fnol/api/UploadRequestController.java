@@ -172,9 +172,12 @@ class UploadRequestController {
     // ── Claimant side (link token, no adjuster token) ─────────────────────────
 
     @GetMapping("/public/upload/{token}")
-    ResponseEntity<?> view(@PathVariable("token") String token) {
+    ResponseEntity<?> view(@PathVariable("token") String token, jakarta.servlet.http.HttpServletRequest http) {
+        String address = "upload:" + http.getRemoteAddr();
+        protection.check(address);
         UploadRequestEntity r = requests.findByTokenSha256(sha256(token)).orElse(null);
         if (r == null) {
+            protection.failed(address);
             return ResponseEntity.notFound().build();
         }
         PublicView v = new PublicView(r.claimId, List.of(r.requestedAngles.split(",")), r.message, r.expiresAt,
@@ -185,9 +188,12 @@ class UploadRequestController {
     /** Stores the photos on the claim (audited, with angles), closes the link and returns the claim for review. */
     @PostMapping("/public/upload/{token}")
     @Transactional
-    ResponseEntity<?> upload(@PathVariable("token") String token, @Valid @RequestBody UploadBody body) {
+    ResponseEntity<?> upload(@PathVariable("token") String token, @Valid @RequestBody UploadBody body, jakarta.servlet.http.HttpServletRequest http) {
+        String address = "upload:" + http.getRemoteAddr();
+        protection.check(address);
         UploadRequestEntity r = requests.findByTokenSha256(sha256(token)).orElse(null);
         if (r == null) {
+            protection.failed(address);
             return ResponseEntity.notFound().build();
         }
         if (!"OPEN".equals(r.getEffectiveStatus())) {
@@ -234,6 +240,9 @@ class UploadRequestController {
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private StatutoryDeadlineAgent deadlines;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private PortalProtection protection;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setDeadlines(StatutoryDeadlineAgent deadlines) {

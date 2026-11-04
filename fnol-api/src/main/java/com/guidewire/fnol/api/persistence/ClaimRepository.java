@@ -29,6 +29,19 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, String> {
             @Param("incidentDate") LocalDate incidentDate,
             @Param("state") String state);
 
+    /** The same check, not counting the claim itself: its own failure row, saved while its analysis retries, is no duplicate. */
+    @Query("""
+            select count(c) > 0 from ClaimEntity c
+            where c.policyNumber = :policyNumber and c.incidentDate = :incidentDate and c.state = :state
+              and c.claimId <> :claimId
+              and not (c.status in ('BLOCKED_COMPLIANCE', 'HUMAN_REVIEW') and c.claimId like 'REJ-%')
+            """)
+    boolean existsByPolicyNumberAndIncidentDateAndStateAndClaimIdNot(
+            @Param("policyNumber") String policyNumber,
+            @Param("incidentDate") LocalDate incidentDate,
+            @Param("state") String state,
+            @Param("claimId") String claimId);
+
     /**
      * Records a decision the claims system holds, unless this one or a later one is already recorded. One conditional
      * UPDATE, so the same decision arriving twice at the same moment (request and event) is applied once.

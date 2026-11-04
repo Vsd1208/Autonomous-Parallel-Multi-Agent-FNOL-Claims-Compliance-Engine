@@ -122,7 +122,7 @@ class FNOLControllerTest {
         );
 
         mockMvc.perform(post("/api/v1/fnol/CLM-2026-000001/review")
-                        .header("X-Adjuster-Token", "test-adjuster-token")
+                        .header("Authorization", HumanSession.bearer(mockMvc, "ADJ-001"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(review)))
                 .andExpect(status().isOk())

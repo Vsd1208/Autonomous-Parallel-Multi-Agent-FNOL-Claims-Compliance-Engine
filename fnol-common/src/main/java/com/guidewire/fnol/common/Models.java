@@ -77,12 +77,25 @@ public final class Models {
             String riskDescription,
             List<Coverage> coverages,
             String jurisdiction,        // which claim rules apply; null means US
-            String currency             // null means USD
+            String currency,            // null means USD
+            LocalDate cancellationDate, // null when not cancelled
+            List<Endorsement> endorsements
     ) {
         public Policy(String policyNumber, String policyType, String status, LocalDate effectiveDate, LocalDate expirationDate,
                       String insuredName, String state, String riskDescription, List<Coverage> coverages) {
-            this(policyNumber, policyType, status, effectiveDate, expirationDate, insuredName, state, riskDescription, coverages, null, null);
+            this(policyNumber, policyType, status, effectiveDate, expirationDate, insuredName, state, riskDescription, coverages, null, null, null, null);
         }
+
+        public Policy(String policyNumber, String policyType, String status, LocalDate effectiveDate, LocalDate expirationDate,
+                      String insuredName, String state, String riskDescription, List<Coverage> coverages, String jurisdiction, String currency) {
+            this(policyNumber, policyType, status, effectiveDate, expirationDate, insuredName, state, riskDescription, coverages, jurisdiction, currency, null, null);
+        }
+    }
+
+    /** A change to a coverage from a given date. */
+    public record Endorsement(LocalDate effectiveDate, String change, String coverageType, BigDecimal limit, BigDecimal deductible) {
+        public static final String ADD = "ADD";
+        public static final String REMOVE = "REMOVE";
     }
 
     public record ClaimHistory(
@@ -258,6 +271,14 @@ public final class Models {
             PhotoPrivacy privacy,                         // what left the system for the external model; null = nothing was sent
             String visionSource                           // which model answered: "<model> prompt <sha16> thinking <n>"; null = mock or fallback
     ) {
+        /** In visionSource, between the model that answered and the one asked for, when the provider substituted one. */
+        public static final String INSTEAD_OF = " instead of ";
+
+        /** The provider answered with a model other than the one asked for: nothing fitted on the requested model applies. */
+        public boolean servedBySubstituteModel() {
+            return visionSource != null && visionSource.contains(INSTEAD_OF);
+        }
+
         public DamageAssessment(String damageType, String severity, BigDecimal estimatedDamage, BigDecimal confidence,
                                 String photoQuality, Map<String, BigDecimal> damageTypeProbabilities) {
             this(damageType, severity, estimatedDamage, confidence, photoQuality, damageTypeProbabilities, null, null, null);
@@ -368,8 +389,20 @@ public final class Models {
             String redactedDescription,
             List<String> detectedTypes,
             boolean piiDetected,
-            BigDecimal redactionConfidence
-    ) {}
+            BigDecimal redactionConfidence,   // null for rules, which have no calibrated confidence
+            List<PiiDetection> detections,
+            String validation                 // the re-scan after masking: VALIDATED or VALIDATION_FAILED; null on older records
+    ) {
+        public static final String VALIDATED = "VALIDATED";
+        public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
+
+        public PIIResult(String redactedDescription, List<String> detectedTypes, boolean piiDetected, BigDecimal redactionConfidence) {
+            this(redactedDescription, detectedTypes, piiDetected, redactionConfidence, List.of(), null);
+        }
+    }
+
+    /** What one detector found. Confidence is null unless a detector really computes one. */
+    public record PiiDetection(String category, String detector, int count, BigDecimal confidence, boolean redacted) {}
 
     /** One step of a claim clock: what is due, by when, from what, and on what authority. */
     public record ClockMilestone(String action, LocalDate dueBy, String startsFrom, String period, String citation, String appliesWhen,
@@ -389,8 +422,16 @@ public final class Models {
             String rulesVersion,        // version of the rule set used (claim-regulations.json)
             LocalDate recoverBy,        // last day to start a recovery action against an at-fault party (subrogation)
             String recoveryCitation,
-            List<ClockMilestone> milestones   // steps a jurisdiction has beyond acknowledge and decide; empty for the US states
+            List<ClockMilestone> milestones,  // steps a jurisdiction has beyond acknowledge and decide; empty for the US states
+            List<AppliedRule> appliedRules    // which version of which rule set each date, and how far it was verified
     ) {
+        public DeadlineResult(String state, LocalDate deadline, String ruleSource, String disclaimer, LocalDate acknowledgeBy, LocalDate decisionBy,
+                              String urgencyFlag, String acknowledgeCitation, String decisionCitation, String decisionNote, String rulesVersion,
+                              LocalDate recoverBy, String recoveryCitation, List<ClockMilestone> milestones) {
+            this(state, deadline, ruleSource, disclaimer, acknowledgeBy, decisionBy, urgencyFlag, acknowledgeCitation, decisionCitation,
+                    decisionNote, rulesVersion, recoverBy, recoveryCitation, milestones, List.of());
+        }
+
         public DeadlineResult(String state, LocalDate deadline, String ruleSource, String disclaimer, LocalDate acknowledgeBy, LocalDate decisionBy,
                               String urgencyFlag, String acknowledgeCitation, String decisionCitation, String decisionNote, String rulesVersion,
                               LocalDate recoverBy, String recoveryCitation) {
@@ -404,6 +445,13 @@ public final class Models {
                     null, null, null, null, null, null);
         }
     }
+
+    /**
+     * One rule version behind a date. category: STATUTORY | INSURER_POLICY | INTERNAL_TARGET | EXPERIMENTAL. verificationStatus: what this
+     * project read (PRIMARY_TEXT_READ | SECONDARY_SOURCE | UNVERIFIED), which is not a lawyer's review. A null effectiveFrom means the start was not researched.
+     */
+    public record AppliedRule(String ruleId, int ruleVersion, String category, String verificationStatus, LocalDate effectiveFrom,
+                              LocalDate effectiveTo, String citation, String sourceUrl) {}
 
     public record SubrogationResult(
             int score,
@@ -431,8 +479,21 @@ public final class Models {
             String coverageType,
             BigDecimal coverageLimit,
             BigDecimal deductible,
-            List<String> reasoning
-    ) {}
+            List<String> reasoning,
+            String coverageState        // COVERED, NOT_COVERED, NOT_IN_FORCE or UNVERIFIED
+    ) {
+        public static final String COVERED = "COVERED";
+        public static final String NOT_COVERED = "NOT_COVERED";
+        public static final String NOT_IN_FORCE = "NOT_IN_FORCE";
+        /** The data cannot settle it. Goes to a person. */
+        public static final String UNVERIFIED = "UNVERIFIED";
+
+        public PolicyValidationResult(String policyNumber, boolean policyFound, boolean policyActive, boolean relevantCoverageFound, boolean covered,
+                                      String coverageType, BigDecimal coverageLimit, BigDecimal deductible, List<String> reasoning) {
+            this(policyNumber, policyFound, policyActive, relevantCoverageFound, covered, coverageType, coverageLimit, deductible, reasoning,
+                    covered ? COVERED : NOT_COVERED);
+        }
+    }
 
     public record AuditRecord(
             String eventId,
@@ -441,8 +502,18 @@ public final class Models {
             Instant timestamp,
             String inputHash,
             String outputHash,
-            String status
-    ) {}
+            String status,
+            String modelVersion,        // the model or prompt behind this step, where one was used
+            String rulesetVersion       // the rule set behind this step, where one was used
+    ) {
+        public AuditRecord(String eventId, String claimId, String agentName, Instant timestamp, String inputHash, String outputHash, String status) {
+            this(eventId, claimId, agentName, timestamp, inputHash, outputHash, status, null, null);
+        }
+
+        public AuditRecord withVersions(String model, String ruleset) {
+            return new AuditRecord(eventId, claimId, agentName, timestamp, inputHash, outputHash, status, model, ruleset);
+        }
+    }
 
     /**
      * What happened to the claim photos before they went to the external vision model: how many were sent, how many
@@ -540,16 +611,28 @@ public final class Models {
             List<String> inputFlags,           // Human Review Point 1 flags, e.g. MISSING_EVIDENCE
             String ccSyncStatus,               // SYNCED | FAILED: were the advisory and evidence attached in ClaimCenter
             List<String> gateFlags,            // reconciliation-gate consistency flags, e.g. RESERVE_EXCEEDS_COVERAGE_LIMIT
-            FraudAnomaly fraudAnomaly          // advisory anomaly score with its top contributors; null when off
+            FraudAnomaly fraudAnomaly,         // advisory anomaly score with its top contributors; null when off
+            Abstention abstention              // whether the AI declined to give an answer worth relying on, and why
     ) {
+        public FNOLResponse(String claimId, String status, BranchAResult branchA, BranchBResult branchB,
+                            PolicyHistoryContext policyContext, ExplanationObject explanation, String severityGate,
+                            Boolean eligibleForAdvisoryPrefill, Boolean requiresHumanValidation, List<String> notes,
+                            List<String> inputFlags, String ccSyncStatus, List<String> gateFlags, FraudAnomaly fraudAnomaly) {
+            this(claimId, status, branchA, branchB, policyContext, explanation, severityGate, eligibleForAdvisoryPrefill,
+                    requiresHumanValidation, notes, inputFlags, ccSyncStatus, gateFlags, fraudAnomaly, null);
+        }
+
         public FNOLResponse(String claimId, String status, BranchAResult branchA, BranchBResult branchB,
                             PolicyHistoryContext policyContext, ExplanationObject explanation, String severityGate,
                             Boolean eligibleForAdvisoryPrefill, Boolean requiresHumanValidation, List<String> notes,
                             List<String> inputFlags, String ccSyncStatus, List<String> gateFlags) {
             this(claimId, status, branchA, branchB, policyContext, explanation, severityGate, eligibleForAdvisoryPrefill,
-                    requiresHumanValidation, notes, inputFlags, ccSyncStatus, gateFlags, null);
+                    requiresHumanValidation, notes, inputFlags, ccSyncStatus, gateFlags, null, null);
         }
     }
+
+    /** The AI has no answer worth relying on: the claim goes to a person. Never a rejection, and nothing against the claim. */
+    public record Abstention(boolean abstained, List<String> reasons) {}
 
     /** One feature's share of the fraud anomaly score: its value and the points it added. */
     public record FraudContribution(

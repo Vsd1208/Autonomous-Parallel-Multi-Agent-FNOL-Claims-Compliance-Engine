@@ -71,15 +71,18 @@ class InspectionWorkflowTest {
         perform(post("/api/v1/fnol/" + claimId + "/review",
                 new AdjusterReviewRequest("APPROVED_BY_ADJUSTER", "ADJ-001", "ok"))).andExpect(status().isConflict());
 
-        // Only the assigned inspector can report.
+        // Only the assigned inspector can report: to another inspector this claim is not visible at all.
         perform(post("/api/v1/fnol/" + claimId + "/inspections/" + inspectionId + "/report",
-                report("INS-102", "5000"))).andExpect(status().isConflict());
+                report("INS-102", "5000"))).andExpect(status().isNotFound());
 
         JsonNode reported = json(post("/api/v1/fnol/" + claimId + "/inspections/" + inspectionId + "/report",
                 report("INS-101", "5000")), 200);
         assertThat(reported.path("status").asText()).isEqualTo("COMPLETED");
-        // min(claimed 9000, inspected 5000) − deductible 1000
-        assertThat(reported.path("recommendedPayment").decimalValue()).isEqualByComparingTo("4000");
+        // The inspector is not shown the payment figure; the adjuster is. min(claimed 9000, inspected 5000) − deductible 1000
+        assertThat(reported.has("recommendedPayment")).isFalse();
+        JsonNode forAdjuster = objectMapper.readTree(mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/fnol/" + claimId + "/inspections")
+                .header("X-Adjuster-Token", TOKEN)).andReturn().getResponse().getContentAsString());
+        assertThat(forAdjuster.get(0).path("recommendedPayment").decimalValue()).isEqualByComparingTo("4000");
         assertThat(claims.findById(claimId).orElseThrow().status).isEqualTo("HUMAN_REVIEW");
 
         perform(post("/api/v1/fnol/" + claimId + "/inspections/" + inspectionId + "/report",
@@ -149,8 +152,15 @@ class InspectionWorkflowTest {
     /** A JSON POST (shadows MockMvcRequestBuilders.post). */
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder post(String url, Object body)
             throws Exception {
-        return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(url)
+        org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(url)
                 .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(body));
+        // A decision needs a signed-in person, and a report the signed-in inspector.
+        if (url.endsWith("/review")) {
+            request.header("Authorization", HumanSession.bearer(mockMvc, "ADJ-001"));
+        } else if (url.endsWith("/report")) {
+            request.header("Authorization", HumanSession.bearer(mockMvc, objectMapper.valueToTree(body).path("inspectorId").asText()));
+        }
+        return request;
     }
 
     private ResultActions perform(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request)

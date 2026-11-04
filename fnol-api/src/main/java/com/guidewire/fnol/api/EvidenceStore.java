@@ -100,6 +100,18 @@ public class EvidenceStore {
         return a.isEmpty() ? "OTHER" : (a.length() > 16 ? a.substring(0, 16) : a);
     }
 
+    /** JPEG, PNG, GIF or WebP by file signature: the declared type is only what the sender says. */
+    static boolean looksLikeImage(byte[] b) {
+        if (b.length < 12) {
+            return false;
+        }
+        boolean jpeg = (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF;
+        boolean png = (b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G';
+        boolean gif = b[0] == 'G' && b[1] == 'I' && b[2] == 'F' && b[3] == '8';
+        boolean webp = b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P';
+        return jpeg || png || gif || webp;
+    }
+
     private ClaimDocumentEntity toDocument(String claimId, String uri, int index) {
         ClaimDocumentEntity doc = new ClaimDocumentEntity();
         doc.documentId = UUID.randomUUID().toString();
@@ -121,6 +133,10 @@ public class EvidenceStore {
             }
             if (bytes.length == 0 || bytes.length > ClaimDocumentEntity.MAX_BYTES) {
                 log.warn("[Evidence] claimId={} evidence #{} is empty or larger than 5 MB; not stored", claimId, index);
+                return null;
+            }
+            if (!looksLikeImage(bytes)) {
+                log.warn("[Evidence] claimId={} evidence #{} is not an image by its bytes, whatever its label says; not stored", claimId, index);
                 return null;
             }
             String mime = m.group(1).toLowerCase(Locale.ROOT);

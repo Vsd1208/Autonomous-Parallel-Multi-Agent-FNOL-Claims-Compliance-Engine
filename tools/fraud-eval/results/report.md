@@ -38,6 +38,32 @@ The app reports each claim's percentile against the training scores. If that is 
 | 95th | 5.0% | 5.0% |
 | 99th | 1.0% | 1.2% |
 
+## Precision and recall as the referral budget changes (held-out, synthetic)
+
+Average precision 0.543; a score with no skill would get the fraud rate, 0.041. A real fraud rate and real claims would move every row. The chosen budget is a business decision: this table shows the trade, it does not pick one.
+
+| Claims referred | Score it takes | Claims | Precision | Recall |
+|---|---|---|---|---|
+| 1% | 9.61 | 100 | 93.0% | 23.0% |
+| 2% | 8.11 | 200 | 71.5% | 35.3% |
+| 5% | 6.75 | 500 | 44.6% | 55.1% |
+| 10% | 5.59 | 1000 | 28.7% | 70.9% |
+| 20% | 4.37 | 2000 | 17.0% | 83.7% |
+| 30% | 3.60 | 3000 | 12.3% | 91.1% |
+
+## Why genuine claims get flagged (held-out, synthetic)
+
+279 genuine claims reach the threshold. These are the features behind them, so a reviewer knows which explanations most often accompany a false alarm. They follow from the generator's assumptions; real false positives need real claims.
+
+| Feature | Flagged genuine claims it added points to | Mean points added |
+|---|---|---|
+| Days from policy start to loss | 259 (93%) | 3.05 |
+| Second opinion's disagreement with the AI damage type | 254 (91%) | 2.60 |
+| Days from loss to report | 211 (76%) | 1.54 |
+| Amount claimed / AI estimate | 175 (63%) | 1.15 |
+| Claims on the policy in the last 12 months | 100 (36%) | 1.17 |
+| Photo already used on another claim | 11 (4%) | 3.00 |
+
 ## Fitted reference profile
 
 | Feature | Direction | Transform | Median | Scale |

@@ -29,6 +29,39 @@ jobs:
           path: '*/target/site/jacoco/'
           if-no-files-found: ignore
 
+  postgres:
+    name: Database-sensitive tests on real PostgreSQL 16 (Flyway, SKIP LOCKED, audit lock)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fnol
+          POSTGRES_PASSWORD: fnol
+          POSTGRES_DB: fnol
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U fnol" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Each class on a fresh database built by the migrations
+        env:
+          PGPASSWORD: fnol
+        run: |
+          for T in DurableInboxTest AuditIntegrityTest PortalSecurityTest ClaimAccessTest; do
+            DB=$(echo "$T" | tr 'A-Z' 'a-z')
+            psql -h localhost -U fnol -d fnol -c "create database $DB"
+            mvn -B -q test -pl fnol-api -am -Dtest="$T" -Dsurefire.failIfNoSpecifiedTests=false \
+              -Dspring.datasource.url="jdbc:postgresql://localhost:5432/$DB" -Dspring.datasource.username=fnol -Dspring.datasource.password=fnol \
+              -Dspring.datasource.driver-class-name=org.postgresql.Driver -Dspring.flyway.enabled=true -Dspring.jpa.hibernate.ddl-auto=validate \
+              -Dspring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+          done
+
   frontend:
     name: Frontend (workspace and portal builds, Node 20)
     runs-on: ubuntu-latest
@@ -43,6 +76,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm test
       - run: npm run build
       - run: npm run build:portal
       # The policyholder portal must never carry the adjuster token or call adjuster endpoints.
@@ -62,3 +96,6 @@ jobs:
           python-version: '3.12'
       # fnol-vision-ml needs PyTorch and the CLIP weights (~1 GB) to run, so CI only checks that every script compiles.
       - run: python -m compileall -q fnol-vision-ml tools
+      # Photo redaction needs only OpenCV and its small committed face model, so its tests do run here.
+      - run: pip install opencv-python-headless==4.10.0.84 pytest
+      - run: python -m pytest -q fnol-vision-ml/redaction/test_redact.py tools/test_evaluation.py

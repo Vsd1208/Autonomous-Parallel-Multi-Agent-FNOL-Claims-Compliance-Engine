@@ -8,7 +8,8 @@
     "dev:portal": "vite --config vite.portal.config.ts --host 0.0.0.0",
     "build": "tsc && vite build",
     "build:portal": "tsc && vite build --config vite.portal.config.ts",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
@@ -20,7 +21,12 @@
     "vite": "^6.0.7"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^20.17.10",
     "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5"
+    "@types/react-dom": "^18.3.5",
+    "jsdom": "^25.0.1",
+    "vitest": "^2.1.9"
   }
 }

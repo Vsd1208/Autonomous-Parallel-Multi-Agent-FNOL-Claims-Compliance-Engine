@@ -13,6 +13,15 @@ fnol:
     queue-size: ${FNOL_ORCHESTRATOR_QUEUE_SIZE:32}
   # Quick review with no vision service: mock vision only, and each claim says the second opinion did not run.
   lite-mode: ${FNOL_LITE_MODE:false}
+  # The durable event inbox. Attempts, lease and backoff for a claim event's analysis.
+  inbox:
+    worker-enabled: ${FNOL_INBOX_WORKER_ENABLED:true}
+    poll-ms: ${FNOL_INBOX_POLL_MS:1000}
+    concurrency: ${FNOL_INBOX_CONCURRENCY:4}
+    max-attempts: ${FNOL_INBOX_MAX_ATTEMPTS:5}
+    lease-seconds: ${FNOL_INBOX_LEASE_SECONDS:120}
+    backoff-base-seconds: ${FNOL_INBOX_BACKOFF_BASE_SECONDS:5}
+    backoff-max-seconds: ${FNOL_INBOX_BACKOFF_MAX_SECONDS:600}
   # Drafts the advisory note and acknowledgement letter for a person to review. Off by default; outside the intake path.
   # India's claim clock (claim-regulations-in.json), for a policy whose jurisdiction is IN. Off by default.
   claim-clock:
@@ -35,9 +44,13 @@ fnol:
   stp:
     # true: STP-eligible claims are pre-filed but wait as PENDING_ADVISORY_REVIEW for an adjuster.
     require-advisory-review: ${FNOL_STP_REQUIRE_ADVISORY_REVIEW:true}
+    # With Gemini on, an answer that does not name its model and prompt is an abstention and goes to a person.
+    require-model-version: ${GEMINI_VISION_ENABLED:true}
     # Advisory fraud anomaly score (FRAUD_ANOMALY routes to an adjuster; never denies). Empty threshold = the fitted one.
     fraud-anomaly-enabled: ${FNOL_STP_FRAUD_ANOMALY_ENABLED:true}
     fraud-anomaly-threshold: ${FNOL_STP_FRAUD_ANOMALY_THRESHOLD:}
+  # production: refuses to start on demo settings or a mock claims system (StartupConfigValidator).
+  environment: ${FNOL_ENVIRONMENT:development}
   security:
     # Shared secret for adjuster-only endpoints (review, audit, audit/pdf, explanation, queue).
     # Empty means those endpoints reject every request.
@@ -55,6 +68,11 @@ fnol:
     # Adjuster workspace (5173) and policyholder portal (5174)
     allowed-origins: ${FNOL_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
   portal:
+    # Public portal and upload routes. With no token secret, tokens last only until a restart and do not work across instances.
+    max-failures: ${FNOL_PORTAL_MAX_FAILURES:10}
+    window-seconds: ${FNOL_PORTAL_WINDOW_SECONDS:900}
+    token-minutes: ${FNOL_PORTAL_TOKEN_MINUTES:30}
+    token-secret: ${FNOL_PORTAL_TOKEN_SECRET:}
     # Where the policyholder portal runs; one-time upload links sent to claimants point here.
     base-url: ${FNOL_PORTAL_BASE_URL:http://localhost:5174}
   evidence:
@@ -81,3 +99,22 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus   # health for probes; prometheus needs a credential (AdjusterTokenFilter)
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+logging:
+  pattern:
+    # Key-value lines with the trace. The replacements are a last defence for identifiers that reach a message; the code should not log them.
+    console: >-
+      %d{ISO8601} %5p [%t] correlationId=%X{correlationId:-none} claimId=%X{claimId:-none} eventId=%X{eventId:-none} %c{1} -
+      %replace(%replace(%replace(%replace(%msg){'POL-[A-Z]+-\d+','[POLICY]'}){'\b\d{3}-\d{2}-\d{4}\b','[SSN]'}){'[\w.+-]+@[\w-]+\.[\w.-]+','[EMAIL]'}){'\(?\b\d{3}\)?[ .-]\d{3}[ .-]\d{4}\b','[PHONE]'}%n%ex

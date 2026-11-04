@@ -8,10 +8,12 @@ import { EvidenceGallery, PhotoSetCheck } from '../components/Evidence';
 import { PhotoRequestList, RequestPhotos } from '../components/PhotoRequests';
 import { angleLabel, anglesFor } from '../photoAngles';
 import { AssignInspection, InspectionHistory, InspectionReportForm, InspectionResult } from '../components/Inspection';
+import { AbstentionNotice, AppliedRulesPanel } from '../components/Uncertainty';
+import { confidenceText } from '../utils/uncertainty';
 import { apiClient } from '../services/apiClient';
 import { claimStore } from '../services/claimStore';
 import { session } from '../services/session';
-import { ClaimDraft, AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion, ReserveApprovalView } from '../types';
+import { ClaimDraft, InspectionView, AdjusterDecision, AuditTrail, CcClaim, ClaimDocument, DashboardClaim, FraudAnomaly, Inspection, RepairCostRange, RepairCostSource, SecondOpinion, ReserveApprovalView } from '../types';
 
 const REVIEWABLE = new Set(['HUMAN_REVIEW', 'PENDING_ADVISORY_REVIEW', 'NEEDS_MORE_INFO', 'INVESTIGATION_REQUIRED']);
 /** Inspectors report on inspections; only adjusters decide claims. */
@@ -41,6 +43,41 @@ const DECISIONS: [AdjusterDecision, string, 'primary' | 'secondary' | 'danger'][
 
 /** Loads a claim (stored intake result merged with the saved row) and shows it as a claim file. */
 export default function ClaimFile() {
+  // The server gives an inspector only assigned work, so an inspector gets their own limited screen.
+  return session.isInspector() ? <InspectorClaimFile /> : <AdjusterClaimFile />;
+}
+
+/** An inspector's assigned claim: basic facts, the photos and their own report. No analysis, reserve, fraud signal or notes. */
+function InspectorClaimFile() {
+  const { claimId = '' } = useParams<{ claimId: string }>();
+  const [view, setView] = useState<InspectionView | null>(null);
+  const [docs, setDocs] = useState<ClaimDocument[]>([]);
+  const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    apiClient.getInspectionView(claimId).then(setView).catch((err) => setError(err.message || 'This claim is not assigned to you'));
+    apiClient.getDocuments(claimId).then(setDocs).catch(() => undefined);
+  }, [claimId, reload]);
+  if (error) return <MessageBar tone="error" title="Not available">{error}</MessageBar>;
+  if (!view) return <p className="muted">Loading the claim…</p>;
+  return (
+    <>
+      <Panel title={`Claim ${view.claimId}`}>
+        <DetailView columns={2} rows={[
+          ['Line of business', view.lineOfBusiness],
+          ['Date of loss', view.incidentDate ?? null],
+          ['State', view.state ?? null],
+        ]} />
+      </Panel>
+      <Panel title="Photos"><EvidenceGallery docs={docs} /></Panel>
+      {view.inspections.filter((i) => i.status === 'ASSIGNED').map((i) => (
+        <InspectionReportForm key={i.inspectionId} claimId={view.claimId} inspection={i} onChanged={() => setReload((r) => r + 1)} />
+      ))}
+    </>
+  );
+}
+
+function AdjusterClaimFile() {
   const navigate = useNavigate();
   const { claimId = '', section = 'summary' } = useParams<{ claimId: string; section: string }>();
   const [claim, setClaim] = useState<DashboardClaim | null>(null);
@@ -81,7 +118,7 @@ export default function ClaimFile() {
         const saved = await apiClient.getAnalysis(claimId).catch(() => null);
         if (cancelled) return;
         const analysis = saved
-          ? { branchA: saved.branchA, branchB: saved.branchB, notes: saved.notes, policyContext: saved.policyContext }
+          ? { branchA: saved.branchA, branchB: saved.branchB, notes: saved.notes, policyContext: saved.policyContext, abstention: saved.abstention }
           : {};
         setClaim({
           ...(stored ?? {}),
@@ -271,6 +308,7 @@ const FLAG_TEXT: Record<string, string> = {
   CONFIDENCE_PHOTO_QUALITY_MISMATCH: 'High AI confidence was reported for a poor photo.',
   AMBIGUOUS_DAMAGE_TYPE: 'The AI could not settle on one damage type; check the photos yourself.',
   DUPLICATE_SUBMISSION: 'A duplicate FNOL was submitted for this loss; verify it.',
+  AI_ABSTAINED: 'The AI declined to give an answer worth relying on: see the reasons above.',
   FRAUD_ANOMALY: 'Several intake details are unusual together. Consider an SIU referral; this is a statistical signal, not a finding of fraud.',
 };
 
@@ -313,6 +351,7 @@ function Summary({ claim, docs, onChanged }: { claim: DashboardClaim; docs: Clai
         <MessageBar tone="error" title="Intake failed and was saved for human attention">{claim.failureReason}</MessageBar>
       )}
       {claim.ccSyncStatus === 'FAILED' && <SyncFailed claimId={claim.claimId} onChanged={onChanged} />}
+      <AbstentionNotice abstention={claim.abstention} />
       {flags.length > 0 && (
         <MessageBar tone="warning" title={`${flags.length} review flag${flags.length > 1 ? 's' : ''}`}>
           <ul className="flag-list">
@@ -361,7 +400,7 @@ function Summary({ claim, docs, onChanged }: { claim: DashboardClaim; docs: Clai
           ['Deductible', money(claim.branchA?.reserve.deductible ?? r?.deductible)],
           ['Recommended reserve', money(claim.branchA?.reserve.recommendedReserve ?? r?.reserve)],
           ['Adjuster reserve', r?.adjusterReserve != null ? money(r.adjusterReserve) : null],
-          ['AI confidence', e?.factors.find((f) => f.factor === 'AI Confidence')?.value],
+          ['AI confidence', claim.branchA ? confidenceText(claim.branchA.damageAssessment, claim.abstention) : e?.factors.find((f) => f.factor === 'AI Confidence')?.value],
           ['Subrogation score', claim.branchB ? `${claim.branchB.subrogation.score} / 100` : null],
           ['Acknowledge by', claim.branchB ? isoDate(claim.branchB.deadline.acknowledgeBy ?? claim.branchB.deadline.deadline) : null],
         ]} />
@@ -469,9 +508,8 @@ function LossDetails({ claim, docs }: { claim: DashboardClaim; docs: ClaimDocume
                 : `${money(d.estimatedDamage)} (placeholder: set it from the photos)`)
               : <span key="e">{money(d.estimatedDamage)} <span className="muted">(rough: {cost ? 'compare with the range below' : 'no published range for this reading'}. Gemini's figures mostly follow its severity label, not a costing of the damage)</span></span>],
             ['Repair-cost range', cost ? <RepairCostCell key="c" cost={cost} /> : null],
-            ['AI confidence', d.rawConfidence != null
-              ? `${Number(d.confidence).toFixed(2)} (model said ${Number(d.rawConfidence).toFixed(2)})`
-              : Number(d.confidence).toFixed(2)],
+            ['AI confidence', confidenceText(d, claim.abstention)],
+            ['Answered by', d.visionSource ?? null],
             ['Photo quality', d.photoQuality ? humanize(d.photoQuality) : null],
             ['Photos show', d.photoSubject ? humanize(d.photoSubject) : null],
             ['Sent to external AI', d.privacy ? `${d.privacy.photosSent} photo${d.privacy.photosSent === 1 ? '' : 's'}`
@@ -543,7 +581,7 @@ function DecisionTrail({ claim }: { claim: DashboardClaim }) {
           {d ? (
             <ul>
               <li><strong>{humanize(d.damageType)}</strong>, {humanize(d.severity).toLowerCase()}, estimate {money(d.estimatedDamage)}
-                {' '}(Gemini; confidence {Number(d.confidence).toFixed(2)}{d.rawConfidence != null ? ', calibrated' : ''})</li>
+                {' '}(Gemini; confidence: {confidenceText(d, claim.abstention)})</li>
               <li>{so ? (agreement != null
                 ? `Second-opinion model gives that ${(agreement * 100).toFixed(1)}%${agreement < 0.10 ? ': it disagrees' : ''}`
                 : 'Second-opinion model has no view on this damage type')
@@ -695,8 +733,8 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
       <div className="grid-2">
         <Panel title="Personal Information">
           <DetailView rows={[
-            ['PII detected', b.pii.piiDetected ? b.pii.detectedTypes.join(', ') : 'None'],
-            ['Redaction confidence', b.pii.redactionConfidence != null ? Number(b.pii.redactionConfidence).toFixed(2) : null],
+            ['PII detected', b.pii.piiDetected ? b.pii.detectedTypes.join(', ') : 'None found by the rules'],
+            ['Scan after masking', b.pii.validation === 'VALIDATED' ? 'None left' : b.pii.validation === 'VALIDATION_FAILED' ? 'Personal data still found' : null],
           ]} />
           <div className="redacted"><div className="field-label">Redacted description</div><p>{b.pii.redactedDescription}</p></div>
         </Panel>
@@ -718,6 +756,7 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
           <p className="hint">{b.deadline.disclaimer}</p>
         </Panel>
       </div>
+      <AppliedRulesPanel rules={b.deadline.appliedRules} />
       {(claim.inputFlags ?? []).includes('ATTORNEY_REPRESENTED') && (
         <MessageBar tone="warning" title="Claimant represented by an attorney">
           Communicate about this claim through the attorney, not the claimant directly. The claim is routed to the

@@ -89,10 +89,13 @@ export interface PiiInfo {
   piiDetected: boolean;
   redactedDescription: string;
   detectedTypes: string[];
-  redactionConfidence?: number;
+  redactionConfidence?: number | null;   // only on records from before the re-scan; never calibrated
+  detections?: { category: string; detector: string; count: number; redacted: boolean }[] | null;
+  validation?: 'VALIDATED' | 'VALIDATION_FAILED' | null;
 }
 
 export interface Deadline {
+  appliedRules?: AppliedRule[] | null;
   state: string;
   deadline: string;
   ruleSource: string;
@@ -174,6 +177,7 @@ export interface ExplanationObject {
 
 /** Full intake response (POST /fnol/intake). */
 export interface ClaimResult {
+  abstention?: Abstention | null;
   claimId: string;
   status: string;
   branchA: BranchAResult;
@@ -233,7 +237,42 @@ export interface ClaimRecord {
  * What the dashboard shows. A claim opened straight from intake has the branch details;
  * a claim loaded from the server (queue, deep link) has the saved row and WHY panel only.
  */
+/** The AI declined to give an answer worth relying on. Never a rejection. */
+export interface Abstention {
+  abstained: boolean;
+  reasons: string[];
+}
+
+/** One rule version behind a deadline, and how far it was checked. */
+export interface AppliedRule {
+  ruleId: string;
+  ruleVersion: number;
+  category: string;
+  verificationStatus: string;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  citation: string;
+  sourceUrl?: string | null;
+}
+
+export interface EventInboxItem {
+  id: string;
+  eventId: string;
+  eventType: string;
+  aggregateId: string;
+  status: string;
+  attemptCount: number;
+  lastError?: string | null;
+  receivedAt: string;
+}
+
+export interface EventInboxView {
+  depth: Record<string, number>;
+  items: EventInboxItem[];
+}
+
 export interface DashboardClaim {
+  abstention?: Abstention | null;
   claimId: string;
   status: string;
   explanation?: ExplanationObject | null;
@@ -476,4 +515,13 @@ export interface ClaimDraft {
   body: string;
   fromModel: boolean;
   fallbackReason?: string | null;
+}
+
+/** What an inspector sees of an assigned claim: the server sends nothing more. */
+export interface InspectionView {
+  claimId: string;
+  lineOfBusiness: string;
+  incidentDate?: string | null;
+  state?: string | null;
+  inspections: Inspection[];
 }

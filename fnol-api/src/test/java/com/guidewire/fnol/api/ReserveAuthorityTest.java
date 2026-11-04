@@ -260,13 +260,14 @@ class ReserveAuthorityTest {
     }
 
     @Test
-    @DisplayName("A service credential is held to the adjuster limit, and cannot be a route around it")
+    @DisplayName("A service credential cannot decide at all, so it is no route around the limit")
     void serviceCredentialIsLimited() throws Exception {
         String id = "CLM-2026-0B0008";
         claim(id, "20000");
         mockMvc.perform(post("/api/v1/fnol/" + id + "/review").header("X-Adjuster-Token", "test-adjuster-token")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"decision\":\"APPROVED_BY_ADJUSTER\",\"adjusterId\":\"BATCH\"}"))
-                .andExpect(status().isAccepted()).andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
+                .andExpect(status().isForbidden());
+        assertThat(claims.findById(id).orElseThrow().status).isEqualTo("HUMAN_REVIEW");
     }
 
     @Test

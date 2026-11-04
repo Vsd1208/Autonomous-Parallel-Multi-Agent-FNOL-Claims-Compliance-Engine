@@ -55,9 +55,11 @@ public class PortalController {
     private final ClaimRepository claims;
     private final UploadRequestRepository uploads;
     private final ClaimCenterClient claimCenter;
+    private final PortalProtection protection;
 
     public PortalController(FNOLController intake, ClaimsSystemIntake claimsSystem, ClaimRepository claims,
-                            UploadRequestRepository uploads, ClaimCenterClient claimCenter) {
+                            UploadRequestRepository uploads, ClaimCenterClient claimCenter, PortalProtection protection) {
+        this.protection = protection;
         this.intake = intake;
         this.claimsSystem = claimsSystem;
         this.claims = claims;
@@ -97,11 +99,69 @@ public class PortalController {
         return policyNumber != null && policyNumber.toUpperCase(Locale.ROOT).startsWith("POL-HOME") ? "HOME" : "AUTO";
     }
 
-    /** Claim status for the claimant: claim number and policy number must both match. */
+    /**
+     * Claim status for the claimant: claim number and policy number must both match, or a valid access token for this claim. Failed attempts
+     * are limited by address and by claim, and every failure looks the same, so nothing reveals which part was wrong or what exists.
+     */
     @GetMapping("/claims/{claimId}")
     ResponseEntity<?> track(@PathVariable("claimId") String claimId,
-                            @RequestParam("policyNumber") String policyNumber) {
+                            @RequestParam(name = "policyNumber", required = false) String policyNumber,
+                            @RequestHeader(name = "X-Portal-Token", required = false) String token,
+                            jakarta.servlet.http.HttpServletRequest request) {
         String id = claimId.trim().toUpperCase(Locale.ROOT);
+        String address = "address:" + request.getRemoteAddr();
+        String claimKey = "claim:" + id;
+        protection.check(address);
+        protection.check(claimKey);
+        ResponseEntity<?> answer = token != null ? tracked(id, token) : policyNumber == null ? notFound() : lookUp(id, policyNumber);
+        if (answer.getStatusCode().value() == 404) {
+            protection.failed(address);
+            protection.failed(claimKey);
+        }
+        return answer;
+    }
+
+    private ResponseEntity<?> tracked(String id, String token) {
+        if (!protection.allows(token, id)) {
+            return notFound();
+        }
+        return claims.findById(id).<ResponseEntity<?>>map(c -> ResponseEntity.ok(view(c))).orElseGet(() -> {
+            try {
+                Claim filed = claimCenter.getClaim(id);
+                return ResponseEntity.ok(received(filed.claimId(), filed.policyNumber(), filed.incidentDate(), null));
+            } catch (RuntimeException e) {
+                return notFound();
+            }
+        });
+    }
+
+    record AccessRequest(String policyNumber) {}
+
+    /** Exchanges the claim and policy numbers for a short-lived, revocable token, so they need not travel on every request. */
+    @PostMapping("/claims/{claimId}/access")
+    ResponseEntity<?> access(@PathVariable("claimId") String claimId, @RequestBody AccessRequest body, jakarta.servlet.http.HttpServletRequest request) {
+        String id = claimId.trim().toUpperCase(Locale.ROOT);
+        String address = "address:" + request.getRemoteAddr();
+        String claimKey = "claim:" + id;
+        protection.check(address);
+        protection.check(claimKey);
+        if (body == null || body.policyNumber() == null || lookUp(id, body.policyNumber()).getStatusCode().value() != 200) {
+            protection.failed(address);
+            protection.failed(claimKey);
+            return notFound();
+        }
+        protection.succeeded(claimKey);
+        PortalProtection.Issued issued = protection.issue(id);
+        return ResponseEntity.ok(Map.of("accessToken", issued.token(), "expiresAt", issued.expiresAt().toString()));
+    }
+
+    @PostMapping("/access/revoke")
+    ResponseEntity<?> revoke(@RequestHeader(name = "X-Portal-Token", required = false) String token) {
+        protection.revoke(token);
+        return ResponseEntity.noContent().build();   // the same either way: it reveals nothing about the token
+    }
+
+    private ResponseEntity<?> lookUp(String id, String policyNumber) {
         Optional<ClaimEntity> analysed = claims.findById(id);
         if (analysed.isPresent()) {
             return analysed.filter(c -> sameText(c.policyNumber, policyNumber))

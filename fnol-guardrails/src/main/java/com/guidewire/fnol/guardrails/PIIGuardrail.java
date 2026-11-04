@@ -12,8 +12,13 @@ public class PIIGuardrail {
 
     public void validate(PIIResult r) {
 
-        if (r.redactionConfidence() == null ||
-                r.redactionConfidence().compareTo(
+        if (PIIResult.VALIDATION_FAILED.equals(r.validation())) {
+            throw new ComplianceBlockException("PII redaction failed: personal data was still found after masking");
+        }
+
+        // A rule-based result has no confidence; its re-scan above is the check. A detector reporting a confidence is held to the threshold.
+        if (r.validation() == null && r.redactionConfidence() == null ||
+                r.redactionConfidence() != null && r.redactionConfidence().compareTo(
                         new BigDecimal("0.90")) < 0) {
             throw new ComplianceBlockException(
                     "PII redaction confidence is below 0.90");

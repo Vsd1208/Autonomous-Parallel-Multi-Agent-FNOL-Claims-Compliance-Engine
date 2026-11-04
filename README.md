@@ -1,6 +1,8 @@
 # Autonomous Parallel Multi-Agent FNOL Claims & Compliance Engine
 
-> Autonomous analysis, human decision: specialist agents assess every claim in parallel; a licensed adjuster makes every call.
+> **A human-governed, AI-assisted FNOL platform.** Specialist agents analyse every claim in parallel and recommend; a licensed adjuster makes every decision. The AI never denies a claim and cannot bypass human approval, and when it has no reliable answer it says so and hands the claim to a person.
+>
+> **Not production-ready.** Guidewire is simulated, nothing has run on a real tenant, no rule has had legal review, and no figure comes from real insurer claims. [The honest assessment](docs/FINAL_ENGINEERING_AUDIT.md).
 
 [![CI](https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Vsd1208/Autonomous-Parallel-Multi-Agent-FNOL-Claims-Compliance-Engine/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
@@ -203,7 +205,7 @@ sells or services policies; we say "insurance agent" for that.)
 8. Feedback                  claim.decided event: analysis record, audit chain and feedback loop follow, for a decision made anywhere
 ```
 
-See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs/diagram-traceability.md](docs/diagram-traceability.md) for how each of the 23 diagram components maps to code, endpoints and tests.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full diagram, and [docs/diagram-traceability.md](docs/diagram-traceability.md) for how each of the 23 diagram components maps to code, endpoints and tests.
 
 ## Implementation status
 
@@ -221,7 +223,10 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram, and [docs
 | Adjuster sets the final reserve (pre-filled with the AI or inspected recommendation; a different amount needs a reason) | Done |
 | Supplementary photos: adjuster sends a one-time, 7-day upload link; the claimant adds the requested views to the same claim, which returns to the adjuster | Done |
 | Damage inspection: adjuster assigns an inspector (field, desk or body shop); the report gives the accident-related cost, earlier damage excluded | Done |
-| PII redaction (SSN, DOB, MRN, name, phone, email) + PII guardrail | Done |
+| PII redaction with a re-scan that blocks: known values, SSN, DOB, MRN, email, phone, addresses, policy and claim numbers, government and financial IDs. Names not given on the claim are not found ([limits](docs/SECURITY.md#known-privacy-limits)) | Done |
+| Abstention: the AI says when it has no reliable answer, and why; the claim goes to a person ([details](docs/AI_MODEL_EVALUATION.md#abstention)) | Done |
+| Durable event inbox: a 202 means committed; `SKIP LOCKED` leases, retries, dead letter, replay ([details](docs/DISTRIBUTED_PROCESSING.md)) | Done; tested on PostgreSQL |
+| Correlation IDs, Prometheus metrics, liveness and readiness probes, production startup check | Done; no dashboards ship |
 | State claim clock: acknowledge-by and decide-by from cited regulations (CA, NY, TX, FL, IL), urgency flag, acknowledgement letter | Done (prototype, not legally reviewed) |
 | Subrogation: Branch B liability assessment with compliance notes, finalised with Branch A's severity | Done |
 | Gate consistency checks (AI dollars vs the published range for the severity, reserve vs limit, damage vs line, confidence vs photo) | Done |
@@ -434,6 +439,8 @@ no waiting (in one observed claim with Gemini: operational 3.9 s, legal about 1 
 
 What comes next and why: [docs/ROADMAP.md](docs/ROADMAP.md).
 
+- **`gemini-2.5-flash` is retiring** (closed to new users; re-routed from 1 Dec 2026). A substituted model is detected and sent to a person, but no successor has been measured: [details](docs/AI_MODEL_EVALUATION.md#the-model-retirement).
+- **Expect lower AI accuracy on an insurer's own photos.** On a photo source it did not train on, the second-opinion model falls from 78% to about 64–68%, and its calibration degrades: [details](docs/AI_MODEL_EVALUATION.md#leakage-and-generalisation).
 - Guidewire is mocked, and the extension design is modelled from public documentation, not verified against a tenant. Reserve authority limits are modelled on ClaimCenter's concept, with synthetic amounts. All of it: [docs/guidewire-integration.md](docs/guidewire-integration.md).
 - If the claims system is down during a photo request or inspection step, its work queue for that claim stays out of date (the claim file shows the right status). Decisions are not affected: they stop, with a clear error.
 - Sign-in uses local accounts, not an insurer's identity provider, and there is no SIU role ([ADR-014](docs/architecture-decisions.md)).
@@ -441,6 +448,6 @@ What comes next and why: [docs/ROADMAP.md](docs/ROADMAP.md).
 - Claims with `cc_sync_status=FAILED` (direct intake, photo and inspection steps) are marked for retry, but no retry job exists yet.
 - Photos are uploaded in the console as inline data URIs (≤ 5 MB) or referenced by allow-listed URL; there is no separate document store.
 - The branches use `FutureTask`s on a bounded executor rather than `CompletableFuture` (so a stuck branch can be interrupted), and the console is React rather than Guidewire Jutro — see ADR-011.
-- The idempotency guard's in-memory layer is per JVM; run one API instance or move it to the database.
+- The idempotency guard's in-memory layer is per JVM, with the database's unique row behind it. Only one API instance has been run end to end, and no load test exists.
 - Vision data limits: no public photos of burst-pipe water damage exist, so that cause cannot be learned; commercial property (35 photos) has no fire or fallen-tree examples; the 293 CC BY 4.0 car photos carry their uploaders' licence, which cannot be traced further. Details: [docs/model-cards.md](docs/model-cards.md).
 - No dollar estimate is validated yet, Gemini's included: the published repair-cost ranges are figures from AAA, Consumer Reports and CCC mapped to damage extent by assumption, until real invoices and inspections accumulate.

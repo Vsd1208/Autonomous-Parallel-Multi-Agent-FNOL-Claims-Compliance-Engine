@@ -41,7 +41,7 @@ class AiGovernanceTest {
     @Test
     @DisplayName("An unknown repair-cost source is refused before anything is saved")
     void unknownRepairCostSourceIsRefused() throws Exception {
-        mockMvc.perform(post("/api/v1/fnol/CLM-2026-000815/review").header("X-Adjuster-Token", token)
+        mockMvc.perform(post("/api/v1/fnol/CLM-2026-000815/review").header("Authorization", HumanSession.bearer(mockMvc, "ADJ-007"))
                 .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
                         "decision", "APPROVED_BY_ADJUSTER", "adjusterId", "ADJ-007", "finalRepairCost", 2000,
                         "repairCostSource", "GUESS"))))
@@ -63,9 +63,10 @@ class AiGovernanceTest {
         mockMvc.perform(post("/api/v1/fnol/intake").header("X-Adjuster-Token", "test-adjuster-token").contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(payload))).andExpect(status().isOk());
 
-        mockMvc.perform(post("/api/v1/fnol/CLM-2026-000814/review").header("X-Adjuster-Token", token)
+        // This loss is far above what the photos support, so the fraud score flags it, and its SIU claim is for a senior adjuster.
+        mockMvc.perform(post("/api/v1/fnol/CLM-2026-000814/review").header("Authorization", HumanSession.bearer(mockMvc, "SEN-007"))
                 .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(Map.of(
-                        "decision", "APPROVED_BY_ADJUSTER", "adjusterId", "ADJ-007", "adjustedReserve", 2500,
+                        "decision", "APPROVED_BY_ADJUSTER", "adjusterId", "SEN-007", "adjustedReserve", 2500,
                         "overrideReason", "Repair quote", "confirmedDamageType", "front_bumper",
                         "finalRepairCost", 3100, "repairCostSource", "body_shop_estimate"))))
                 .andExpect(status().isOk());

@@ -3,10 +3,15 @@ server:
 mock-guidewire:
   base-url: http://localhost:9090
 fnol:
+  inbox:
+    poll-ms: 50
+    max-attempts: 1
   orchestrator:
     timeout-seconds: 10
   security:
     adjuster-token: test-adjuster-token
+    password-iterations: 1000
+    users: "ADJ-001|ADJUSTER|p|Test Adjuster;ADJ-002|ADJUSTER|p|Second Adjuster;ADJ-007|ADJUSTER|p|Seventh Adjuster;ADJ-009|ADJUSTER|p|Ninth Adjuster;SEN-007|SENIOR_ADJUSTER|p|Seventh Senior;SEN-001|SENIOR_ADJUSTER|p|Test Senior;SUP-001|SUPERVISOR|p|Test Supervisor;INS-101|INSPECTOR|p|Inspector A;INS-102|INSPECTOR|p|Inspector B"
 # Disable Gemini Vision in tests — MockVisionProvider is used instead.
 # This keeps the tests fast, offline, and API-key-free.
 gemini:
@@ -25,3 +30,16 @@ spring:
     open-in-view: false
   flyway:
     enabled: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus   # health for probes; prometheus needs a credential (AdjusterTokenFilter)
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db

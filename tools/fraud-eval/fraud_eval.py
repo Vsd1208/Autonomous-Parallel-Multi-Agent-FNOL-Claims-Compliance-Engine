@@ -205,6 +205,41 @@ def confusion(flags, labels):
             "tp": tp, "fp": fp, "fn": fn}
 
 
+def threshold_sweep(s, y, budgets):
+    """For each share of claims referred: the score it takes, and precision and recall there. Scores are ranked highest first."""
+    order = sorted(range(len(s)), key=lambda i: -s[i])
+    total = sum(y)
+    out = []
+    for budget in budgets:
+        k = max(1, round(budget * len(s)))
+        caught = sum(y[i] for i in order[:k])
+        out.append({"budget": budget, "threshold": s[order[k - 1]], "flagged": k, "precision": caught / k, "recall": caught / total if total else 0.0})
+    return out
+
+
+def average_precision(s, y):
+    """Area under the precision-recall curve, as the mean precision at each fraud claim's rank. Chance is the fraud rate."""
+    order = sorted(range(len(s)), key=lambda i: -s[i])
+    caught, total = 0, 0.0
+    for rank, i in enumerate(order, 1):
+        if y[i]:
+            caught += 1
+            total += caught / rank
+    return total / caught if caught else 0.0
+
+
+def false_positive_reasons(test, s, y, threshold, params):
+    """Genuine claims flagged: for each feature, how many it added points to, and the mean points it added to those."""
+    flagged = [c for c, v, f in zip(test, s, y) if v >= threshold and not f]
+    points = {}
+    for c in flagged:
+        for name, pts in contributions(c, params):
+            if pts > 0:
+                points.setdefault(name, []).append(pts)
+    rows = sorted(points.items(), key=lambda kv: -sum(kv[1]))
+    return len(flagged), [(name, len(v), sum(v) / len(v)) for name, v in rows]
+
+
 def percentile(values, q):
     s = sorted(values)
     return s[min(len(s) - 1, int(math.ceil(q * len(s))) - 1)]
@@ -324,6 +359,30 @@ def write_report(params, threshold, metrics, sc, fr, ar, ei, per_pattern, single
         "| Percentile | Expected share above | Observed share above |",
         "|---|---|---|",
     ] + [f"| {q}th | {1 - q / 100:.1%} | {obs:.1%} |" for q, obs in pct_check] + [
+        "",
+        "## Precision and recall as the referral budget changes (held-out, synthetic)",
+        "",
+        f"Average precision {average_precision(s, y):.3f}; a score with no skill would get the fraud rate, {sum(y) / len(y):.3f}. "
+        "A real fraud rate and real claims would move every row. The chosen budget is a business decision: this table "
+        "shows the trade, it does not pick one.",
+        "",
+        "| Claims referred | Score it takes | Claims | Precision | Recall |",
+        "|---|---|---|---|---|",
+    ] + [f"| {t['budget']:.0%} | {t['threshold']:.2f} | {t['flagged']} | {t['precision']:.1%} | {t['recall']:.1%} |"
+         for t in threshold_sweep(s, y, [0.01, 0.02, 0.05, 0.10, 0.20, 0.30])] + [
+        "",
+        "## Why genuine claims get flagged (held-out, synthetic)",
+        "",
+    ]
+    fp_count, fp_rows = false_positive_reasons(test, s, y, threshold, params)
+    labels = {p["name"]: p["label"] for p in params}
+    lines += [
+        f"{fp_count} genuine claims reach the threshold. These are the features behind them, so a reviewer knows which explanations "
+        "most often accompany a false alarm. They follow from the generator's assumptions; real false positives need real claims.",
+        "",
+        "| Feature | Flagged genuine claims it added points to | Mean points added |",
+        "|---|---|---|",
+    ] + [f"| {labels.get(name, name)} | {n} ({n / fp_count:.0%}) | {mean:.2f} |" for name, n, mean in fp_rows] + [
         "",
         "## Fitted reference profile",
         "",

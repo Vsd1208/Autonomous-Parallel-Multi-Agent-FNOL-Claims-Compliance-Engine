@@ -178,7 +178,7 @@ class DiagramAlignmentApiTest {
 
     private ResultActions review(String claimId, AdjusterReviewRequest request) throws Exception {
         return mockMvc.perform(post("/api/v1/fnol/" + claimId + "/review")
-                .header("X-Adjuster-Token", TOKEN)
+                .header("Authorization", HumanSession.bearer(mockMvc, "ADJ-009"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)));
     }
