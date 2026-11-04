@@ -29,7 +29,7 @@ _plates = cv2.CascadeClassifier(PLATE_CASCADE)
 
 def load(image_bytes):
     """Decodes and downsizes a photo; raises ValueError when it is not an image."""
-    img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+    img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR) if image_bytes else None
     if img is None:
         raise ValueError("unreadable image")
     scale = MAX_SIDE / max(img.shape[:2])
@@ -39,6 +39,17 @@ def load(image_bytes):
 
 
 def faces(img, line):
+    """Faces in any of the four orientations, as boxes on img: YuNet alone almost never finds a sideways face (metrics in
+    docs/AI_MODEL_EVALUATION.md), and a sideways photo must not reach the external model unblurred."""
+    H, W = img.shape[:2]
+    found = list(upright_faces(img, line))
+    found += [(y, H - x - w, h, w) for x, y, w, h in upright_faces(cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE), line)]
+    found += [(W - x - w, H - y - h, w, h) for x, y, w, h in upright_faces(cv2.rotate(img, cv2.ROTATE_180), line)]
+    found += [(W - y - h, x, h, w) for x, y, w, h in upright_faces(cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE), line)]
+    return found
+
+
+def upright_faces(img, line):
     h, w = img.shape[:2]
     detector = cv2.FaceDetectorYN.create(FACE_MODEL, "", (w, h), FACE_SCORE.get(line, 0.85), 0.3, 5000)
     _, found = detector.detect(img)

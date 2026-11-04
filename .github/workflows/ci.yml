@@ -62,3 +62,6 @@ jobs:
           python-version: '3.12'
       # fnol-vision-ml needs PyTorch and the CLIP weights (~1 GB) to run, so CI only checks that every script compiles.
       - run: python -m compileall -q fnol-vision-ml tools
+      # Photo redaction needs only OpenCV and its small committed face model, so its tests do run here.
+      - run: pip install opencv-python-headless==4.10.0.84 pytest
+      - run: python -m pytest -q fnol-vision-ml/redaction/test_redact.py

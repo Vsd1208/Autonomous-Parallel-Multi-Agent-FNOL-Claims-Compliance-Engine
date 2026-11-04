@@ -381,8 +381,20 @@ public final class Models {
             String redactedDescription,
             List<String> detectedTypes,
             boolean piiDetected,
-            BigDecimal redactionConfidence
-    ) {}
+            BigDecimal redactionConfidence,   // null for rules, which have no calibrated confidence
+            List<PiiDetection> detections,
+            String validation                 // the re-scan after masking: VALIDATED or VALIDATION_FAILED; null on older records
+    ) {
+        public static final String VALIDATED = "VALIDATED";
+        public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
+
+        public PIIResult(String redactedDescription, List<String> detectedTypes, boolean piiDetected, BigDecimal redactionConfidence) {
+            this(redactedDescription, detectedTypes, piiDetected, redactionConfidence, List.of(), null);
+        }
+    }
+
+    /** What one detector found. Confidence is null unless a detector really computes one. */
+    public record PiiDetection(String category, String detector, int count, BigDecimal confidence, boolean redacted) {}
 
     /** One step of a claim clock: what is due, by when, from what, and on what authority. */
     public record ClockMilestone(String action, LocalDate dueBy, String startsFrom, String period, String citation, String appliesWhen,

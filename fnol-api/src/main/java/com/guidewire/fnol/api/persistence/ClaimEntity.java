@@ -139,7 +139,7 @@ public class ClaimEntity {
     BranchBResult b = r.branchB();
     BranchBResult safeB = b == null ? null : new BranchBResult(
         b.pii() == null ? null : new PIIResult(null, b.pii().detectedTypes(), b.pii().piiDetected(),
-            b.pii().redactionConfidence()),
+            b.pii().redactionConfidence(), b.pii().detections(), b.pii().validation()),
         b.deadline(), b.subrogation(), java.util.List.of());
     return new FNOLResponse(r.claimId(), r.status(), r.branchA(), safeB, r.policyContext(), r.explanation(),
         r.severityGate(), r.eligibleForAdvisoryPrefill(), r.requiresHumanValidation(), r.notes(), r.inputFlags(),

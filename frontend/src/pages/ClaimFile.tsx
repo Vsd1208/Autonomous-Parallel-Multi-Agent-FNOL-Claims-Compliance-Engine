@@ -731,7 +731,7 @@ function Compliance({ claim }: { claim: DashboardClaim }) {
         <Panel title="Personal Information">
           <DetailView rows={[
             ['PII detected', b.pii.piiDetected ? b.pii.detectedTypes.join(', ') : 'None'],
-            ['Redaction confidence', b.pii.redactionConfidence != null ? Number(b.pii.redactionConfidence).toFixed(2) : null],
+            ['Scan after masking', b.pii.validation === 'VALIDATED' ? 'None left' : b.pii.validation === 'VALIDATION_FAILED' ? 'Personal data still found' : null],
           ]} />
           <div className="redacted"><div className="field-label">Redacted description</div><p>{b.pii.redactedDescription}</p></div>
         </Panel>

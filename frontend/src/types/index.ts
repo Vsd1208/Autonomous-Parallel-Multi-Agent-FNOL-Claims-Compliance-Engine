@@ -89,7 +89,9 @@ export interface PiiInfo {
   piiDetected: boolean;
   redactedDescription: string;
   detectedTypes: string[];
-  redactionConfidence?: number;
+  redactionConfidence?: number | null;   // only on records from before the re-scan; never calibrated
+  detections?: { category: string; detector: string; count: number; redacted: boolean }[] | null;
+  validation?: 'VALIDATED' | 'VALIDATION_FAILED' | null;
 }
 
 export interface Deadline {

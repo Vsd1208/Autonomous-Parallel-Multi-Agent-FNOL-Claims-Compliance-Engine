@@ -139,7 +139,7 @@ Response `200` (abridged):
                  "claimedAmount": 3000, "settlementBasis": 3000, "deductible": 1000, "coverageLimit": 50000 }
   },
   "branchB": {
-    "pii": { "redactedDescription": "...", "detectedTypes": [], "piiDetected": false, "redactionConfidence": 0.95 },
+    "pii": { "redactedDescription": "...", "detectedTypes": [], "piiDetected": false, "redactionConfidence": null, "detections": [], "validation": "VALIDATED" },
     "deadline": { "state": "CA", "deadline": "2026-10-27", "ruleSource": "MOCK_RULE",
                   "disclaimer": "PROTOTYPE PLACEHOLDER: ...", "acknowledgeBy": "2026-10-27",
                   "decisionBy": "2026-12-06", "urgencyFlag": "OK" },
